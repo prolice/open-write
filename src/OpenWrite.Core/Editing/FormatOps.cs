@@ -124,6 +124,20 @@ public static class FormatOps
         if (local == "sz") run.Props.SetVal("szCs", value);
     }
 
+    /// <summary>Police du thème (titres : major, corps : minor) pour l'alphabet latin et les autres écritures.</summary>
+    public static void SetThemeFont(Run run, bool major)
+    {
+        var ns = run.Props.Ns;
+        var kind = major ? "major" : "minor";
+        var fonts = run.Props.Get("rFonts") is { } existing ? new XElement(existing) : new XElement(ns + "rFonts");
+        foreach (var a in new[] { "ascii", "hAnsi", "cs", "eastAsia" }) fonts.Attribute(ns + a)?.Remove();
+        fonts.SetAttributeValue(ns + "asciiTheme", kind + "HAnsi");
+        fonts.SetAttributeValue(ns + "hAnsiTheme", kind + "HAnsi");
+        fonts.SetAttributeValue(ns + "eastAsiaTheme", kind + "EastAsia");
+        fonts.SetAttributeValue(ns + "cstheme", kind + "Bidi");
+        run.Props.Set(fonts);
+    }
+
     /// <summary>Police (w:rFonts : ascii, hAnsi, cs ; les polices de thème cèdent la place).</summary>
     public static void SetFont(Run run, string family)
     {

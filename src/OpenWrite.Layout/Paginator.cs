@@ -166,6 +166,9 @@ public sealed class DocumentLayout
 
     public ParagraphLayouter Lines => _lines;
 
+    /// <summary>Styles ou listes ajoutés (pas modifiés) : nouveau résolveur, la mise en page incrémentale reste valable.</summary>
+    public void ReplaceStyles(StyleResolver styles) => _lines.ReplaceStyles(styles);
+
     // ------------------------------------------------------------------ flux
 
     void BuildItems()

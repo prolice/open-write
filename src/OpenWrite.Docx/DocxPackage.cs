@@ -227,7 +227,7 @@ public sealed class DocxPackage
             try { return ParseXml(e.Data).Root; } catch (XmlException) { return null; }
         }
         // styles et numérotation : parties modifiables (lot 4), les mêmes objets XML que ceux que l'on modifie
-        return new OpenWrite.Core.Styles.StyleSheet(XmlPartOf("styles")?.Doc.Root, XmlPartOf("numbering")?.Doc.Root, Part("theme"), Part("settings"), Main?.W);
+        return new OpenWrite.Core.Styles.StyleSheet(XmlPartOf("styles")?.Doc.Root, XmlPartOf("numbering")?.Doc.Root, XmlPartOf("theme")?.Doc.Root, Part("settings"), Main?.W);
     }
 
     // ================================================================ parties XML modifiables (styles, numérotation)
@@ -246,6 +246,8 @@ public sealed class DocxPackage
     {
         ["styles"] = ("styles", "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"),
         ["numbering"] = ("numbering", "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"),
+        // thème : jamais créé (Word en écrit toujours un) ; modifiable pour les polices et couleurs du thème
+        ["theme"] = ("theme", "application/vnd.openxmlformats-officedocument.theme+xml"),
     };
 
     /// <summary>Parties XML déjà chargées pour modification.</summary>
@@ -270,7 +272,7 @@ public sealed class DocxPackage
             }
             catch (XmlException) { return null; }
         }
-        if (!create) return null;
+        if (!create || kind == "theme") return null;
         // nouvelle partie à côté du document principal
         var dir = Main.PartName.Contains('/') ? Main.PartName[..Main.PartName.LastIndexOf('/')] : "";
         var newName = (dir.Length > 0 ? dir + "/" : "") + kind + ".xml";

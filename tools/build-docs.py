@@ -94,8 +94,9 @@ rapports d'erreur anonymes.</p>
 {shot("menu-fichier", "Menu Fichier d'OpenWrite")}
 """),
         ("accueil", "L'onglet Accueil", f"""
-<p>Presse-papiers, police, paragraphe, styles et recherche : comme dans Word. Tout est actif sauf les listes et les
-styles (version 0.5). L'onglet <strong>Insertion</strong> propose déjà Lien, Symbole et Saut de page ; l'onglet
+<p>Presse-papiers, police, paragraphe, styles et recherche : comme dans Word. Le groupe <strong>Styles</strong>
+montre une galerie des styles du document ; le groupe <strong>Paragraphe</strong> les puces, les numéros et la liste de
+titres. L'onglet <strong>Insertion</strong> propose déjà Lien, Symbole et Saut de page ; l'onglet
 <strong>Mise en page</strong>, Retraits et Espacement (boîte Paragraphe).</p>
 {shot("onglet-accueil", "Onglet Accueil du ruban")}
 """),
@@ -152,6 +153,31 @@ navigateur, et vers eux (gras, italique, police, taille, couleur, alignement). {
 seul. Un tableau compris dans la sélection est copié ou supprimé en entier.</p>
 {warn("Pas encore modifiables : les en-têtes et pieds de page (version 0.6), les notes (version 1.2), et une sélection sur plusieurs cellules d'un même tableau (version 0.7). Les images d'un autre programme ne sont pas encore collées.")}
 """),
+        ("styles", "Styles", f"""
+<p>Un style donne d'un coup la police, la taille, les espacements… d'un paragraphe ; le modifier change tous les
+paragraphes qui l'utilisent. Appliquez-le avec la <strong>galerie</strong> de l'onglet Accueil, la liste
+<strong>Style</strong> du volet Mise en forme, ou les raccourcis de Word : {k('Ctrl', 'Alt', '1')}, {k('2')}, {k('3')}
+pour Titre 1, 2, 3, {k('Ctrl', 'Maj', 'N')} pour Normal. Les styles intégrés de Word (Titre 1, Citation, Élevé…) sont
+ajoutés au document la première fois qu'ils servent, comme dans Word.</p>
+<p><strong>Accueil ▸ Styles</strong> liste tous les styles : appliquer, <strong>modifier</strong> (nom, style de base,
+style suivant, boîtes Police et Paragraphe), <strong>mettre à jour selon la sélection</strong> (la mise en forme du
+paragraphe passe dans son style), <strong>nouveau style</strong> à partir de la sélection. Le bouton
+<strong>Modifier</strong> ouvre directement le style du paragraphe.</p>
+"""),
+        ("listes", "Puces et numéros", f"""
+<p><strong>Puces</strong> ({k('Ctrl', 'Maj', 'L')}) et <strong>Numéros</strong> mettent les paragraphes sélectionnés
+en liste, ou les en sortent. Au début d'un élément, {k('Tab')} et {k('Maj', 'Tab')} changent son niveau ;
+{k('Entrée')} sur un élément vide et {k('Retour arrière')} au début d'un élément terminent la liste. Clic droit sur un
+élément : <strong>Recommencer à 1</strong>, <strong>Continuer la numérotation</strong>.</p>
+<p><strong>Titres 1.1</strong> numérote les titres du document : Titre 1 en « 1. », Titre 2 en « 1.1 », Titre 3 en
+« 1.1.1 ». La numérotation suit les titres ajoutés ensuite.</p>
+"""),
+        ("themes", "Thèmes, polices et couleurs", """
+<p>L'onglet <strong>Création</strong> change le thème du document : <strong>Polices</strong> (titres et corps du
+texte), <strong>Couleurs</strong> (titres, accents, liens) ou les deux avec <strong>Thèmes</strong>. Seul le texte qui
+utilise les polices et couleurs du thème change — les titres et citations notamment ; une police ou une couleur choisie
+à la main reste. Dans la liste des polices du volet, « +Titres » et « +Corps » sont les polices du thème.</p>
+"""),
         ("rechercher", "Rechercher et remplacer", f"""
 <p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
 Options : respecter la casse et les accents, mot entier. Le texte remplacé garde sa mise en forme ;
@@ -197,7 +223,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.2", "Modèle de document sans perte, mise en forme fidèle, cases à cocher, annuler, enregistrer"),
             ("0.3", "Vue des pages : pagination comme dans Word, en-têtes et pieds, notes, miniatures"),
             ("0.4", "Saisie et mise en forme directe, presse-papiers"),
-            ("0.5", "Styles, listes et thèmes"),
+            ("0.5", "Styles, listes et thèmes : galerie, modifier et créer des styles, puces et numéros, polices et couleurs du thème"),
             ("0.6", "Mise en page, sections, en-têtes et pieds de page"),
             ("0.7", "Tableaux"),
             ("1.0", "Images, formes et zones de texte"),
@@ -242,6 +268,11 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
             ("Cellule suivante, précédente (tableau)", k("Tab") + " " + k("Maj", "Tab")),
             ("Espace insécable, trait d'union insécable", k("Ctrl", "Maj", "Espace") + " " + k("Ctrl", "Maj", "-")),
             ("Marques de mise en forme", k("Ctrl", "Maj", "8")),
+        ])),
+        ("styles-listes", "Styles et listes", table([
+            ("Titre 1, 2, 3", k("Ctrl", "Alt", "1") + " " + k("Ctrl", "Alt", "2") + " " + k("Ctrl", "Alt", "3")),
+            ("Normal", k("Ctrl", "Maj", "N")), ("Puces", k("Ctrl", "Maj", "L")),
+            ("Niveau de liste suivant, précédent", k("Tab") + " " + k("Maj", "Tab") + " (au début d'un élément)"),
         ])),
         ("mise-en-forme", "Mise en forme", table([
             ("Gras", k("Ctrl", "G") + " ou " + k("Ctrl", "B")), ("Italique", k("Ctrl", "I")), ("Souligné", k("Ctrl", "U")),

@@ -105,7 +105,7 @@ public sealed class ParagraphLayout
 /// <summary>Découpe des paragraphes en lignes (comportement de Word : coupure aux espaces, espaces de fin suspendus).</summary>
 public sealed class ParagraphLayouter
 {
-    readonly StyleResolver _styles;
+    StyleResolver _styles;
     readonly IFontProvider _fonts;
     readonly XNamespace W;
     readonly Dictionary<RunFormat, TextStyle> _styleCache = new();
@@ -122,6 +122,12 @@ public sealed class ParagraphLayouter
     }
 
     public StyleResolver Styles => _styles;
+
+    /// <summary>
+    /// Nouveau résolveur après un <strong>ajout</strong> de styles ou de listes (les styles existants n'ont pas changé :
+    /// les mises en forme déjà résolues restent valables).
+    /// </summary>
+    public void ReplaceStyles(StyleResolver styles) => _styles = styles;
 
     /// <summary>Numéros des listes du document (<see cref="ListNumbering"/>) ; null : « 1 » indicatif.</summary>
     public IReadOnlyDictionary<Paragraph, string>? ListNumbers { get; set; }

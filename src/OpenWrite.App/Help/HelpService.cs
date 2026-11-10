@@ -27,6 +27,9 @@ public static class HelpService
     public const string Formatting = "raccourcis.html#mise-en-forme";
     public const string Clipboard = "documents.html#presse-papiers";
     public const string Links = "documents.html#liens";
+    public const string Styles = "documents.html#styles";
+    public const string Lists = "documents.html#listes";
+    public const string Themes = "documents.html#themes";
 
     public static IReadOnlyList<string> AllTopics => typeof(HelpService).GetFields(BindingFlags.Public | BindingFlags.Static)
         .Where(f => f.IsLiteral && f.FieldType == typeof(string)).Select(f => (string)f.GetRawConstantValue()!).ToList();

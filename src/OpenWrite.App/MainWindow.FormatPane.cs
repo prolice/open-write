@@ -26,6 +26,18 @@ public partial class MainWindow
     {
         InitStylePane();
         PaneFont.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Distinct().OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList();
+        // polices du thème du document en tête de liste (à l'ouverture de la liste)
+        PaneFont.DropDownOpened += (_, _) =>
+        {
+            var system = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Distinct().OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase);
+            var themed = ThemeRoot() is { } th && ThemeOps.Fonts(th) is var (major, minor) && major is not null
+                ? new[] { $"+Titres ({major})", $"+Corps ({minor})" } : Array.Empty<string>();
+            _refreshingPane = true;
+            var text = PaneFont.Text;
+            PaneFont.ItemsSource = themed.Concat(system).ToList();
+            PaneFont.Text = text;
+            _refreshingPane = false;
+        };
         PaneSize.ItemsSource = FontSizes.Select(s => s.ToString(Cu)).ToList();
         PaneLineSpacing.ItemsSource = LineSpacings.Select(s => s.ToString("0.0#", Cu)).ToList();
 
@@ -126,6 +138,13 @@ public partial class MainWindow
     {
         family = family.Trim();
         if (family.Length == 0) { RefreshFormatPane(); return; }
+        // polices du thème : « +Titres (…) », « +Corps (…) »
+        if (family.StartsWith("+Titres") || family.StartsWith("+Corps"))
+        {
+            bool major = family.StartsWith("+Titres");
+            ApplyToTarget(major ? "Police des titres du thème" : "Police du corps du thème", (_, r) => FormatOps.SetThemeFont(r, major));
+            return;
+        }
         ApplyToTarget($"Police {family}", (_, r) => FormatOps.SetFont(r, family));
     }
 

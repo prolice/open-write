@@ -740,11 +740,15 @@ public partial class MainWindow
     {
         // styles ou numérotation modifiés : résolveur refait, document entier remis en page
         bool stylesChanged = _journal.LastXml.Count > 0;
+        bool additive = _xmlAdditive;
+        _xmlAdditive = false;
         if (stylesChanged && _pkg is not null)
         {
             _styles = new Core.Styles.StyleResolver(_pkg.StyleSheet());
             _paneState = null;
             Dispatcher.BeginInvoke(UpdateStyleGallery, System.Windows.Threading.DispatcherPriority.Background);
+            // styles ou listes seulement ajoutés : les paragraphes qui ne les utilisent pas sont inchangés
+            if (additive && _layout is not null) { _layout.ReplaceStyles(_styles); stylesChanged = false; }
         }
         if (stylesChanged || _layout is null || _drawings is null || _pagesView is null || Body is not { } body || _journal.LastChange is not { } ch || !ReferenceEquals(ch.Root, body))
         {
@@ -770,6 +774,12 @@ public partial class MainWindow
         if (_thumbsView is not null) { _thumbsView.InvalidateMeasure(); _thumbsView.InvalidateVisual(); }
         UpdatePageStatus();
     }
+
+    /// <summary>
+    /// La dernière opération n'a fait qu'ajouter des styles ou des listes (pas modifié d'existants) : remise en page
+    /// incrémentale possible. Mis par l'opération, consommé par <see cref="Relayout"/> (annuler / rétablir : complète).
+    /// </summary>
+    bool _xmlAdditive;
 
     /// <summary>La dernière opération a changé des listes : numéros à recalculer (pas de chemin rapide).</summary>
     bool _listsTouched;

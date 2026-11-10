@@ -39,7 +39,7 @@ public partial class MainWindow
         }),
         ("TabDesign", new RibbonGroup[]
         {
-            new("Mise en forme du document", "0.5", ("", "Thèmes"), ("", "Polices"), ("", "Jeux de styles")),
+            new("Mise en forme du document", "0.5", ("", "Thèmes"), ("", "Polices"), ("\uE790", "Couleurs")),
             new("Arrière-plan de la page", "0.6", ("", "Filigrane"), ("", "Couleur"), ("", "Bordures")),
         }),
         ("TabLayout", new RibbonGroup[]
@@ -111,6 +111,17 @@ public partial class MainWindow
         ["Modifier"] = (ModifyCurrentStyle, "Modifier le style du paragraphe"),
     };
 
+    /// <summary>Bouton du ruban qui vient d'être cliqué (pour ouvrir un menu sous lui).</summary>
+    FrameworkElement? _clickedButton;
+
+    /// <summary>Commandes de l'onglet Création déjà disponibles (menus sous le bouton).</summary>
+    Dictionary<string, (Action Run, string Tip)> DesignCommands() => new()
+    {
+        ["Thèmes"] = (() => ShowThemesMenu(_clickedButton!), "Thèmes : polices et couleurs du document ensemble"),
+        ["Polices"] = (() => ShowThemeFontsMenu(_clickedButton!), "Polices du thème : titres et corps du texte"),
+        ["Couleurs"] = (() => ShowThemeColorsMenu(_clickedButton!), "Couleurs du thème : titres, accents, liens"),
+    };
+
     /// <summary>Commandes de l'onglet Insertion déjà disponibles.</summary>
     Dictionary<string, (Action Run, string Tip)> InsertCommands() => new()
     {
@@ -170,6 +181,7 @@ public partial class MainWindow
         var home = HomeCommands();
         var layoutCmds = LayoutCommands();
         var insertCmds = InsertCommands();
+        var designCmds = DesignCommands();
         foreach (var (tab, groups) in Roadmap)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Visibility = tab == "TabHome" ? Visibility.Visible : Visibility.Collapsed };
@@ -179,12 +191,13 @@ public partial class MainWindow
                 foreach (var (glyph, label) in g.Buttons)
                 {
                     var button = new Button { Style = (Style)FindResource("RBig"), Tag = glyph, Content = label, IsEnabled = false };
-                    if ((tab switch { "TabHome" => home, "TabLayout" => layoutCmds, "TabInsert" => insertCmds, _ => null })?.TryGetValue(label, out var cmd) == true)
+                    if ((tab switch { "TabHome" => home, "TabLayout" => layoutCmds, "TabInsert" => insertCmds, "TabDesign" => designCmds, _ => null })?.TryGetValue(label, out var cmd) == true)
                     {
                         // le point d'insertion garde le clavier : le bouton ne prend pas le focus
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
-                        button.Click += (_, _) => { cmd.Run(); _pagesView?.Focus(); };
+                        bool menu = tab == "TabDesign";        // menu sous le bouton : il garde le clavier
+                        button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }
                     buttons.Children.Add(button);

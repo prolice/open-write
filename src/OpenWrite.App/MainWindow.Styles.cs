@@ -20,7 +20,7 @@ public partial class MainWindow
     /// Transaction sur les blocs de la sélection (tableaux touchés compris) où l'opération peut aussi modifier styles.xml
     /// et numbering.xml (suivis par le journal) ; sélection gardée ensuite.
     /// </summary>
-    bool EditSelection(string label, Action<EditTransaction, Story, DocPos, DocPos> op, bool lists = false)
+    bool EditSelection(string label, Action<EditTransaction, Story, DocPos, DocPos> op, bool lists = false, bool additive = false)
     {
         if (Body is not { } body || Ordered() is not { } sel) return false;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return false; }
@@ -39,6 +39,7 @@ public partial class MainWindow
             return false;
         }
         _listsTouched = lists;
+        _xmlAdditive = additive;
         AfterFormat(label, anchor, caret);
         return true;
     }
@@ -77,7 +78,7 @@ public partial class MainWindow
                 var id = ResolveStyleId(tx, nameOrId, existing);
                 bool isDefault = StyleOps.ByName(_styles!.Sheet, "Default Paragraph Font")?.Attribute(sheet.W + "styleId")?.Value == id;
                 FormatOps.ApplyToRuns(body, from, to, (_, r) => r.Props.SetVal("rStyle", isDefault ? null : id));
-            });
+            }, additive: true);
             if (savedAnchor is null) { _anchor = null; _caret = savedCaret; UpdateCaret(scroll: false); }
             return;
         }
@@ -86,7 +87,7 @@ public partial class MainWindow
             var id = ResolveStyleId(tx, nameOrId, existing);
             var normal = sheet.DefaultStyle("paragraph")?.Attribute(sheet.W + "styleId")?.Value;
             foreach (var p in ParagraphsIn(body, from, to)) p.Props.SetVal("pStyle", id == normal ? null : id);
-        }, lists: true);
+        }, lists: true, additive: true);
     }
 
     /// <summary>Identifiant du style (style intégré ajouté à styles.xml s'il n'y est pas encore, dans la transaction).</summary>
@@ -179,7 +180,7 @@ public partial class MainWindow
                     if (listParagraph is not null) p.Props.SetVal("pStyle", listParagraph);
                 }
             }
-        }, lists: true);
+        }, lists: true, additive: true);
     }
 
     /// <summary>Paragraphe du point d'insertion dans une liste ?</summary>
@@ -404,7 +405,7 @@ public partial class MainWindow
             var id = StyleOps.Create(sheet, root, "paragraph", name, current, null, ppr, rpr);
             p.Props.SetVal("pStyle", id);
             StyleOps.Absorb(p, ppr, rpr);
-        });
+        }, additive: true);
         UpdateStyleGallery();
     }
 

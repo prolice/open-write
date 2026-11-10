@@ -396,6 +396,13 @@ public static class SelfTest
         Measure(() => Key(System.Windows.Input.Key.Left));
         Measure(() => w.ToggleCharacter("b"));
         Measure(() => w.SetAlignment("center"));
+        // lot 4 : style intégré, liste numérotée, couleurs du thème (remise en page complète)
+        what = "style Titre 2";
+        Measure(() => w.ApplyStyle("heading 2"));
+        what = "numérotation";
+        Measure(() => w.ToggleList(Core.Styles.ListKind.Numbered));
+        what = "couleurs du thème";
+        Measure(() => w.SetThemeColors(3));
         if (saveCopy is not null) w.SaveCopy(saveCopy);
         Console.WriteLine("plus lentes : " + string.Join(", ", labelled.OrderByDescending(x => x.Ms).Take(4).Select(x => $"{x.What} {x.Ms:0} ms")));
         times.Sort();

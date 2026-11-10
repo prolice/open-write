@@ -23,12 +23,14 @@ public static class Fragments
     public static Fragment Extract(Story root, DocPos from, DocPos to)
     {
         if (to < from) (from, to) = (to, from);
-        if (!from.ContainerPath.SequenceEqual(to.ContainerPath))
-            throw new NotSupportedException("Plage entre des conteneurs différents : pas encore prise en charge.");
+        bool endInBlock = to.Path.Count > 1 && !from.ContainerPath.SequenceEqual(to.ContainerPath);
+        (from, to) = FormatOps.Normalize(from, to);
         var container = DocPos.ResolveContainer(root, from.ContainerPath);
         int last = to.BlockIndex;
         bool endsWithMark = false;
-        if (to.Offset == 0 && to.BlockIndex > from.BlockIndex) { last--; endsWithMark = true; }
+        // fin dans un tableau : le tableau entier est copié (il se termine par une marque de paragraphe implicite)
+        if (endInBlock) endsWithMark = true;
+        else if (to.Offset == 0 && to.BlockIndex > from.BlockIndex && container.Blocks[to.BlockIndex] is Paragraph) { last--; endsWithMark = true; }
         var tmp = new Story();
         tmp.Blocks.AddRange(container.Blocks.GetRange(from.BlockIndex, last - from.BlockIndex + 1).Select(b => b.Clone()));
         int n = tmp.Blocks.Count;
@@ -127,6 +129,9 @@ public static class Fragments
     public static DocPos Paste(UndoJournal journal, Story root, string label, DocPos from, DocPos to, Fragment fragment, Func<string> newParaId)
     {
         if (to < from) (from, to) = (to, from);
+        if (!from.ContainerPath.SequenceEqual(to.ContainerPath) && TextOps.AcrossTopLevel(from, to) is var (s, _, e, _))
+            return TextOps.Edit(journal, root, label, Array.Empty<int>(), s, e - s + 1, to,
+                () => Insert(root, TextOps.DeleteAcross(root, from, to), fragment, newParaId), p => p);
         return TextOps.Edit(journal, root, label, from.ContainerPath, from.BlockIndex, to.BlockIndex - from.BlockIndex + 1, to,
             () => Insert(root, from.Equals(to) ? from : TextOps.Delete(root, from, to), fragment, newParaId), p => p);
     }

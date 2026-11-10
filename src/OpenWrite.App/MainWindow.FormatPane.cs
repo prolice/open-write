@@ -69,11 +69,19 @@ public partial class MainWindow
 
     void BackToPage() => _pagesView?.Focus();
 
+    /// <summary>Dernier état affiché par le volet (rien à refaire s'il n'a pas changé).</summary>
+    object? _paneState;
+
     /// <summary>Volet : mise en forme du point d'insertion (police, taille, attributs, alignement, interligne).</summary>
     void RefreshFormatPane()
     {
-        PaneControls.IsEnabled = _layout is not null && _caret is not null;
+        bool enabled = _layout is not null && _caret is not null;
+        if (PaneControls.IsEnabled != enabled) PaneControls.IsEnabled = enabled;
         if (_caret is not { } c || LayoutOf(c.Paragraph) is not { } pl || CaretFormat() is not { } rf) return;
+        // valeurs affichées seulement (les formats résolus sont recréés à chaque remise en page du paragraphe)
+        var state = (rf.FontAscii, rf.FontHAnsi, rf.Size, rf.Bold, rf.Italic, rf.Underline, rf.Strike, pl.Format.Alignment, pl.Format.Line, pl.Format.LineRule, pl.Format.StyleId);
+        if (Equals(state, _paneState) && !PaneFont.IsKeyboardFocusWithin) return;
+        _paneState = state;
         _refreshingPane = true;
         try
         {
@@ -148,7 +156,7 @@ public partial class MainWindow
     {
         if (Body is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
-        if (!from.ContainerPath.SequenceEqual(to.ContainerPath)) { StatusText.Text = "La sélection traverse un tableau : mise en forme pas encore possible d'un bloc."; return; }
+        if (!SupportedRange(from, to)) return;
         var (anchor, caret) = SelectionDocPos();
         FormatOps.Apply(_journal, body, label, from, to, () => FormatOps.ApplyToParagraphs(body, from, to, apply));
         AfterFormat(label, anchor, caret);

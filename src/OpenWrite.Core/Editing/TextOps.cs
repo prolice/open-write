@@ -190,6 +190,57 @@ public static class TextOps
         return from;
     }
 
+    /// <summary>
+    /// Plage qui sort d'un tableau (ou d'un contrôle de contenu) au niveau du corps : bornes ramenées au premier niveau.
+    /// Une borne dans un bloc composé désigne ce bloc <strong>entier</strong> (offset null). Null si la plage reste à
+    /// l'intérieur d'un même bloc composé (deux cellules d'un tableau : pas encore pris en charge).
+    /// </summary>
+    public static (int Start, int? StartOffset, int End, int? EndOffset)? AcrossTopLevel(DocPos from, DocPos to)
+    {
+        if (to < from) (from, to) = (to, from);
+        if (from.Path[0] == to.Path[0]) return null;
+        return (from.Path[0], from.Path.Count == 1 ? from.Offset : null, to.Path[0], to.Path.Count == 1 ? to.Offset : null);
+    }
+
+    /// <summary>
+    /// Suppression d'une plage qui traverse des tableaux au niveau du corps : les blocs composés touchés partent entiers
+    /// (comme les rangées sélectionnées dans Word), le texte des paragraphes de bord est coupé ; les paragraphes de part et
+    /// d'autre d'un tableau supprimé ne sont pas fusionnés. Renvoie la position du point d'insertion après.
+    /// </summary>
+    public static DocPos DeleteAcross(Story root, DocPos from, DocPos to)
+    {
+        if (to < from) (from, to) = (to, from);
+        if (from.ContainerPath.SequenceEqual(to.ContainerPath)) return Delete(root, from, to);
+        if (AcrossTopLevel(from, to) is not var (s, so, e, eo))
+            throw new NotSupportedException("Sélection entre deux cellules d'un tableau : pas encore prise en charge.");
+        var blocks = root.Blocks;
+        if (so is { } a)
+        {
+            // début dans un paragraphe : fin de ce paragraphe supprimée, puis les blocs jusqu'au tableau compris
+            var p = (Paragraph)blocks[s];
+            DeleteInParagraph(p, a, ParagraphAtoms.Length(p));
+            int removeEnd = eo is null ? e : e - 1;
+            if (eo is { } b && blocks[e] is Paragraph last) DeleteInParagraph(last, 0, b);
+            blocks.RemoveRange(s + 1, removeEnd - s);
+            return new DocPos(new[] { s }, a);
+        }
+        if (eo is { } bo)
+        {
+            // début dans un tableau, fin dans un paragraphe : blocs jusqu'à ce paragraphe, début du paragraphe supprimés
+            if (blocks[e] is Paragraph last) DeleteInParagraph(last, 0, bo);
+            blocks.RemoveRange(s, e - s);
+            return new DocPos(new[] { s }, 0);
+        }
+        // deux tableaux (ou contrôles) : tout part ; un paragraphe vide reçoit le point d'insertion s'il n'y en a pas
+        blocks.RemoveRange(s, e - s + 1);
+        if (s >= blocks.Count || blocks[s] is not Paragraph)
+        {
+            var ns = root.Paragraphs().FirstOrDefault()?.Props.Ns ?? PropertyBag.TransitionalNs;
+            blocks.Insert(s, new Paragraph { Props = new PropertyBag("pPr", ns) });
+        }
+        return new DocPos(new[] { s }, 0);
+    }
+
     static void DeleteInParagraph(Paragraph p, int a, int b)
     {
         if (b <= a) return;
@@ -426,6 +477,9 @@ public static class TextOps
     public static DocPos Replace(UndoJournal journal, Story root, string label, DocPos from, DocPos to, string text, Func<string> newParaId)
     {
         if (to < from) (from, to) = (to, from);
+        if (!from.ContainerPath.SequenceEqual(to.ContainerPath) && AcrossTopLevel(from, to) is var (s, _, e, _))
+            return Edit(journal, root, label, Array.Empty<int>(), s, e - s + 1, to,
+                () => InsertMultiline(root, DeleteAcross(root, from, to), text, newParaId), p => p);
         return Edit(journal, root, label, from.ContainerPath, from.BlockIndex, to.BlockIndex - from.BlockIndex + 1, to,
             () => InsertMultiline(root, from.Equals(to) ? from : Delete(root, from, to), text, newParaId), p => p);
     }

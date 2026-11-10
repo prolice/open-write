@@ -46,6 +46,9 @@ public sealed class RulerBar : FrameworkElement
     public void Update(bool active, double origin, double scale, double pageWidth, double textLeft, double textRight,
         double left, double first, double right, IEnumerable<double> tabs)
     {
+        var tabList = tabs.ToList();
+        if (active == _active && origin == _origin && scale == _scale && pageWidth == _pageWidth && textLeft == _textLeft && textRight == _textRight
+            && left == _left && first == _first && right == _right && tabList.SequenceEqual(_tabs)) return;
         _active = active;
         _origin = origin;
         _scale = scale;
@@ -55,7 +58,7 @@ public sealed class RulerBar : FrameworkElement
         _left = left;
         _first = first;
         _right = right;
-        _tabs = tabs.ToList();
+        _tabs = tabList;
         InvalidateVisual();
     }
 

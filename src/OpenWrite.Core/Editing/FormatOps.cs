@@ -18,6 +18,7 @@ public static class FormatOps
     public static int ApplyToRuns(Story root, DocPos from, DocPos to, Action<Paragraph, Run> apply)
     {
         if (to < from) (from, to) = (to, from);
+        (from, to) = Normalize(from, to);
         if (!from.ContainerPath.SequenceEqual(to.ContainerPath))
             throw new NotSupportedException("Plage entre des conteneurs différents (cellules, contrôles) : pas encore prise en charge.");
         var container = DocPos.ResolveContainer(root, from.ContainerPath);
@@ -52,6 +53,7 @@ public static class FormatOps
     public static void ApplyToParagraphs(Story root, DocPos from, DocPos to, Action<Paragraph> apply)
     {
         if (to < from) (from, to) = (to, from);
+        (from, to) = Normalize(from, to);
         if (!from.ContainerPath.SequenceEqual(to.ContainerPath))
             throw new NotSupportedException("Plage entre des conteneurs différents (cellules, contrôles) : pas encore prise en charge.");
         var container = DocPos.ResolveContainer(root, from.ContainerPath);
@@ -63,8 +65,22 @@ public static class FormatOps
     public static void Apply(UndoJournal journal, Story root, string label, DocPos from, DocPos to, Action op)
     {
         if (to < from) (from, to) = (to, from);
-        TextOps.Edit(journal, root, label, from.ContainerPath, from.BlockIndex, to.BlockIndex - from.BlockIndex + 1, to,
-            () => { op(); return 0; }, _ => to);
+        var original = to;
+        (from, to) = Normalize(from, to);
+        TextOps.Edit(journal, root, label, from.ContainerPath, from.BlockIndex, to.BlockIndex - from.BlockIndex + 1, original,
+            () => { op(); return 0; }, _ => original);
+    }
+
+    /// <summary>
+    /// Plage qui traverse un tableau : bornes ramenées au premier niveau (un tableau touché est pris en entier, voir
+    /// <see cref="TextOps.AcrossTopLevel"/>) ; inchangée dans un même conteneur.
+    /// </summary>
+    public static (DocPos From, DocPos To) Normalize(DocPos from, DocPos to)
+    {
+        if (from.ContainerPath.SequenceEqual(to.ContainerPath)) return (from, to);
+        if (TextOps.AcrossTopLevel(from, to) is not var (s, so, e, eo))
+            throw new NotSupportedException("Plage entre deux cellules d'un tableau : pas encore prise en charge.");
+        return (new DocPos(new[] { s }, so ?? 0), new DocPos(new[] { e }, eo ?? 0));
     }
 
     // ------------------------------------------------------------------ propriétés courantes

@@ -78,6 +78,14 @@ public partial class MainWindow
     }
     internal TextPoint? AnchorPoint => _anchor;
 
+    /// <summary>Auto-test : sélection de <paramref name="anchor"/> à <paramref name="caret"/>.</summary>
+    internal void Select(TextPoint anchor, TextPoint caret)
+    {
+        _anchor = anchor;
+        _caret = caret;
+        UpdateCaret(scroll: false);
+    }
+
     // ================================================================ positions
 
     /// <summary>Ligne placée du point d'insertion et sa mise en page.</summary>
@@ -220,16 +228,31 @@ public partial class MainWindow
         var rect = _caret is { } c ? CaretRect(c) : null;
         _pagesView.Caret = rect;
         _pagesView.DrawSelection();
-        if (_caret is { } cc && LayoutOf(cc.Paragraph) is { } pl)
-        {
-            var ct = pl.Content;
-            int i = Math.Min(cc.Index, ct.Text.Length);
-            var rf = i > 0 ? ct.Styles[ct.StyleOf[i - 1]].Format : i < ct.Text.Length ? ct.Styles[ct.StyleOf[i]].Format : ct.Mark.Format;
-            PaneSelection.Text = Describe(pl.Format, rf);
-        }
-        RefreshFormatPane();
-        UpdateRuler();
+        ScheduleCaretUi();
         if (scroll && rect is { } cr) ScrollIntoView(cr.Page, cr.Rect);
+    }
+
+    bool _caretUiPending;
+
+    /// <summary>
+    /// Volet Mise en forme et règle : mis à jour une fois la rafale de touches traitée (priorité de fond), et seulement
+    /// si ce qu'ils montrent a changé — la frappe reste à quelques millisecondes.
+    /// </summary>
+    void ScheduleCaretUi()
+    {
+        if (_caretUiPending) return;
+        _caretUiPending = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _caretUiPending = false;
+            if (_caret is { } cc && LayoutOf(cc.Paragraph) is { } pl && CaretFormat() is { } rf)
+            {
+                var text = Describe(pl.Format, rf);
+                if (PaneSelection.Text != text) PaneSelection.Text = text;
+            }
+            RefreshFormatPane();
+            UpdateRuler();
+        }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     void ScrollIntoView(int page, Rect rect)
@@ -516,7 +539,7 @@ public partial class MainWindow
     {
         if (Body is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
-        if (!from.ContainerPath.SequenceEqual(to.ContainerPath)) { StatusText.Text = "La sélection traverse un tableau : pas encore modifiable d'un bloc (version suivante)."; return; }
+        if (!SupportedRange(from, to)) return;
         DocPos pos;
         try
         {
@@ -531,6 +554,17 @@ public partial class MainWindow
             return;
         }
         AfterTyping(pos);
+    }
+
+    /// <summary>
+    /// Plage modifiable d'un bloc : dans un même conteneur, ou à travers des tableaux au niveau du corps (tableaux touchés
+    /// pris en entier). Entre deux cellules d'un même tableau : pas encore (tableaux, version 0.7).
+    /// </summary>
+    bool SupportedRange(DocPos from, DocPos to, bool quiet = false)
+    {
+        if (from.ContainerPath.SequenceEqual(to.ContainerPath) || TextOps.AcrossTopLevel(from, to) is not null) return true;
+        if (!quiet) StatusText.Text = "Sélection sur plusieurs cellules d'un tableau : modification d'un bloc avec les tableaux (version 0.7).";
+        return false;
     }
 
     void NotEditable() => StatusText.Text = "Cette partie du document (en-tête, pied de page, note) n'est pas encore modifiable.";

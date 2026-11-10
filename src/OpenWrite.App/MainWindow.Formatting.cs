@@ -128,7 +128,7 @@ public partial class MainWindow
     void ApplyCharacter(string label, TextPoint a, TextPoint b, Action<Paragraph, Run> apply)
     {
         if (Body is not { } body || ToDocPos(a) is not { } from || ToDocPos(b) is not { } to) { NotEditable(); return; }
-        if (!from.ContainerPath.SequenceEqual(to.ContainerPath)) { StatusText.Text = "La sélection traverse un tableau : mise en forme pas encore possible d'un bloc."; return; }
+        if (!SupportedRange(from, to)) return;
         var (anchor, caret) = SelectionDocPos();
         FormatOps.Apply(_journal, body, label, from, to, () => FormatOps.ApplyToRuns(body, from, to, apply));
         AfterFormat(label, anchor, caret);
@@ -139,7 +139,7 @@ public partial class MainWindow
     {
         if (Body is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
-        if (!from.ContainerPath.SequenceEqual(to.ContainerPath)) { StatusText.Text = "La sélection traverse un tableau : mise en forme pas encore possible d'un bloc."; return; }
+        if (!SupportedRange(from, to)) return;
         var paragraphs = new List<Paragraph>();
         FormatOps.ApplyToParagraphs(body, from, to, paragraphs.Add);
         bool already = paragraphs.All(p => _styles?.Paragraph(p).Alignment == jc);

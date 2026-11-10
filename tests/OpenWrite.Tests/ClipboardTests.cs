@@ -153,4 +153,43 @@ public class ClipboardTests
         Assert.True(rels[id].External);
         Assert.Equal("https://exemple.be/", rels[id].Target);
     }
+
+    static string Tbl(params string[] cells) =>
+        "<w:tbl><w:tblPr/><w:tblGrid/><w:tr>" + string.Concat(cells.Select(c => $"<w:tc><w:p>{T(c)}</w:p></w:tc>")) + "</w:tr></w:tbl>";
+
+    [Fact]
+    public void Suppression_a_travers_un_tableau_le_prend_entier()
+    {
+        // « avant |texte » … tableau … « après » : sélection du milieu du 1er paragraphe jusque dans le tableau
+        var body = Body($"<w:p>{T("avant texte")}</w:p>", Tbl("A1", "B1"), $"<w:p>{T("après")}</w:p>");
+        var pos = TextOps.DeleteAcross(body, new DocPos(new[] { 0 }, 6), new DocPos(new[] { 1, 0, 1, 0 }, 1));
+        Assert.Equal(new[] { "avant ", "après" }, Texts(body));
+        Assert.DoesNotContain(body.Blocks, b => b is Table);
+        Assert.Equal(new DocPos(new[] { 0 }, 6), pos);
+        // depuis le tableau jusqu'au milieu du paragraphe suivant
+        var b2 = Body($"<w:p>{T("x")}</w:p>", Tbl("A1"), $"<w:p>{T("après")}</w:p>");
+        TextOps.DeleteAcross(b2, new DocPos(new[] { 1, 0, 0, 0 }, 0), new DocPos(new[] { 2 }, 2));
+        Assert.Equal(new[] { "x", "rès" }, Texts(b2));
+        // deux cellules d'un même tableau : refusé
+        var b3 = Body($"<w:p>{T("x")}</w:p>", Tbl("A1", "B1"), $"<w:p>{T("y")}</w:p>");
+        Assert.Throws<NotSupportedException>(() => TextOps.DeleteAcross(b3, new DocPos(new[] { 1, 0, 0, 0 }, 1), new DocPos(new[] { 1, 0, 1, 0 }, 1)));
+    }
+
+    [Fact]
+    public void Gras_et_copie_a_travers_un_tableau()
+    {
+        var body = Body($"<w:p>{T("début")}</w:p>", Tbl("A1", "B1"), $"<w:p>{T("fin")}</w:p>");
+        var from = new DocPos(new[] { 0 }, 2);
+        var to = new DocPos(new[] { 1, 0, 0, 0 }, 1);
+        FormatOps.ApplyToRuns(body, from, to, (_, r) => FormatOps.SetToggle(r, "b", true));
+        Assert.True(((Paragraph)body.Blocks[0]).Runs().Last().Props.Flag("b"));
+        Assert.All(((Table)body.Blocks[1]).Items.OfType<TableRow>().SelectMany(r => r.Items.OfType<TableCell>()).SelectMany(c => c.Content.Paragraphs()).SelectMany(p => p.Runs()),
+                   r => Assert.True(r.Props.Flag("b")));
+        Assert.False(((Paragraph)body.Blocks[2]).Runs().Single().Props.Flag("b"));
+        var frag = Fragments.Extract(body, from, to);
+        Assert.True(frag.EndsWithParagraph);
+        Assert.Equal(2, frag.Blocks.Count);
+        Assert.IsType<Table>(frag.Blocks[1]);
+        Assert.Equal("but", ((Paragraph)frag.Blocks[0]).Text);
+    }
 }

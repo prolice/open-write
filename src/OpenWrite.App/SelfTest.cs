@@ -277,6 +277,17 @@ public static class SelfTest
         ApplicationCommands.Undo.Execute(null, w);
         ApplicationCommands.Undo.Execute(null, w);
         Pump();
+        // sélection qui sort d'un tableau : de « conditions » jusqu'à « A1 », remplacée par la frappe ; le tableau part entier
+        w.FindNext("conditions", true, true);
+        var selStart = w.AnchorPoint!.Value;
+        w.FindNext("A1", true, true);
+        w.Select(selStart, w.CaretPoint!.Value);
+        Type("X");
+        Check(w.Body!.Blocks.OfType<Table>().Count() == 0 && TextOf(w.Body!.Blocks[2]) == " J'accepte les X",
+              $"Frappe sur une sélection qui traverse le tableau : « {TextOf(w.Body!.Blocks[2])} »");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(w.Body!.Blocks.OfType<Table>().Count() == 1 && TextOf(w.Body!.Blocks[2]) == " J'accepte les conditions.", "Ctrl+Z : tableau revenu");
         // tableau : Tab passe à la cellule suivante (contenu sélectionné), Maj+Tab revient… sans modifier le document
         w.FindNext("A1", true, true);
         Key(System.Windows.Input.Key.Right);
@@ -322,6 +333,8 @@ public static class SelfTest
         var view = w.PagesViewForTest!;
         var times = new List<double>();
         var updates = new List<double>();
+        var labelled = new List<(double Ms, string What)>();
+        string what = "";
         void Measure(Action a)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -329,21 +342,29 @@ public static class SelfTest
             Idle();                      // jusqu'à l'affichage compris
             times.Add(sw.Elapsed.TotalMilliseconds);
             updates.Add(w.LastUpdateMs);
+            labelled.Add((sw.Elapsed.TotalMilliseconds, what));
         }
         void Key(Key k) => view.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(view)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
         void Char(char ch) => view.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, view, ch.ToString()))
             { RoutedEvent = TextCompositionManager.TextInputEvent });
+        what = "frappe";
         foreach (var ch in "Essai de frappe au milieu du document, avec une phrase assez longue pour changer de ligne. ") Measure(() => Char(ch));
+        what = "Entrée";
         Measure(() => Key(System.Windows.Input.Key.Enter));
+        what = "frappe 2";
         foreach (var ch in "Nouveau paragraphe.") Measure(() => Char(ch));
+        what = "Retour arrière";
         for (int i = 0; i < 20; i++) Measure(() => Key(System.Windows.Input.Key.Back));
+        what = "Bas";
         for (int i = 0; i < 10; i++) Measure(() => Key(System.Windows.Input.Key.Down));
+        what = "mise en forme";
         // mise en forme du mot du point d'insertion, puis copie enregistrée (à faire ouvrir par Word)
         Measure(() => Key(System.Windows.Input.Key.Left));
         Measure(() => Key(System.Windows.Input.Key.Left));
         Measure(() => w.ToggleCharacter("b"));
         Measure(() => w.SetAlignment("center"));
         if (saveCopy is not null) w.SaveCopy(saveCopy);
+        Console.WriteLine("plus lentes : " + string.Join(", ", labelled.OrderByDescending(x => x.Ms).Take(4).Select(x => $"{x.What} {x.Ms:0} ms")));
         times.Sort();
         updates.Sort();
         Console.WriteLine($"{times.Count} touches : médiane {times[times.Count / 2]:0.0} ms, 95e centile {times[(int)(times.Count * 0.95)]:0.0} ms, max {times[^1]:0.0} ms " +

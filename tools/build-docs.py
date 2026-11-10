@@ -94,16 +94,18 @@ rapports d'erreur anonymes.</p>
 {shot("menu-fichier", "Menu Fichier d'OpenWrite")}
 """),
         ("accueil", "L'onglet Accueil", f"""
-<p>Presse-papiers, police, paragraphe, styles et recherche : comme dans Word. Coller, Couper, Copier, Gras, Italique,
-Souligné, les alignements et Sélectionner sont actifs ; les boîtes Police et Paragraphe, la recherche et les styles
-(version 0.5) arrivent ensuite.</p>
+<p>Presse-papiers, police, paragraphe, styles et recherche : comme dans Word. Tout est actif sauf les listes et les
+styles (version 0.5). L'onglet <strong>Insertion</strong> propose déjà Lien, Symbole et Saut de page ; l'onglet
+<strong>Mise en page</strong>, Retraits et Espacement (boîte Paragraphe).</p>
 {shot("onglet-accueil", "Onglet Accueil du ruban")}
 """),
         ("volets", "Les volets", f"""
 <p>À gauche, le volet de navigation a deux onglets : <strong>Pages</strong>, les miniatures de toutes les pages (un clic
 sur une miniature affiche la page), et <strong>Titres</strong>, le plan du document. À droite, le volet
-<strong>Mise en forme</strong> décrit le paragraphe du point d'insertion : style, police, taille, alignement,
-retraits, espacements, liste. Les deux se masquent depuis l'onglet <strong>Affichage</strong>, qui règle aussi le zoom
+<strong>Mise en forme</strong> montre et modifie la mise en forme du point d'insertion : police, taille, gras,
+italique, souligné, barré, alignement, interligne, et ouvre les boîtes Police et Paragraphe. Sous le ruban, la
+<strong>règle</strong> montre les marges et les retraits du paragraphe : faites glisser les triangles pour les changer,
+cliquez pour poser un taquet de tabulation, tirez un taquet hors de la règle pour le retirer. Les deux se masquent depuis l'onglet <strong>Affichage</strong>, qui règle aussi le zoom
 ({k('Ctrl')} + molette).</p>
 {shot("onglet-affichage", "Onglet Affichage du ruban")}
 """),
@@ -136,9 +138,31 @@ où se trouve le point d'insertion ; entre deux mots, la mise en forme s'appliqu
 {k('Ctrl', 'E')} centre le paragraphe, {k('Ctrl', 'J')} le justifie, {k('Ctrl', 'Maj', 'G')} et
 {k('Ctrl', 'Maj', 'D')} l'alignent à gauche et à droite. Les raccourcis de Word en anglais ({k('Ctrl', 'B')},
 {k('Ctrl', 'L')}, {k('Ctrl', 'R')}) fonctionnent aussi.</p>
-<p>{k('Ctrl', 'C')}, {k('Ctrl', 'X')} et {k('Ctrl', 'V')} copient, coupent et collent du texte, avec les autres
-programmes aussi ; chaque ligne collée devient un paragraphe.</p>
-{warn("Pas encore modifiables : les en-têtes et pieds de page, les notes, et une sélection qui sort d'un tableau. La mise en forme collée depuis un autre programme (RTF, HTML) arrive dans une prochaine version : seul le texte est collé.")}
+<p>{k('Ctrl', 'D')} ouvre la boîte <strong>Police</strong> (police, style, taille, soulignement, couleur, barré,
+exposant, indice, petites majuscules, masqué) ; la boîte <strong>Paragraphe</strong> (bouton du volet, double-clic sur
+la règle) règle l'alignement, les retraits, les espacements, l'interligne et les enchaînements.
+{k('Ctrl', 'Espace')} et {k('Ctrl', 'Q')} retirent la mise en forme ajoutée aux caractères et au paragraphe.</p>
+<p>{k('Ctrl', 'Maj', '8')} affiche les marques de mise en forme : ¶ en fin de paragraphe, · pour les espaces, → pour les
+tabulations, sauts de page.</p>
+"""),
+        ("presse-papiers", "Copier et coller", f"""
+<p>{k('Ctrl', 'C')}, {k('Ctrl', 'X')} et {k('Ctrl', 'V')} copient, coupent et collent <strong>avec la mise en
+forme</strong> : entre deux endroits du document (styles, tableaux, champs compris), depuis Word, LibreOffice ou un
+navigateur, et vers eux (gras, italique, police, taille, couleur, alignement). {k('Ctrl', 'Maj', 'V')} colle le texte
+seul. Un tableau compris dans la sélection est copié ou supprimé en entier.</p>
+{warn("Pas encore modifiables : les en-têtes et pieds de page (version 0.6), les notes (version 1.2), et une sélection sur plusieurs cellules d'un même tableau (version 0.7). Les images d'un autre programme ne sont pas encore collées.")}
+"""),
+        ("rechercher", "Rechercher et remplacer", f"""
+<p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
+Options : respecter la casse et les accents, mot entier. Le texte remplacé garde sa mise en forme ;
+<strong>Remplacer tout</strong> s'annule d'un seul {k('Ctrl', 'Z')}.</p>
+"""),
+        ("liens", "Liens hypertextes", f"""
+<p>{k('Ctrl', 'K')} transforme la sélection en lien (adresse web, adresse de courriel ou signet du document), ou
+modifie et supprime le lien sous le point d'insertion. Survolez un lien pour voir son adresse ;
+{k('Ctrl')} + clic l'ouvre. Les adresses qui ne sont ni web ni courriel demandent une confirmation.</p>
+<p><strong>Insertion ▸ Symbole</strong> insère les caractères spéciaux : €, ©, tirets, espaces insécables
+({k('Ctrl', 'Maj', 'Espace')}), flèches, lettres grecques, cases à cocher…</p>
 """),
         ("annuler", "Annuler et rétablir", f"""
 <p>{k('Ctrl', 'Z')} annule la dernière modification, {k('Ctrl', 'Y')} la rétablit. Le titre de la fenêtre affiche
@@ -212,12 +236,20 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
             ("Effacer le mot précédent, suivant", k("Ctrl", "Retour arrière") + " " + k("Ctrl", "Suppr")),
             ("Étendre la sélection", k("Maj") + " + déplacement"), ("Tout sélectionner", k("Ctrl", "A")),
             ("Copier, couper, coller", k("Ctrl", "C") + " " + k("Ctrl", "X") + " " + k("Ctrl", "V")),
+            ("Coller le texte seul", k("Ctrl", "Maj", "V")),
+            ("Rechercher, remplacer", k("Ctrl", "F") + " " + k("Ctrl", "H")),
+            ("Lien hypertexte", k("Ctrl", "K")), ("Suivre un lien", k("Ctrl") + " + clic"),
+            ("Cellule suivante, précédente (tableau)", k("Tab") + " " + k("Maj", "Tab")),
+            ("Espace insécable, trait d'union insécable", k("Ctrl", "Maj", "Espace") + " " + k("Ctrl", "Maj", "-")),
+            ("Marques de mise en forme", k("Ctrl", "Maj", "8")),
         ])),
         ("mise-en-forme", "Mise en forme", table([
             ("Gras", k("Ctrl", "G") + " ou " + k("Ctrl", "B")), ("Italique", k("Ctrl", "I")), ("Souligné", k("Ctrl", "U")),
             ("Centrer", k("Ctrl", "E")), ("Justifier", k("Ctrl", "J")),
             ("Aligner à gauche", k("Ctrl", "Maj", "G") + " ou " + k("Ctrl", "L")),
             ("Aligner à droite", k("Ctrl", "Maj", "D") + " ou " + k("Ctrl", "R")),
+            ("Police…", k("Ctrl", "D")), ("Agrandir, réduire la police", k("Ctrl", "Maj", ">") + " " + k("Ctrl", "<")),
+            ("Effacer la mise en forme des caractères, du paragraphe", k("Ctrl", "Espace") + " " + k("Ctrl", "Q")),
         ])),
     ]),
     ("faq.html", "Questions fréquentes", "Compatibilité avec Word, sauvegardes, confidentialité.", "❓", [

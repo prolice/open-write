@@ -73,7 +73,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { }
         _internalClip = null;
         if (Body is { } body && _pkg is { } pkg && Ordered() is { } sel && ToDocPos(sel.From) is { } from && ToDocPos(sel.To) is { } to
-            && from.ContainerPath.SequenceEqual(to.ContainerPath))
+            && SupportedRange(from, to, quiet: true))
         {
             try
             {
@@ -157,7 +157,7 @@ public partial class MainWindow
     {
         if (Body is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
-        if (!from.ContainerPath.SequenceEqual(to.ContainerPath)) { StatusText.Text = "La sélection traverse un tableau : pas encore modifiable d'un bloc."; return; }
+        if (!SupportedRange(from, to)) return;
         DocPos pos;
         try { pos = Fragments.Paste(_journal, body, "Coller", from, to, fragment, NewParaId()); }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or InvalidOperationException)

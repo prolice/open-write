@@ -683,3 +683,7 @@ Publiée par la pipeline (tag `v0.4.0`) : lot 3 tel que décrit en §10.10 et §
 - **Remise en page** : styles modifiés, thème → résolveur refait et document entier remis en page (≈ 1,4 s sur 301 pages) ; styles ou listes seulement **ajoutés** (`_xmlAdditive`) → `DocumentLayout.ReplaceStyles` et remise en page incrémentale (Titre 2 sur 301 pages : 1 316 → 89 ms ; test : identique à une mise en page complète) ; listes touchées → reconstruction du flux pour les numéros (`Update(rebuildFlow)`).
 - Vérifié : Word relit Titre 1, Paragraphe de liste et puces à deux niveaux (COM) ; les 25 documents du corpus modifiés (Titre 2, numérotation, couleurs du thème en plus du lot 3) s'ouvrent dans Word. Auto-test **45 vérifications**, **121 tests**.
 - Reporté : inspecteur de styles, jeux de styles, « définir par défaut » (modèle Normal de l'utilisateur), styles de tableau (lot 6), liste à plusieurs niveaux personnalisée (boîte « Définir une nouvelle liste »).
+
+### 10.14 Version 0.5.0 (2026-11-10)
+
+Publiée par la pipeline (tag `v0.5.0`) : lot 4 tel que décrit en §10.13 — galerie et boîtes de styles, styles intégrés écrits au premier usage, modifier / créer un style, puces, numéros et titres numérotés, niveaux et fin de liste, recommencer / continuer, thèmes (polices et couleurs). Jalon 0.5 retiré de la liste « Prochaines versions ».

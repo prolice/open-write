@@ -1,0 +1,55 @@
+{
+  "_lisez-moi": "Page « Fonctionnalités » du portail (tools/build-site.py). Un élément avec \"depuis\": \"X.Y.Z\" reste masqué tant que cette version n'est pas publiée (--apercu-a-venir pour le relire). Icônes : clés de ICONS dans build-site.py. Captures : scènes de OpenWrite.exe --screenshot.",
+  "sections": [
+    {
+      "id": "docx",
+      "titre": "Vos fichiers Word, sans perte",
+      "accroche": "OpenWrite n'a pas de format à lui : il ouvre et enregistre directement les documents Word, et conserve à l'identique tout ce qu'il ne sait pas encore modifier.",
+      "icone": "docx",
+      "capture": { "scene": "TabHome", "alt": "Un document Word ouvert dans OpenWrite, avec sa mise en forme" },
+      "aide": "aide/documents.html#ouvrir",
+      "elements": [
+        { "titre": "Ouverture des .docx, .docm, .dotx et .dotm", "texte": "Y compris les fichiers que Word juge endommagés ; le mode de compatibilité des anciens documents est signalé comme dans Word." },
+        { "titre": "Enregistrement sans perte", "texte": "Seules les parties modifiées sont réécrites ; images, objets et réglages inconnus sont recopiés octet pour octet. Un document enregistré sans modification reste identique." },
+        { "titre": "Champs, signets et formulaires préservés", "texte": "Les résultats des champs s'affichent, les codes restent intacts, et les cases à cocher des formulaires se cochent d'un clic." }
+      ]
+    },
+    {
+      "id": "texte",
+      "titre": "Mise en forme fidèle",
+      "accroche": "La mise en forme est calculée comme Word la calcule : styles, thème, listes et mise en forme directe, vérifiés paragraphe par paragraphe contre Word.",
+      "icone": "styles",
+      "aide": "aide/interface.html#volets",
+      "elements": [
+        { "titre": "Styles et thème du document", "texte": "Polices et couleurs du thème, styles enchaînés, listes et mise en forme directe : plus de 99 % d'accord avec Word sur nos documents de test." },
+        { "titre": "Volet Mise en forme", "texte": "Survolez un paragraphe : son style, sa police, ses retraits et espacements s'affichent à droite." },
+        { "titre": "Pagination comme dans Word", "texte": "Pages, sauts, veuves et orphelines, nombre de pages identique à Word.", "depuis": "0.3.0" },
+        { "titre": "Saisie et mise en forme directe", "texte": "Écrire, sélectionner, gras, italique, alignement, presse-papiers.", "depuis": "0.4.0" }
+      ]
+    },
+    {
+      "id": "surete",
+      "titre": "Sûreté de vos documents",
+      "accroche": "Vos documents ne sont jamais abîmés : enregistrement sûr, version précédente gardée, copies de secours automatiques.",
+      "icone": "surete",
+      "aide": "aide/documents.html#secours",
+      "elements": [
+        { "titre": "Annuler et rétablir", "texte": "Chaque modification s'annule (Ctrl+Z) et se rétablit (Ctrl+Y), jusqu'à l'état enregistré." },
+        { "titre": "Version précédente (.bak)", "texte": "À chaque enregistrement, la version d'avant est gardée à côté du document." },
+        { "titre": "Copies de secours", "texte": "Toutes les 5 minutes ; récupération proposée au démarrage après une fermeture imprévue, alerte si le fichier change sur le disque." }
+      ]
+    },
+    {
+      "id": "mises-a-jour",
+      "titre": "Mises à jour automatiques",
+      "accroche": "Les nouvelles versions arrivent d'elles-mêmes, signées et vérifiées avant installation.",
+      "icone": "mises-a-jour",
+      "aide": "aide/mises-a-jour.html#automatiques",
+      "elements": [
+        { "titre": "Installation sans droits administrateur", "texte": "Pour votre compte, en un clic ; OpenWrite s'ajoute à « Ouvrir avec » sans remplacer Word." },
+        { "titre": "Mises à jour signées", "texte": "Signature et empreinte de l'installeur vérifiées avant de le lancer." },
+        { "titre": "Feuille de route dans le ruban", "texte": "Chaque groupe du ruban affiche la version qui l'activera." }
+      ]
+    }
+  ]
+}

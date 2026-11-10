@@ -1,0 +1,52 @@
+# Integration continue : compilation et tests unitaires a chaque envoi sur main et pour chaque pull request.
+# (La publication d'une version et du portail : release-app.yml et publish-portal.yml.)
+name: Compiler et tester
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'tools/site-template/**'
+      - 'tools/build-docs.py'
+      - 'tools/build-site.py'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compiler et tester (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compilation
+        run: dotnet build OpenWrite.sln -c Release --nologo
+
+      - name: Tests unitaires
+        run: dotnet test tests/OpenWrite.Tests -c Release --no-build --nologo
+
+  site-api:
+    name: Relais des rapports d'erreur (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tools/site-api
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Tests
+        working-directory: tools/site-api
+        run: node --test

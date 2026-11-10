@@ -1,0 +1,6 @@
+{
+  "name": "openwrite-site-api",
+  "private": true,
+  "description": "Relais des rapports d'erreur d'OpenWrite vers les issues GitHub (fonction geree d'Azure Static Web Apps)",
+  "scripts": { "test": "node --test" }
+}

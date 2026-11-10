@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OpenWrite : installeur MSI par utilisateur. Installe dans %LOCALAPPDATA%\Programs\OpenWrite, cree un raccourci
+     dans le menu Demarrer et ajoute OpenWrite a « Ouvrir avec » des documents Word, sans remplacer le programme
+     par defaut (Word reste associe aux .docx s'il est installe). GUID propres a OpenWrite (aucun repris d'OpenPub). -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="OpenWrite"
+           Manufacturer="OpenWrite"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="D8165725-6EC2-4696-A7D6-F0B2CB518350"
+           Scope="perUser"
+           Language="1036"
+           Codepage="1252">
+    <SummaryInformation Description="OpenWrite — traitement de texte" />
+
+    <MajorUpgrade DowngradeErrorMessage="Une version plus récente d'OpenWrite est déjà installée." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="OpenWriteIcon" SourceFile="$(AssetsDir)\openwrite.ico" />
+    <Property Id="ARPPRODUCTICON" Value="OpenWriteIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="OpenWrite" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="OpenWrite" Level="1">
+      <!-- Executable autonome (runtime .NET inclus) -->
+      <Component Id="AppExe" Directory="INSTALLFOLDER" Guid="106A6975-138B-4FBF-A056-C61DD360C8A0">
+        <File Id="OpenWriteExe" Source="$(PublishDir)\OpenWrite.exe" />
+        <RegistryValue Root="HKCU" Key="Software\OpenWrite" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
+      </Component>
+
+      <!-- Raccourci dans le menu Demarrer -->
+      <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="2448FEF1-6FAD-4101-A880-1A3437DFD5E0">
+        <Shortcut Id="OpenWriteShortcut" Name="OpenWrite" Description="Traitement de texte"
+                  Target="[INSTALLFOLDER]OpenWrite.exe" WorkingDirectory="INSTALLFOLDER" Icon="OpenWriteIcon" />
+        <RegistryValue Root="HKCU" Key="Software\OpenWrite" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <!-- « Ouvrir avec » : type de fichier OpenWrite.Document propose pour les documents Word (OpenWithProgids),
+           sans toucher a la valeur par defaut des extensions -->
+      <Component Id="OpenWith" Directory="INSTALLFOLDER" Guid="CCBB2684-A739-4342-8876-B09F0B086112">
+        <RegistryValue Root="HKCU" Key="Software\Classes\OpenWrite.Document" Type="string" Value="Document Word (OpenWrite)" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\OpenWrite.Document\DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]OpenWrite.exe&quot;,0" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\OpenWrite.Document\shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]OpenWrite.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.docx\OpenWithProgids" Name="OpenWrite.Document" Type="string" Value="" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.docm\OpenWithProgids" Name="OpenWrite.Document" Type="string" Value="" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.dotx\OpenWithProgids" Name="OpenWrite.Document" Type="string" Value="" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.dotm\OpenWithProgids" Name="OpenWrite.Document" Type="string" Value="" />
+      </Component>
+    </Feature>
+  </Package>
+</Wix>

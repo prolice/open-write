@@ -1,0 +1,178 @@
+# Publie une nouvelle version de l'application OpenWrite :
+# tests -> executable autonome -> installeur MSI -> latest.json signe -> portail (accueil, fonctionnalites, aide)
+# -> release GitHub -> envoi sur Azure Static Web Apps (les PC recoivent la mise a jour automatique).
+#
+# Declenchement : etiquette vX.Y.Z (git tag -a v0.3.0 -m "Nouveautes" && git push origin v0.3.0)
+#                 ou manuel (onglet Actions), avec un mode « essai » qui construit sans publier.
+# Secrets : UPDATE_SIGNING_KEY (cle privee PEM de signature des mises a jour),
+#           AZURE_STATIC_WEB_APPS_API_TOKEN (jeton de deploiement du site).
+name: Publier une version de l'app
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version à publier (X.Y.Z)'
+        required: true
+      notes:
+        description: 'Nouveautés (affichées dans l''application et sur la page de téléchargement)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Essai : tout construire sans publier'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# un seul envoi vers le portail a la fois (partage avec la pipeline du portail)
+concurrency:
+  group: portail-openwrite
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Construire (Windows)
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Version et nouveautés
+        id: meta
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_NOTES: ${{ inputs.notes }}
+          INPUT_DRY: ${{ inputs.dry_run }}
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'push') {
+            $version = $env:GITHUB_REF_NAME.TrimStart('v')
+            $notes = (git tag -l --format='%(contents:subject)' $env:GITHUB_REF_NAME) -join ' '
+            $dry = 'false'
+          } else {
+            $version = $env:INPUT_VERSION.Trim().TrimStart('v')
+            $notes = $env:INPUT_NOTES
+            $dry = $env:INPUT_DRY
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Version invalide : '$version' (attendu : X.Y.Z)" }
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "dry_run=$dry" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Set-Content -Path "$env:RUNNER_TEMP\notes.txt" -Value $notes -Encoding utf8 -NoNewline
+          Write-Host "Version $version (essai : $dry) — $notes"
+
+      - name: Tests
+        run: dotnet test tests/OpenWrite.Tests -c Release --nologo
+
+      - name: Exécutable autonome
+        run: >
+          dotnet publish src/OpenWrite.App/OpenWrite.App.csproj -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:DebugType=none -p:Version=${{ steps.meta.outputs.version }} -o dist/OpenWrite --nologo
+
+      - name: Installeur MSI
+        shell: pwsh
+        run: |
+          dotnet build installer/OpenWrite.Installer.wixproj -c Release -p:ProductVersion=${{ steps.meta.outputs.version }} --nologo
+          Copy-Item installer/bin/x64/Release/OpenWrite-${{ steps.meta.outputs.version }}.msi dist/
+
+      - name: Clé de signature
+        shell: pwsh
+        env:
+          SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          $key = "$env:RUNNER_TEMP\update-signing-key.pem"
+          if ($env:SIGNING_KEY) {
+            Set-Content -Path $key -Value $env:SIGNING_KEY -Encoding ascii
+          } elseif ('${{ steps.meta.outputs.dry_run }}' -eq 'true') {
+            # essai sans secret : cle jetable (le resultat n'est jamais publie)
+            dist/OpenWrite/OpenWrite.exe --gen-update-key $key | Out-Null
+            Write-Host "::warning::Secret UPDATE_SIGNING_KEY absent : signature avec une clé jetable (essai uniquement)."
+          } else {
+            throw "Le secret UPDATE_SIGNING_KEY est requis pour publier."
+          }
+
+      - name: Résolution d'écran (captures en pleine taille)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # l'ecran virtuel des machines GitHub est en 1024x768 : Windows y limite la taille des fenetres
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Get-CimInstance Win32_VideoController | ForEach-Object { "Écran : $($_.CurrentHorizontalResolution) x $($_.CurrentVerticalResolution)" }
+
+      - name: Portail (accueil, fonctionnalités, aide en ligne)
+        shell: pwsh
+        env:
+          # lecture des releases : la version précédente est proposée en lien vers sa release GitHub
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = '${{ steps.meta.outputs.version }}'
+          $notes = Get-Content "$env:RUNNER_TEMP\notes.txt" -Raw -Encoding utf8
+          if ($null -eq $notes) { $notes = '' }
+          python tools/build-site.py --out work/site --exe dist/OpenWrite/OpenWrite.exe --msi "dist/OpenWrite-$v.msi" `
+            --sign-key "$env:RUNNER_TEMP\update-signing-key.pem" --version $v --notes "$notes"
+          if ($LASTEXITCODE -ne 0) { throw "Échec de la construction du portail" }
+
+      - name: Effacer la clé de signature
+        if: always()
+        shell: pwsh
+        run: Remove-Item "$env:RUNNER_TEMP\update-signing-key.pem" -ErrorAction SilentlyContinue
+
+      - name: Conserver le portail et l'application
+        uses: actions/upload-artifact@v7
+        with:
+          name: openwrite-${{ steps.meta.outputs.version }}
+          path: |
+            work/site
+            dist/OpenWrite/OpenWrite.exe
+          retention-days: 14
+
+  publish:
+    name: Publier (release GitHub + Azure)
+    needs: build
+    if: needs.build.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    environment: portail
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tools/site-api
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: openwrite-${{ needs.build.outputs.version }}
+          path: artefact
+
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.build.outputs.version }}
+        run: |
+          NOTES=$(python3 -c "import json;print(json.load(open('artefact/work/site/latest.json',encoding='utf-8-sig')).get('notes') or '')")
+          gh release create "v$V" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "OpenWrite $V" --notes "$NOTES" \
+            "artefact/work/site/OpenWrite-$V.msi" "artefact/dist/OpenWrite/OpenWrite.exe" "artefact/work/site/latest.json"
+
+      - name: Envoi sur Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: artefact/work/site
+          output_location: ''
+          skip_app_build: true
+          api_location: tools/site-api   # fonction /api/crash (sans dependance)

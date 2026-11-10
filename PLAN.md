@@ -566,3 +566,14 @@ Restent hors du résolveur : mise en forme conditionnelle des styles de tableau 
 - **Auto-test de bout en bout** `--selftest <dossier>` (vraie fenêtre hors écran, document fabriqué) : 13 vérifications — ouverture, clic sur la case, titre modifié, Ctrl+Z ramène à l'état enregistré, Ctrl+Y, Ctrl+S, relecture (seule la case a changé), `.bak`.
 
 **Bilan du lot 1** (estimé 20,5 jours) : prototype d'aller-retour, modèle en flux, champs et signets, positions, annuler/rétablir, résolution des styles, enregistrement depuis l'application. 73 tests unitaires, 13 vérifications de bout en bout, banc sur 25 documents (aller-retour, 6 modifications, annuler/rétablir), vues de Word et d'OpenWrite comparées pour les champs, signets et la mise en forme. Prochain lot : **lot 2 — pagination et affichage (0.3)**, en commençant par le prototype de performance sur un document de 300 pages (§8.3).
+
+### 10.6 Lot 0 — publication : pipelines, installeur, portail Azure (2026-11-10)
+
+- **Dépôt public** https://github.com/prolice/open-write (premier commit : lots 0 et 1, version 0.2.0 ; `samples/` et `work/` exclus, vérifiés).
+- **Azure** (abonnement « Azure Noise2Quite », coût 0 €) : groupe de ressources `rg-openwrite-updates` (Europe de l'Ouest) et Static Web App **`openwrite-updates`, offre Free** : https://gentle-glacier-0e0efdd03.3.azurestaticapps.net. Quotas vérifiés : groupes de ressources gratuits, 980 par abonnement (4 utilisés) ; **10 Static Web Apps Free par abonnement** (3 utilisées : noise2quite, openpub, openwrite) ; 250 Mo par site, 100 Go de bande passante par mois.
+- **Pipelines GitHub Actions** reprises d'OpenPub : `ci.yml` (nouveau : compilation et tests à chaque envoi), `release-app.yml` (étiquette `vX.Y.Z` → tests, exécutable autonome, MSI, `latest.json` signé, portail, release GitHub, Azure), `publish-portal.yml` (sans release : simple avertissement, rien n'est publié).
+- **Installeur WiX** par utilisateur, GUID propres ; OpenWrite s'ajoute à « Ouvrir avec » des `.docx/.docm/.dotx/.dotm` (`OpenWithProgids`) **sans devenir le programme par défaut** (Word reste associé).
+- **Portail** : charte OpenWrite (styles d'OpenPub recolorés bleu/cyan/orange), page de téléchargement, page Fonctionnalités (4 domaines, éléments à venir masqués jusqu'à leur version), **aide en ligne** (7 pages, 21 sections ; les 10 liens contextuels de l'application vérifiés). Captures sur un **document de démonstration fictif** fabriqué par `build-site.py` (jamais le corpus). Construction locale vérifiée : site de 59 Mo (MSI 58 Mo) pour 230 Mo autorisés.
+- **Clé de signature** OpenWrite créée (`%APPDATA%\OpenWrite\update-signing-key.pem`) ; clé publique, flux, rapports d'erreur et aide renseignés dans `OpenWrite.App.csproj`.
+- Reste : secrets GitHub `UPDATE_SIGNING_KEY` et `AZURE_STATIC_WEB_APPS_API_TOKEN`, réglage `GITHUB_TOKEN` du relais d'erreurs, puis première release `v0.2.0` par la pipeline.
+

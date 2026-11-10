@@ -1,0 +1,14 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!-- Installeur MSI par utilisateur (sans droits administrateur).
+       Construire d'abord l'executable autonome : voir tools/build-installer.ps1.
+       La version se fixe a la construction : dotnet build ... -p:ProductVersion=X.Y.Z -->
+  <PropertyGroup>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.2.0</ProductVersion>
+    <OutputName>OpenWrite-$(ProductVersion)</OutputName>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>PublishDir=$(MSBuildProjectDirectory)\..\dist\OpenWrite;AssetsDir=$(MSBuildProjectDirectory)\..\src\OpenWrite.App\Assets;ProductVersion=$(ProductVersion)</DefineConstants>
+    <SuppressIces>ICE38;ICE64;ICE91</SuppressIces>
+  </PropertyGroup>
+</Project>

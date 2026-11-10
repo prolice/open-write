@@ -1,0 +1,126 @@
+# Publie une nouvelle version du portail web (accueil/telechargement, fonctionnalites, aide en ligne) sans
+# reconstruire l'application : l'installeur, l'executable et le latest.json signe sont repris de la derniere
+# release GitHub ; la version precedente est un lien vers l'installeur de sa propre release (rien sur Azure).
+#
+# Declenchement : modification du portail sur main (modele de page, aide, charte) ou manuel (onglet Actions).
+# Secret : AZURE_STATIC_WEB_APPS_API_TOKEN.
+name: Publier le portail
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/site-template/**'
+      - 'tools/build-docs.py'
+      - 'tools/build-site.py'
+      - 'tools/site-api/**'
+      - 'assets/OpenWrite-package-complet/**'
+      - '.github/workflows/publish-portal.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Essai : construire sans publier'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portail-openwrite
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Construire le portail (Windows)
+    runs-on: windows-latest
+    outputs:
+      dry_run: ${{ steps.mode.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Mode
+        id: mode
+        shell: pwsh
+        env:
+          INPUT_DRY: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dry = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_DRY } else { 'false' }
+          # avant la premiere release de l'application, il n'y a rien a publier : le portail est construit avec
+          # la pipeline « Publier une version de l'app » (pas d'echec ici, seulement un avertissement)
+          $rel = gh release list --repo $env:GITHUB_REPOSITORY --limit 1 --json tagName --jq '.[0].tagName'
+          $has = if ($rel) { 'true' } else { 'false' }
+          if (-not $rel) {
+            $dry = 'true'
+            Write-Host "::warning::Aucune release de l'application : publiez d'abord une version (pipeline « Publier une version de l'app »)."
+          }
+          "dry_run=$dry" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "has_release=$has" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Dernière version publiée de l'application
+        if: steps.mode.outputs.has_release == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo $env:GITHUB_REPOSITORY --dir release --pattern 'OpenWrite-*.msi' --pattern 'OpenWrite.exe' --pattern 'latest.json'
+          if ($LASTEXITCODE -ne 0) { throw "Aucune release de l'application : publiez d'abord une version (pipeline « Publier une version de l'app »)." }
+          Get-ChildItem release | Format-Table Name, Length
+
+      - name: Résolution d'écran (captures en pleine taille)
+        if: steps.mode.outputs.has_release == 'true'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # l'ecran virtuel des machines GitHub est en 1024x768 : Windows y limite la taille des fenetres
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Get-CimInstance Win32_VideoController | ForEach-Object { "Écran : $($_.CurrentHorizontalResolution) x $($_.CurrentVerticalResolution)" }
+
+      - name: Portail (accueil, fonctionnalités, aide en ligne)
+        if: steps.mode.outputs.has_release == 'true'
+        shell: pwsh
+        env:
+          # lecture des releases : la version précédente est proposée en lien vers sa release GitHub
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $msi = (Get-ChildItem release/OpenWrite-*.msi | Select-Object -First 1).FullName
+          python tools/build-site.py --out work/site --exe release/OpenWrite.exe --msi $msi --manifest release/latest.json
+          if ($LASTEXITCODE -ne 0) { throw "Échec de la construction du portail" }
+
+      - uses: actions/upload-artifact@v7
+        if: steps.mode.outputs.has_release == 'true'
+        with:
+          name: portail
+          path: work/site
+          retention-days: 14
+
+  publish:
+    name: Publier sur Azure
+    needs: build
+    if: needs.build.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    environment: portail
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: tools/site-api
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: portail
+          path: site
+
+      - name: Envoi sur Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: site
+          output_location: ''
+          skip_app_build: true
+          api_location: tools/site-api   # fonction /api/crash (sans dependance)

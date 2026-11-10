@@ -408,7 +408,7 @@ public partial class MainWindow
             case Key.C when ctrl:
             case Key.Insert when ctrl: Copy(); break;
             case Key.X when ctrl: Cut(); break;
-            case Key.V when ctrl:
+            case Key.V when ctrl: Paste(textOnly: shift); break;
             case Key.Insert when shift: Paste(); break;
             default: handled = false; break;
         }
@@ -600,32 +600,6 @@ public partial class MainWindow
         if (ToDocPos(c) is not { } at) { NotEditable(); return; }
         if (kind == SpecialChar.ColumnBreak) kind = SpecialChar.PageBreak;      // colonnes : plus tard (lot 5)
         AfterTyping(TextOps.InsertSpecial(_journal, body, at, kind));
-    }
-
-    // ================================================================ presse-papiers (texte ; RTF et HTML viendront ensuite)
-
-    internal void Copy()
-    {
-        var text = SelectedText();
-        if (text.Length == 0) return;
-        try { Clipboard.SetText(text); }
-        catch (System.Runtime.InteropServices.ExternalException) { StatusText.Text = "Le presse-papiers est occupé par un autre programme : réessayez."; }
-    }
-
-    void Cut()
-    {
-        if (!HasSelection) return;
-        Copy();
-        DeleteSelection("Couper");
-    }
-
-    void Paste()
-    {
-        string? text = null;
-        try { if (Clipboard.ContainsText()) text = Clipboard.GetText(); }
-        catch (System.Runtime.InteropServices.ExternalException) { }
-        if (string.IsNullOrEmpty(text)) return;
-        ReplaceSelection(text, "Coller");
     }
 
     // ================================================================ après une modification

@@ -224,6 +224,39 @@ public static class SelfTest
         ApplicationCommands.Undo.Execute(null, w);
         Pump();
         Check(TextOf(w.Body!.Blocks[1]) == "Deuxième ligne", "Ctrl+Z : remplacement annulé d'un coup");
+        // presse-papiers (0.4) : copier dépose texte, RTF et HTML ; coller dans le document garde la mise en forme
+        w.FindNext("Deuxième ligne", true, false);
+        w.Copy();
+        Check(Clipboard.ContainsText() && Clipboard.ContainsData(DataFormats.Rtf) && Clipboard.ContainsData(DataFormats.Html)
+              && (Clipboard.GetData(DataFormats.Rtf) as string ?? "").Contains("\\b"), "Copier : texte, RTF (gras) et HTML");
+        File.WriteAllText(Path.Combine(outDir, "copie.rtf"), Clipboard.GetData(DataFormats.Rtf) as string ?? "", System.Text.Encoding.ASCII);
+        Key(System.Windows.Input.Key.End);
+        Key(System.Windows.Input.Key.Enter);
+        w.Paste();
+        Pump();
+        var pasted = (Paragraph)w.Body!.Blocks[2];
+        Check(TextOf(pasted) == "Deuxième ligne" && pasted.Runs().Any(r => r.Text.Contains("ligne") && r.Props.Flag("b")), "Coller (interne) : texte et gras");
+        // comme un autre programme : le presse-papiers ne contient plus que du RTF (on attend qu'il soit visible)
+        for (int k = 0; k < 20; k++)
+        {
+            try
+            {
+                Clipboard.SetDataObject(new DataObject(DataFormats.Rtf, "{\\rtf1\\ansi {\\i Italique} venu d'ailleurs}"), true);
+                if (Clipboard.ContainsData(DataFormats.Rtf) && !Clipboard.ContainsData("OpenWrite.Fragment")) break;
+            }
+            catch (System.Runtime.InteropServices.ExternalException) { }
+            System.Threading.Thread.Sleep(50);
+            Pump();
+        }
+        w.Paste();
+        Pump();
+        Check(TextOf(w.Body!.Blocks[2]).EndsWith("Italique venu d'ailleurs") && ((Paragraph)w.Body!.Blocks[2]).Runs().Any(r => r.Text == "Italique" && r.Props.Flag("i")),
+              $"Coller du RTF d'un autre programme : italique gardé ({w.StatusText.Text} ; « {TextOf(w.Body!.Blocks[2])} »)");
+        ApplicationCommands.Undo.Execute(null, w);
+        ApplicationCommands.Undo.Execute(null, w);
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(w.Body!.Blocks.Count == 4, "Ctrl+Z ×3 : collages et nouveau paragraphe annulés");
         Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
         var reread = DocxPackage.Open(file).Main!.Stories().First();
         Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"

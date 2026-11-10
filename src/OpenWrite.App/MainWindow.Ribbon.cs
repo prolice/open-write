@@ -90,7 +90,7 @@ public partial class MainWindow
     /// <summary>Commandes de l'onglet Accueil déjà disponibles, par libellé de bouton.</summary>
     Dictionary<string, (Action Run, string Tip)> HomeCommands() => new()
     {
-        ["Coller"] = (Paste, "Coller (Ctrl+V) — texte"),
+        ["Coller"] = (() => Paste(), "Coller (Ctrl+V) ; texte seul : Ctrl+Maj+V"),
         ["Police"] = (ShowFontDialog, "Police… (Ctrl+D)"),
         ["Couper"] = (Cut, "Couper (Ctrl+X)"),
         ["Copier"] = (Copy, "Copier (Ctrl+C)"),

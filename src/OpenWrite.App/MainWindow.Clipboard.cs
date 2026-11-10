@@ -64,6 +64,22 @@ public partial class MainWindow
         if (text.Length == 0) return;
         var data = new DataObject();
         data.SetText(text, TextDataFormat.UnicodeText);
+        if (CellSelection() is { } cells)
+        {
+            // cellules : tableau HTML pour les autres programmes, morceau de tableau pour le même document
+            try { data.SetData(DataFormats.Html, CfHtml(CellSelectionHtml(cells))); }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { }
+            _internalClip = null;
+            if (_pkg is { } p)
+            {
+                var token = Guid.NewGuid().ToString("N");
+                _internalClip = (token, p, new Fragment(new List<Block> { TableOps.Extract(cells.Table, cells.R0, cells.C0, cells.R1, cells.C1) }, false));
+                data.SetData(InternalFormat, token);
+            }
+            try { Clipboard.SetDataObject(data, copy: true); }
+            catch (System.Runtime.InteropServices.ExternalException) { StatusText.Text = "Le presse-papiers est occupé par un autre programme : réessayez."; }
+            return;
+        }
         var (paras, endsWithMark) = SelectedParagraphs();
         try
         {
@@ -127,6 +143,12 @@ public partial class MainWindow
 
     void PasteOnce(bool textOnly)
     {
+        // sur une sélection de cellules : collage au début de la première cellule
+        if (CellSelection() is { } cells && CellStart(cells.Table, cells.R0, cells.C0) is { } start && FromDocPos(start) is { } first)
+        {
+            _anchor = null;
+            _caret = first;
+        }
         Fragment? fragment = null;
         string? text = null;
         string source = "texte";
@@ -136,6 +158,13 @@ public partial class MainWindow
             {
                 fragment = clip.Fragment;
                 source = "OpenWrite";
+            }
+            // tableau HTML (Excel, page web, autre traitement de texte) : un vrai tableau, avant le RTF qui le met à plat
+            else if (!textOnly && Clipboard.ContainsData(DataFormats.Html) && ReadString(DataFormats.Html, Encoding.UTF8) is { Length: > 0 } tableHtml
+                && HtmlTable(HtmlReader.Fragment(FixHtmlEncoding(tableHtml))) is { } pasted)
+            {
+                fragment = pasted;
+                source = "tableau HTML";
             }
             else if (!textOnly && Clipboard.ContainsData(DataFormats.Rtf) && ReadString(DataFormats.Rtf, Encoding.Latin1) is { Length: > 0 } rtf)
             {
@@ -167,6 +196,57 @@ public partial class MainWindow
         }
         AfterTyping(pos);
         StatusText.Text = $"Collé avec la mise en forme ({source}). Ctrl+Maj+V pour coller le texte seul.";
+    }
+
+    /// <summary>
+    /// Premier tableau d'un fragment HTML (cellules &lt;td&gt; / &lt;th&gt;, colspan) en tableau du modèle : le contenu de
+    /// chaque cellule garde sa mise en forme (lecteur HTML), traits simples d'un demi-point comme Word quand il colle
+    /// depuis Excel. Null s'il n'y a pas de tableau.
+    /// </summary>
+    Fragment? HtmlTable(string html)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(html, @"<table\b[^>]*>(.*?)</table>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) return null;
+        var rows = System.Text.RegularExpressions.Regex.Matches(m.Groups[1].Value, @"<tr\b[^>]*>(.*?)</tr>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Select(r => System.Text.RegularExpressions.Regex.Matches(r.Groups[1].Value, @"<t[dh]\b([^>]*)>(.*?)</t[dh]>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                .Select(c => (Span: System.Text.RegularExpressions.Regex.Match(c.Groups[1].Value, @"colspan\s*=\s*""?(\d+)") is { Success: true } cs ? Math.Clamp(int.Parse(cs.Groups[1].Value), 1, 63) : 1,
+                    Html: c.Groups[2].Value, Header: c.Value.StartsWith("<th", StringComparison.OrdinalIgnoreCase))).ToList())
+            .Where(r => r.Count > 0).ToList();
+        if (rows.Count == 0) return null;
+        int cols = Math.Min(63, rows.Max(r => r.Sum(c => c.Span)));
+        var w = Body?.Paragraphs().FirstOrDefault()?.Props.Ns ?? (System.Xml.Linq.XNamespace)PropertyBag.TransitionalNs;
+        double width = _caret is { } cc && LayoutOf(cc.Paragraph) is { } pl ? pl.Width : 450;
+        var table = TableOps.Create(w, rows.Count, cols, width, null, null, NewParaId());
+        var line = new TableOps.Line("single", 4, "auto");
+        var borders = new System.Xml.Linq.XElement(w + "tblBorders",
+            new[] { "top", "left", "bottom", "right", "insideH", "insideV" }.Select(side => line.Element(w, side)));
+        table.Props.Set(borders);
+        var map = new TableOps.Map(table);
+        for (int r = 0; r < rows.Count; r++)
+        {
+            int col = 0;
+            foreach (var (span, cellHtml, header) in rows[r])
+            {
+                if (col >= cols || map.At(r, col) is not { } slot) break;
+                var cellParas = HtmlReader.Read(header ? $"<b>{cellHtml}</b>" : cellHtml, out _);
+                var built = Fragments.Build(cellParas, true, w);
+                slot.Cell.Content.Blocks.Clear();
+                slot.Cell.Content.Blocks.AddRange(built.Blocks.Where(b => b is Paragraph));
+                if (slot.Cell.Content.Blocks.Count == 0) slot.Cell.Content.Blocks.Add(TableOps.EmptyParagraph(w, null, NewParaId()));
+                col += span;
+            }
+        }
+        // cellules fusionnées (colspan) : fusion horizontale dans la grille
+        for (int r = rows.Count - 1; r >= 0; r--)
+        {
+            int col = 0;
+            foreach (var (span, _, _) in rows[r])
+            {
+                if (span > 1 && col + span - 1 < cols) TableOps.Merge(table, r, col, r, col + span - 1, NewParaId());
+                col += span;
+            }
+        }
+        return new Fragment(new List<Block> { table }, false);
     }
 
     /// <summary>Certains programmes déposent le HTML en UTF-8 lu comme du Latin-1 (« Ã© » pour « é ») : on le redécode.</summary>

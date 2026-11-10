@@ -137,7 +137,9 @@ public partial class MainWindow : Window
     void HasDoc_CanExecute(object sender, CanExecuteRoutedEventArgs e) => e.CanExecute = _info is not null;
     void Help_Executed(object sender, ExecutedRoutedEventArgs e) => Help.HelpService.Open(CurrentHelpTopic(), this);
 
-    string CurrentHelpTopic() => _info is null ? Help.HelpService.OpenDocument : TabHome.IsChecked == true ? Help.HelpService.HomeTab : Help.HelpService.Roadmap;
+    string CurrentHelpTopic() => _info is null ? Help.HelpService.OpenDocument : TabHome.IsChecked == true ? Help.HelpService.HomeTab
+        : _tableDesignTab?.IsChecked == true || _tableLayoutTab?.IsChecked == true ? Help.HelpService.Tables
+        : _headerTab?.IsChecked == true ? Help.HelpService.HeadersFooters : Help.HelpService.Roadmap;
 
     void Window_DragOver(object sender, DragEventArgs e)
     {

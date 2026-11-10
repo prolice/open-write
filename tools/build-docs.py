@@ -151,7 +151,7 @@ tabulations, sauts de page.</p>
 forme</strong> : entre deux endroits du document (styles, tableaux, champs compris), depuis Word, LibreOffice ou un
 navigateur, et vers eux (gras, italique, police, taille, couleur, alignement). {k('Ctrl', 'Maj', 'V')} colle le texte
 seul. Un tableau compris dans la sélection est copié ou supprimé en entier.</p>
-{warn("Pas encore modifiables : les notes (version 1.2) et une sélection sur plusieurs cellules d'un même tableau (version 0.7). Les images d'un autre programme ne sont pas encore collées.")}
+{warn("Pas encore modifiables : les notes (version 1.2). Les images d'un autre programme ne sont pas encore collées.")}
 """),
         ("styles", "Styles", f"""
 <p>Un style donne d'un coup la police, la taille, les espacements… d'un paragraphe ; le modifier change tous les
@@ -199,6 +199,28 @@ apparaît. {k('Échap')} ou un double-clic dans la page ramène au document.</p>
 numéros — 1, i, I, a, A — et numéro de départ de la section), <strong>Atteindre</strong> (de l'en-tête au pied),
 <strong>1re page différente</strong>, <strong>Paires et impaires</strong> différentes, <strong>Lier au précédent</strong>
 (reprendre l'en-tête de la section précédente ou en avoir un propre) et la <strong>Position</strong> de l'en-tête et du pied.</p>
+"""),
+        ("tableaux", "Tableaux", f"""
+<p><strong>Insertion ▸ Tableau</strong> : survolez la grille pour choisir le nombre de colonnes et de lignes, ou
+ouvrez <strong>Insérer un tableau…</strong> (largeur de colonne fixe, ajuster au contenu, ajuster à la fenêtre).
+<strong>Convertir le texte en tableau…</strong> fait un tableau des paragraphes sélectionnés, cellules coupées aux
+tabulations, points-virgules ou virgules. Un tableau copié depuis Excel ou une page web est collé en vrai tableau.</p>
+<p>{k('Tab')} passe à la cellule suivante ({k('Maj', 'Tab')} : précédente) ; dans la dernière cellule, il ajoute une
+ligne. <strong>Glissez d'une cellule à l'autre</strong> pour sélectionner un rectangle de cellules : mise en forme,
+copie, suppression du contenu et fusion s'y appliquent. Tirez une <strong>bordure de cellule</strong> à la souris pour
+changer la largeur d'une colonne (le tableau garde sa largeur) ou la hauteur d'une ligne.
+{k('Ctrl', 'Maj', 'Entrée')} coupe le tableau au-dessus de la ligne du point d'insertion.</p>
+<p>Deux onglets apparaissent quand le point d'insertion est dans un tableau. <strong>Création de tableau</strong> :
+options de style (ligne d'en-tête, ligne des totaux, lignes et colonnes à bandes, première et dernière colonnes),
+<strong>galerie des styles</strong> de Word aux couleurs du thème du document, <strong>trame</strong> et
+<strong>bordures</strong> (choisissez d'abord le trait). <strong>Disposition</strong> : sélectionner, quadrillage,
+insérer et supprimer lignes et colonnes, <strong>fusionner</strong> et <strong>fractionner</strong> les cellules,
+fractionner le tableau, ajustement automatique, distribuer lignes et colonnes, alignement du texte dans les cellules,
+<strong>trier</strong>, répéter les lignes d'en-tête sur chaque page, <strong>convertir en texte</strong>,
+<strong>formule</strong> (=SUM(ABOVE), AVERAGE, MIN, MAX…) et <strong>Propriétés</strong> (alignement et retrait du
+tableau, hauteur des lignes, largeur des colonnes, alignement vertical, marges des cellules). Le clic droit dans un
+tableau propose aussi d'insérer, de supprimer, de fusionner et de fractionner.</p>
+{warn("Pas encore : l'orientation verticale du texte dans une cellule, les tableaux flottants habillés par le texte (version 1.0), le dessin de tableau à la gomme.")}
 """),
         ("rechercher", "Rechercher et remplacer", f"""
 <p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
@@ -287,7 +309,8 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
             ("Coller le texte seul", k("Ctrl", "Maj", "V")),
             ("Rechercher, remplacer", k("Ctrl", "F") + " " + k("Ctrl", "H")),
             ("Lien hypertexte", k("Ctrl", "K")), ("Suivre un lien", k("Ctrl") + " + clic"),
-            ("Cellule suivante, précédente (tableau)", k("Tab") + " " + k("Maj", "Tab")),
+            ("Cellule suivante, précédente (tableau) ; nouvelle ligne dans la dernière cellule", k("Tab") + " " + k("Maj", "Tab")),
+            ("Fractionner le tableau au-dessus de la ligne", k("Ctrl", "Maj", "Entrée")),
             ("Espace insécable, trait d'union insécable", k("Ctrl", "Maj", "Espace") + " " + k("Ctrl", "Maj", "-")),
             ("Marques de mise en forme", k("Ctrl", "Maj", "8")),
         ])),

@@ -31,7 +31,8 @@ function Fill($t, [string]$prefix) {
 }
 # style par son nom local, espaces insécables comprises (« Tableau Grille 4 - Accentuation 1 » s'écrit avec U+00A0)
 function StyleOf($doc, [string]$name) {
-    foreach ($st in $doc.Styles) { if ($st.NameLocal.Replace([char]0xA0, ' ') -eq $name) { return $st } }
+    # -ceq : « Tableau Liste 3 » (List Table 3) et « Tableau liste 3 » (ancien Table List 3) ne diffèrent que par la casse
+    foreach ($st in $doc.Styles) { if ($st.NameLocal.Replace([char]0xA0, ' ') -ceq $name) { return $st } }
     throw "style introuvable : $name"
 }
 function Save($doc, [string]$name) {
@@ -157,6 +158,19 @@ try {
     $t.Cell(20, 2).Range.Text = (Lorem 160 20)
     Para $doc "Fin du tableau long"
     Save $doc 'long.docx'
+
+    # ---------------------------------------------------------------- galerie (définitions des styles intégrés)
+    $doc = $word.Documents.Add()
+    $families = @('Tableau Grille 1 Clair', 'Tableau Grille 4', 'Tableau Grille 5 Foncé', 'Tableau Liste 3', 'Tableau Liste 4')
+    foreach ($f in $families) {
+        foreach ($n in @('', ' - Accentuation 1', ' - Accentuation 2', ' - Accentuation 3', ' - Accentuation 4', ' - Accentuation 5', ' - Accentuation 6')) {
+            Para $doc "$f$n"
+            $t = NewTable $doc 2 2
+            $t.Style = (StyleOf $doc "$f$n")
+        }
+    }
+    Para $doc "Fin de la galerie"
+    Save $doc 'galerie.docx'
 } catch { Write-Host ("ligne " + $_.InvocationInfo.ScriptLineNumber + " : " + $_.InvocationInfo.Line); throw } finally {
     $word.Quit([ref]0)
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($word)

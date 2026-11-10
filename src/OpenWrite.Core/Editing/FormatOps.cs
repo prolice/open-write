@@ -73,13 +73,17 @@ public static class FormatOps
 
     /// <summary>
     /// Plage qui traverse un tableau : bornes ramenées au premier niveau (un tableau touché est pris en entier, voir
-    /// <see cref="TextOps.AcrossTopLevel"/>) ; inchangée dans un même conteneur.
+    /// <see cref="TextOps.AcrossTopLevel"/>) ; entre deux cellules d'un même tableau (sélection de cellules, lot 6) : le
+    /// bloc de premier niveau qui le contient ; inchangée dans un même conteneur.
     /// </summary>
     public static (DocPos From, DocPos To) Normalize(DocPos from, DocPos to)
     {
         if (from.ContainerPath.SequenceEqual(to.ContainerPath)) return (from, to);
         if (TextOps.AcrossTopLevel(from, to) is not var (s, so, e, eo))
-            throw new NotSupportedException("Plage entre deux cellules d'un tableau : pas encore prise en charge.");
+        {
+            var top = new DocPos(new[] { from.Path[0] }, 0);
+            return (top, top);
+        }
         return (new DocPos(new[] { s }, so ?? 0), new DocPos(new[] { e }, eo ?? 0));
     }
 

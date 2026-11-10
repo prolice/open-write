@@ -30,8 +30,9 @@ public partial class MainWindow
         var (anchor, caret) = SelectionDocPos();
         try
         {
+            var ranges = TargetRanges(from, to);
             using var tx = _journal.Begin(label, body, f.ContainerPath, f.BlockIndex, t.BlockIndex - f.BlockIndex + 1, caret);
-            op(tx, body, from, to);
+            foreach (var (a, b) in ranges) op(tx, body, a, b);
             tx.Commit(caret);
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or InvalidOperationException or FormatException)
@@ -463,6 +464,7 @@ public partial class MainWindow
             Item("Abaisser d'un niveau", "Tab", () => ChangeListLevel(1));
             Item("Remonter d'un niveau", "Maj+Tab", () => ChangeListLevel(-1));
         }
+        AddTableContextItems(menu);
         menu.Items.Add(new System.Windows.Controls.Separator());
         Item("Styles…", null, ShowStylesWindow);
         return menu;

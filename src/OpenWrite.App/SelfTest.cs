@@ -295,6 +295,43 @@ public static class SelfTest
         Key(System.Windows.Input.Key.Right);
         Key(System.Windows.Input.Key.Tab);
         Check(w.SelectedText() == "B1", $"Tab dans un tableau : cellule suivante sélectionnée (« {w.SelectedText()} »)");
+        // tableaux (0.7) : Tab dans la dernière cellule, sélection de cellules, gras, fusion, style, colonne
+        var tbl = w.Body!.Blocks.OfType<Table>().First();
+        string Cell(int r, int c) => Core.Editing.TableOps.CellText(new Core.Editing.TableOps.Map(tbl).Cells[r][c].Cell);
+        Key(System.Windows.Input.Key.Tab);
+        Check(tbl.Items.OfType<TableRow>().Count() == 2, "Tab dans la dernière cellule : nouvelle ligne");
+        Type("A2");
+        Key(System.Windows.Input.Key.Tab);
+        Type("B2");
+        Check(Cell(1, 0) == "A2" && Cell(1, 1) == "B2", $"frappe dans la nouvelle ligne : « {Cell(1, 0)} » « {Cell(1, 1)} »");
+        w.FindNext("A1", true, true);
+        var cellFrom = w.AnchorPoint!.Value;
+        w.FindNext("B2", true, true);
+        w.Select(cellFrom, w.CaretPoint!.Value);
+        Check(w.CellRangeForTest == (0, 0, 1, 1) && w.SelectedText() == "A1\tB1\r\nA2\tB2\r\n", "sélection d'une cellule à l'autre : rectangle de 2 × 2 cellules");
+        w.ToggleCharacter("b");
+        Check(tbl.Items.OfType<TableRow>().SelectMany(r => r.Items.OfType<TableCell>()).All(c => c.Content.Paragraphs().First().Runs().All(r => r.Props.Flag("b"))),
+              "gras sur les quatre cellules sélectionnées");
+        w.MergeCells();
+        var merged = new Core.Editing.TableOps.Map(tbl);
+        Check(merged.Cells[0].Count == 1 && merged.Cells[0][0].Span == 2 && merged.IsRestart(merged.Cells[0][0].Cell) && Cell(0, 0) == "A1 B1 A2 B2",
+              $"fusion : une cellule de 2 × 2 (« {Cell(0, 0)} »)");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        tbl = w.Body!.Blocks.OfType<Table>().First();          // annuler remet une copie du bloc
+        Check(new Core.Editing.TableOps.Map(tbl).Cells[0].Count == 2 && Cell(1, 1) == "B2", "Ctrl+Z : cellules séparées");
+        w.FindNext("A2", true, true);
+        w.ApplyTableStyle("Grid Table 4 Accent 1");
+        Pump();
+        var tableStyle = tbl.Props.Val("tblStyle");
+        Check(tableStyle is not null && w.StylesXmlForTest?.Elements().Any(e => e.Attributes().Any(a => a.Value == tableStyle)
+              && e.Elements().Any(n => n.Name.LocalName == "name" && n.Attributes().First().Value == "Grid Table 4 Accent 1")) == true,
+              "style de tableau Grille 4 - Accentuation 1 écrit dans styles.xml");
+        var headerLine = w.CurrentLayout!.Pages[0].Lines.First(l => l.Paragraph.Content.Text == "A1");
+        Check(headerLine.Paragraph.Content.Styles[0].Format.Color == "FFFFFF", "ligne d'en-tête du style : texte blanc");
+        w.InsertColumns(right: true);
+        tbl = w.Body!.Blocks.OfType<Table>().First();
+        Check(new Core.Editing.TableOps.Map(tbl).Columns == 3, "colonne insérée à droite");
         // styles et listes (0.5) : Titre 1 sur le titre, puces sur « Deuxième ligne » et la case, niveau, fin de liste
         w.FindNext("Formulaire", true, false);
         w.ApplyStyle("heading 1");
@@ -370,6 +407,9 @@ public static class SelfTest
         Check(reStyles is not null && rereadPkg.XmlPartOf("numbering") is not null
               && Core.Styles.StyleOps.ByName(new Core.Styles.StyleSheet(reStyles, null), "heading 1") is not null, "fichier relu : styles.xml et numbering.xml créés");
         Check(rereadLink is not null && rereadPkg.HyperlinkTarget(rereadPkg.Main!, rereadLink) == "https://exemple.be", "fichier relu : lien vers https://exemple.be");
+        var reTable = rereadPkg.Main!.Stories().First().Blocks.OfType<Table>().First();
+        Check(new Core.Editing.TableOps.Map(reTable).Columns == 3 && reTable.Items.OfType<TableRow>().Count() == 2 && reTable.Props.Val("tblStyle") is not null,
+              "fichier relu : tableau de 2 lignes × 3 colonnes avec son style");
 
         Idle();
         var content = (FrameworkElement)w.Content;
@@ -458,6 +498,25 @@ public static class SelfTest
         Measure(() => w.ExitHeader());
         what = "deux colonnes";
         Measure(() => w.EditSections("Deux colonnes", s => Core.Editing.SectionOps.SetColumns(s, 2)));
+        // lot 6 : tableau inséré, frappe et Tab, style, fusion d'une ligne, ligne et colonne, fractionnement
+        what = "insérer un tableau";
+        Measure(() => w.InsertTable(3, 4));
+        what = "frappe dans le tableau";
+        foreach (var word in new[] { "Un", "Deux", "Trois", "Quatre", "Cinq" })
+        {
+            foreach (var ch in word) Measure(() => Char(ch));
+            Measure(() => Key(System.Windows.Input.Key.Tab));
+        }
+        what = "style de tableau";
+        Measure(() => w.ApplyTableStyle("Grid Table 4 Accent 1"));
+        what = "fusion";
+        Measure(() => w.SelectInTable("row"));
+        Measure(() => w.MergeCells());
+        what = "ligne et colonne";
+        Measure(() => w.InsertRows(below: true));
+        Measure(() => w.InsertColumns(right: false));
+        what = "fractionner";
+        Measure(() => w.SplitCells(2, 2));
         if (saveCopy is not null) w.SaveCopy(saveCopy);
         Console.WriteLine("plus lentes : " + string.Join(", ", labelled.OrderByDescending(x => x.Ms).Take(4).Select(x => $"{x.What} {x.Ms:0} ms")));
         times.Sort();
@@ -514,6 +573,22 @@ public static class SelfTest
                 w.Close();
                 return 0;
             }
+            case "tableau-galerie" or "tableau-grille":
+            {
+                // fenêtres surgissantes des tableaux : galerie des styles, grille d'insertion (leur contenu seul)
+                Pump();
+                w.ShowTableTabForCapture(layout: false, selectCells: false);
+                Pump();
+                if (scene == "tableau-galerie") w.ShowTableStylesGallery(w);
+                else w.ShowTableMenu(w);
+                Pump();
+                Idle();
+                var child = (FrameworkElement)w.LastPopup!.Child;
+                Save(child, (int)Math.Ceiling(child.ActualWidth), (int)Math.Ceiling(child.ActualHeight), png);
+                w.LastPopup.IsOpen = false;
+                w.Close();
+                return 0;
+            }
             case "file-menu":
             {
                 typeof(MainWindow).GetMethod("FileButton_Click", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -538,6 +613,11 @@ public static class SelfTest
                     w.EditSections("Numéros de ligne", s => Core.Editing.SectionOps.SetLineNumbers(s, "newPage"));
                     Pump();
                     w.GoToPage(1);
+                }
+                if (scene is "tableau-creation" or "tableau-disposition")
+                {
+                    Pump();
+                    w.ShowTableTabForCapture(layout: scene == "tableau-disposition", selectCells: scene == "tableau-disposition");
                 }
                 if (scene == "en-tete")
                 {

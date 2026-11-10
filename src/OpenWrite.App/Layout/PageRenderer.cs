@@ -290,9 +290,24 @@ public sealed class PageRenderer
             && (sa is null ? sb is null : sb is not null && System.Xml.Linq.XNode.DeepEquals(sa, sb));
     }
 
+    /// <summary>
+    /// Quadrillage des tableaux (Disposition ▸ Quadrillage, actif par défaut comme dans Word) : côtés de cellule sans
+    /// bordure tracés en tirets bleu pâle, à l'écran seulement.
+    /// </summary>
+    public static bool ShowGridlines { get; set; } = true;
+
+    static readonly Pen GridlinePen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x9D, 0xC3, 0xE6))), 0.5) { DashStyle = new DashStyle(new double[] { 2, 2 }, 0) });
+
     static void DrawCell(DrawingContext dc, CellBox c)
     {
         if (c.Fill is { } fill && ParseColor(fill) is { } fc) dc.DrawRectangle(Freeze(new SolidColorBrush(fc)), null, new Rect(c.X, c.Y, Math.Max(0, c.W), Math.Max(0, c.H)));
+        if (ShowGridlines && c.Cell is not null)
+        {
+            if (!c.Top.Visible && !c.JoinTop) dc.DrawLine(GridlinePen, new Point(c.X, c.Y), new Point(c.X + c.W, c.Y));
+            if (!c.Bottom.Visible && !c.JoinBottom) dc.DrawLine(GridlinePen, new Point(c.X, c.Y + c.H), new Point(c.X + c.W, c.Y + c.H));
+            if (!c.Left.Visible) dc.DrawLine(GridlinePen, new Point(c.X, c.Y), new Point(c.X, c.Y + c.H));
+            if (!c.Right.Visible) dc.DrawLine(GridlinePen, new Point(c.X + c.W, c.Y), new Point(c.X + c.W, c.Y + c.H));
+        }
         DrawBorder(dc, c.Top, c.X, c.Y, c.X + c.W, c.Y);
         DrawBorder(dc, c.Bottom, c.X, c.Y + c.H, c.X + c.W, c.Y + c.H);
         DrawBorder(dc, c.Left, c.X, c.Y, c.X, c.Y + c.H);

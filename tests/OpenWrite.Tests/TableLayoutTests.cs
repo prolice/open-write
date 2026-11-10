@@ -151,4 +151,30 @@ public class TableLayoutTests
         var (_, a) = Doc(15, Tbl("""<w:tblW w:w="0" w:type="auto"/>""", new[] { 3000, 3000 }, Tc(P("aa"), auto) + Tc(P("bbbb bbbb"), auto)));
         Assert.Equal(30 + 5.4 + 10 + 5.4 + 5.4, LineOf(a, "bbbb").X, 3);
     }
+
+    [Fact]
+    public void Frappe_dans_une_cellule_reprise_identique_a_une_mise_en_page_complete()
+    {
+        // 60 rangées sur plusieurs pages (page de 450 pt utiles), rangée d'en-tête répétée
+        var rows = new List<string> { "<w:trPr><w:tblHeader/></w:trPr>" + Tc(P("titre")) + Tc(P("valeur")) };
+        for (int r = 1; r < 60; r++) rows.Add(Tc(P($"r{r}")) + Tc(P(string.Join(" ", Enumerable.Repeat("mot", r % 7 + 1)))));
+        var (body, l) = Doc(15, Tbl("""<w:tblLayout w:type="fixed"/>""", new[] { 2000, 4000 }, rows.ToArray()), P("fin"));
+        var table = (Table)body.Blocks[0];
+        Assert.True(l.Pages.Count >= 2);
+        // texte allongé dans une cellule de la rangée 30 : trois lignes de plus
+        var cell = table.Items.OfType<TableRow>().ElementAt(30).Items.OfType<TableCell>().Last();
+        var para = (Paragraph)cell.Content.Blocks[0];
+        var run = para.Runs().First();
+        ((TextContent)run.Content[0]).Value += string.Concat(Enumerable.Repeat(" encore", 30));
+        l.Update(new Block[] { table }, dirty: new Block[] { para });
+        var fresh = new DocumentLayout(body, new StyleResolver(new StyleSheet(XElement.Parse(Styles), settings: XElement.Parse(Settings(15)))), new MonoFontProvider(ascent: 0.8, descent: 0.2));
+        fresh.LayoutAll();
+        Assert.Equal(fresh.Pages.Count, l.Pages.Count);
+        for (int k = 0; k < fresh.Pages.Count; k++)
+        {
+            Assert.Equal(fresh.Pages[k].Start.Line, l.Pages[k].Start.Line);
+            Assert.Equal(fresh.Pages[k].Lines.Select(x => (x.Paragraph.Paragraph, x.Line, Math.Round(x.Y, 3))),
+                         l.Pages[k].Lines.Select(x => (x.Paragraph.Paragraph, x.Line, Math.Round(x.Y, 3))));
+        }
+    }
 }

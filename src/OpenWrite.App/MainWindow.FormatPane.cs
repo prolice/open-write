@@ -180,7 +180,8 @@ public partial class MainWindow
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         var (anchor, caret) = SelectionDocPos();
-        FormatOps.Apply(_journal, body, label, from, to, () => FormatOps.ApplyToParagraphs(body, from, to, apply));
+        var ranges = TargetRanges(from, to);
+        FormatOps.Apply(_journal, body, label, from, to, () => { foreach (var (f, t) in ranges) FormatOps.ApplyToParagraphs(body, f, t, apply); });
         AfterFormat(label, anchor, caret);
     }
 

@@ -29,6 +29,7 @@
         { "titre": "Copier-coller avec Word et le web", "texte": "Le texte copié garde sa mise en forme dans les deux sens : avec Word, LibreOffice, un navigateur ou un courriel. Ctrl+Maj+V colle le texte seul.", "depuis": "0.4.0" },
         { "titre": "Styles, listes et thèmes", "texte": "Galerie de styles, Titre 1 à 3 au clavier, modifier un style et tout le document suit ; puces, numéros et titres numérotés ; polices et couleurs du thème dans l'onglet Création.", "depuis": "0.5.0" },
         { "titre": "Mise en page, en-têtes et pieds", "texte": "Marges, orientation, format, colonnes et sauts de section ; en-têtes et pieds modifiables d'un double-clic, numéros de page, première page et pages paires différentes ; filigrane, bordures et couleur de page.", "depuis": "0.6.0" },
+        { "titre": "Tableaux", "texte": "Insérer d'un geste, Tab d'une cellule à l'autre, sélection de cellules, fusionner et fractionner, lignes et colonnes, largeurs à la souris ; 36 styles de tableau de Word aux couleurs du thème, trame et bordures ; trier, formules, conversion texte ↔ tableau, collage depuis Excel ; largeurs automatiques et tableaux sur plusieurs pages calculés comme Word.", "depuis": "0.7.0" },
         { "titre": "Rechercher, remplacer, liens", "texte": "Ctrl+F et Ctrl+H, Remplacer tout annulable d'un coup ; liens hypertextes (Ctrl+K, Ctrl+clic), symboles, marques de mise en forme.", "depuis": "0.4.0" }
       ]
     },

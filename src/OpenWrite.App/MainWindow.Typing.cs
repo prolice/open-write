@@ -260,6 +260,7 @@ public partial class MainWindow
             }
             RefreshFormatPane();
             UpdateRuler();
+            UpdateTableTabs();
         }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
@@ -284,6 +285,12 @@ public partial class MainWindow
     IEnumerable<Rect> SelectionRects(int page)
     {
         if (!HasSelection || _layout is null || Ordered() is not { } sel) yield break;
+        // d'une cellule à une autre : rectangle de cellules (Word)
+        if (CellSelection() is { } cells)
+        {
+            foreach (var r in CellSelectionRects(page, cells)) yield return r;
+            yield break;
+        }
         if (Locate(sel.From) is not { } a || Locate(sel.To) is not { } b) yield break;
         if (page < a.Ref.Page || page > b.Ref.Page) yield break;
         var lines = Src.PageLines(page);
@@ -306,6 +313,7 @@ public partial class MainWindow
     internal string SelectedText()
     {
         if (!HasSelection || _layout is null || Ordered() is not { } sel) return "";
+        if (CellSelection() is { } cells) return CellSelectionText(cells);
         if (Locate(sel.From) is not { } a || Locate(sel.To) is not { } b) return "";
         var sb = new StringBuilder();
         ParagraphLayout? prev = null;
@@ -438,6 +446,8 @@ public partial class MainWindow
             case Key.Back: Backspace(ctrl); break;
             case Key.Delete when shift && !ctrl: Cut(); break;
             case Key.Delete: DeleteForward(ctrl); break;
+            // Ctrl+Maj+Entrée dans un tableau : le fractionner au-dessus de la ligne (Word)
+            case Key.Enter when ctrl && shift && InTableCell(): SplitTableHere(); break;
             case Key.Enter:
                 if (ctrl) InsertSpecial(shift ? SpecialChar.ColumnBreak : SpecialChar.PageBreak);
                 else if (shift) InsertSpecial(SpecialChar.LineBreak);
@@ -504,6 +514,8 @@ public partial class MainWindow
             var kind = hitAt.Y < hp.ContentTop ? "header" : "footer";
             if (hitPage != _hf.Page || kind != _hf.Kind) { EnterHeader(hitPage, kind, hitAt); e.Handled = true; return; }
         }
+        // bordure de cellule : redimensionner la colonne ou la ligne
+        if (e.ClickCount == 1 && _hf is null && hitPage >= 0 && StartBorderDrag(hitPage, hitAt)) { e.Handled = true; return; }
         if (HitView(p) is not { } t) return;
         // Ctrl+clic sur un lien : le suivre (comme Word)
         if (e.ClickCount == 1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _pagesView.HitPage(p).Page >= 0
@@ -574,6 +586,7 @@ public partial class MainWindow
     void ReplaceSelection(string text, string label)
     {
         if (EditRoot is not { } body || Ordered() is not { } sel) return;
+        if (CellSelection() is { } cells) { ReplaceCells(cells, text.Replace("\r\n", "\n"), label); return; }
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         DocPos pos;
@@ -594,12 +607,12 @@ public partial class MainWindow
 
     /// <summary>
     /// Plage modifiable d'un bloc : dans un même conteneur, ou à travers des tableaux au niveau du corps (tableaux touchés
-    /// pris en entier). Entre deux cellules d'un même tableau : pas encore (tableaux, version 0.7).
+    /// pris en entier), ou d'une cellule à une autre d'un même tableau (rectangle de cellules, lot 6).
     /// </summary>
     bool SupportedRange(DocPos from, DocPos to, bool quiet = false)
     {
-        if (from.ContainerPath.SequenceEqual(to.ContainerPath) || TextOps.AcrossTopLevel(from, to) is not null) return true;
-        if (!quiet) StatusText.Text = "Sélection sur plusieurs cellules d'un tableau : modification d'un bloc avec les tableaux (version 0.7).";
+        if (from.ContainerPath.SequenceEqual(to.ContainerPath) || TextOps.AcrossTopLevel(from, to) is not null || CellSelection() is not null) return true;
+        if (!quiet) StatusText.Text = "Cette sélection (d'un tableau imbriqué vers l'extérieur) ne peut pas être modifiée d'un bloc.";
         return false;
     }
 
@@ -697,7 +710,7 @@ public partial class MainWindow
 
     /// <summary>
     /// Tab / Maj+Tab dans un tableau : sélectionne le contenu de la cellule suivante ou précédente (ligne suivante au bout
-    /// de la ligne), comme Word. Après la dernière cellule, l'ajout d'une ligne viendra avec les tableaux (version 0.7).
+    /// de la ligne), comme Word ; Tab dans la dernière cellule ajoute une ligne.
     /// </summary>
     void MoveToCell(int direction)
     {
@@ -709,11 +722,18 @@ public partial class MainWindow
                 for (int c = 0; c < row.Items.Count; c++)
                     if (row.Items[c] is TableCell cell) cells.Add((r, c, cell));
         int k = cells.FindIndex(x => x.Row == at.Row && x.Item == at.Cell) + direction;
-        if (k < 0 || k >= cells.Count)
+        if (k >= cells.Count)
         {
-            StatusText.Text = direction > 0 ? "Dernière cellule du tableau (l'ajout d'une ligne par Tab viendra avec la version 0.7)." : "Première cellule du tableau.";
+            // Tab dans la dernière cellule : nouvelle ligne (Word)
+            _anchor = null;
+            EditTable("Nouvelle ligne", (ctx, _) =>
+            {
+                int row = TableOps.InsertRows(ctx.Table, ctx.Map.Rows.Count - 1, below: true, 1, NewParaId());
+                return CellStart(ctx.Table, row, 0);
+            });
             return;
         }
+        if (k < 0) { StatusText.Text = "Première cellule du tableau."; return; }
         var target = cells[k];
         var paras = target.Cell.Content.Paragraphs().ToList();
         if (paras.Count == 0) return;
@@ -776,7 +796,18 @@ public partial class MainWindow
         var changed = ch.Container.Count == 0
             ? body.Blocks.GetRange(ch.Index, Math.Min(ch.Count, body.Blocks.Count - ch.Index))
             : new List<Block> { body.Blocks[ch.Container[0]] };
-        _layout.Update(changed, rebuildFlow: _listsTouched || changed.OfType<Paragraph>().Any(p => p.Props.Get("numPr") is not null));
+        // modification dans une cellule : seuls ses paragraphes touchés sont à recouper en lignes (le tableau est remesuré)
+        List<Block>? dirty = null;
+        if (ch.Container.Count > 0)
+        {
+            try
+            {
+                var inner = DocPos.ResolveContainer(body, ch.Container);
+                dirty = inner.Blocks.GetRange(ch.Index, Math.Min(ch.Count, inner.Blocks.Count - ch.Index));
+            }
+            catch (ArgumentException) { dirty = null; }
+        }
+        _layout.Update(changed, rebuildFlow: _listsTouched || changed.OfType<Paragraph>().Any(p => p.Props.Get("numPr") is not null), dirty);
         _listsTouched = false;
         LastUpdateMs = sw.Elapsed.TotalMilliseconds;
         _fieldsByBegin = null;

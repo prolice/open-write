@@ -459,6 +459,7 @@ public sealed partial class DocumentLayout
         return new CellBox(p.X, y, p.W, h, look.Fill, p.Restart is not null ? default : p.Top, bottom, look.Left, look.Right)
         {
             Cell = (p.Restart ?? p).Cell, Table = row.Table, Row = row.Index, Column = p.Col,
+            JoinTop = p.Restart is not null, JoinBottom = p.Merged || p.Restart is not null && !p.EndsMerge,
         };
     }
 

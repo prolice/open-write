@@ -130,7 +130,8 @@ public partial class MainWindow
         if (EditRoot is not { } body || ToDocPos(a) is not { } from || ToDocPos(b) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         var (anchor, caret) = SelectionDocPos();
-        FormatOps.Apply(_journal, body, label, from, to, () => FormatOps.ApplyToRuns(body, from, to, apply));
+        var ranges = TargetRanges(from, to);
+        FormatOps.Apply(_journal, body, label, from, to, () => { foreach (var (f, t) in ranges) FormatOps.ApplyToRuns(body, f, t, apply); });
         AfterFormat(label, anchor, caret);
     }
 
@@ -140,13 +141,14 @@ public partial class MainWindow
         if (EditRoot is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
+        var ranges = TargetRanges(from, to);
         var paragraphs = new List<Paragraph>();
-        FormatOps.ApplyToParagraphs(body, from, to, paragraphs.Add);
+        foreach (var (f, t) in ranges) FormatOps.ApplyToParagraphs(body, f, t, paragraphs.Add);
         bool already = paragraphs.All(p => _styles?.Paragraph(p).Alignment == jc);
         var value = already && jc != "left" ? "left" : jc;
         var label = value switch { "center" => "Centrer", "right" => "Aligner à droite", "both" => "Justifier", _ => "Aligner à gauche" };
         var (anchor, caret) = SelectionDocPos();
-        FormatOps.Apply(_journal, body, label, from, to, () => FormatOps.ApplyToParagraphs(body, from, to, p => p.Props.SetVal("jc", value)));
+        FormatOps.Apply(_journal, body, label, from, to, () => { foreach (var p in paragraphs) p.Props.SetVal("jc", value); });
         AfterFormat(label, anchor, caret);
     }
 

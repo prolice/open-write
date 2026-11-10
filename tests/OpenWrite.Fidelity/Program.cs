@@ -19,6 +19,8 @@ using OpenWrite.Docx;
 //   OpenWrite.Fidelity --compare-formats <JSON OpenWrite> <JSON Word> comparaison avec tools/word-format.ps1
 //   OpenWrite.Fidelity --compare-word <dossier de sortie>             compare la vue d'OpenWrite (modele/*.json) à celle de Word
 //                                                                    (word-modele/*.json, tools/word-inspect.ps1)
+//   OpenWrite.Fidelity --table-styles <galerie.docx>                  styles de tableau de la galerie écrits par OpenWrite
+//                                                                    (TableStyleOps) comparés à ceux de Word dans ce fichier
 // Sorties : <sortie>/aller-retour, modif-texte, modif-gras, modif-scission (les .docx produits) et rapport.md.
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -27,6 +29,7 @@ if (args.Length >= 3 && args[0] == "--stress") return Bench.Stress(args[1], int.
 if (args.Length >= 2 && args[0] == "--compare-word") return WordCompare.Run(args[1]);
 if (args.Length >= 3 && args[0] == "--formats") return FormatCompare.Export(args[1], args[2]);
 if (args.Length >= 3 && args[0] == "--compare-formats") return FormatCompare.Compare(args[1], args[2]);
+if (args.Length >= 2 && args[0] == "--table-styles") return TableStyleCheck.Run(args[1]);
 if (args.Length < 2) { Console.Error.WriteLine("Usage : OpenWrite.Fidelity <dossier .docx> <dossier de sortie> | --stress <fichier.docx> <n>"); return 2; }
 return Bench.Run(args[0], args[1]);
 
@@ -641,5 +644,50 @@ static class FormatCompare
             if (examples.TryGetValue(prop, out var ex)) foreach (var e in ex) Console.WriteLine("      " + e);
         }
         return totals.Values.All(t => t.Ok == t.All) ? 0 : 1;
+    }
+}
+
+/// <summary>
+/// Styles de tableau de la galerie (lot 6) : définitions écrites par OpenWrite (TableStyleOps, couleurs recalculées pour
+/// le thème du fichier) comparées à celles que Word a écrites dans un document qui les utilise tous
+/// (tools/word-make-tables.ps1, galerie.docx). Identifiants, w:basedOn et w:rsid ignorés.
+/// </summary>
+static class TableStyleCheck
+{
+    public static int Run(string path)
+    {
+        var pkg = DocxPackage.Open(path);
+        var sheet = pkg.StyleSheet();
+        var w = sheet.W;
+        var word = sheet.Styles!.Elements(w + "style").Where(s => s.Attribute(w + "type")?.Value == "table")
+            .ToDictionary(s => s.Element(w + "name")!.Attribute(w + "val")!.Value, StringComparer.OrdinalIgnoreCase);
+        int same = 0, total = 0;
+        foreach (var (name, french) in TableStyleOps.Gallery())
+        {
+            if (!word.TryGetValue(name, out var theirs)) { Console.WriteLine($"  absent du fichier : {name}"); continue; }
+            total++;
+            var root = new XElement(w + "styles");
+            var id = TableStyleOps.Ensure(sheet, root, name)!;
+            var mine = root.Elements(w + "style").First(s => s.Attribute(w + "styleId")!.Value == id);
+            string Norm(XElement s)
+            {
+                var c = new XElement(s);
+                c.Attributes(w + "styleId").Remove();
+                c.Elements(w + "basedOn").Remove();
+                c.Elements(w + "rsid").Remove();
+                return c.ToString(SaveOptions.DisableFormatting);
+            }
+            if (Norm(mine) == Norm(theirs)) same++;
+            else
+            {
+                string a = Norm(theirs), b = Norm(mine);
+                int k = 0;
+                while (k < a.Length && k < b.Length && a[k] == b[k]) k++;
+                int from = Math.Max(0, k - 80);
+                Console.WriteLine($"  différent : {name} ({french})\n    Word      …{a[from..Math.Min(a.Length, k + 120)]}\n    OpenWrite …{b[from..Math.Min(b.Length, k + 120)]}");
+            }
+        }
+        Console.WriteLine($"Styles de tableau identiques à ceux de Word : {same}/{total}");
+        return same == total ? 0 : 1;
     }
 }

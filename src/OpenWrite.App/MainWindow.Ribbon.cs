@@ -131,6 +131,7 @@ public partial class MainWindow
         ["Lien"] = (ShowLinkDialog, "Lien hypertexte… (Ctrl+K)"),
         ["Symbole"] = (ShowSymbols, "Symbole… : caractères spéciaux, espaces et tirets insécables"),
         ["Saut de page"] = (() => InsertSpecial(Core.Editing.SpecialChar.PageBreak), "Saut de page (Ctrl+Entrée)"),
+        ["Tableau"] = (() => ShowTableMenu(_clickedButton!), "Tableau : grille, Insérer un tableau…, convertir le texte en tableau"),
     };
 
     /// <summary>Commandes de l'onglet Mise en page déjà disponibles.</summary>
@@ -206,7 +207,7 @@ public partial class MainWindow
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
                         // menu sous le bouton : il garde le clavier
-                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne";
+                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau";
                         button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }

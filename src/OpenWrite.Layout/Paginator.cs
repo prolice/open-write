@@ -132,6 +132,9 @@ public readonly record struct CellBox(double X, double Y, double W, double H, st
     public int Column { get; init; }
     /// <summary>Cellule d'un tableau imbriqué dans une cellule.</summary>
     public bool Nested { get; init; }
+    /// <summary>Fusion verticale : la cellule continue celle du dessus / dans celle du dessous (pas de trait entre elles).</summary>
+    public bool JoinTop { get; init; }
+    public bool JoinBottom { get; init; }
 }
 
 /// <summary>Point de départ d'une page : élément de flux et ligne (ou rangée de tableau) où elle commence.</summary>
@@ -640,14 +643,18 @@ public sealed partial class DocumentLayout
     /// la pagination repart de la page qui précède la première modification et s'arrête dès qu'une page retrouve le
     /// point de départ d'une ancienne page située après toutes les modifications.
     /// </summary>
-    public void Update(IReadOnlyCollection<Block> changed, bool rebuildFlow = false)
+    /// <param name="dirty">
+    /// Blocs réellement modifiés à l'intérieur des blocs <paramref name="changed"/> (paragraphes d'une cellule) : seuls
+    /// leurs paragraphes sont à refaire ; null : tous ceux des blocs modifiés.
+    /// </param>
+    public void Update(IReadOnlyCollection<Block> changed, bool rebuildFlow = false, IEnumerable<Block>? dirty = null)
     {
         LastParagraphsLaidOut = 0;
-        Invalidate(changed);
+        Invalidate(dirty ?? changed);
         // rebuildFlow : listes touchées (numéros à recalculer) — pas de chemin rapide
         if (!rebuildFlow && Pages.Count > 0 && changed.Count > 0 && _body.Blocks.Count == _topCount && changed.All(b => b is not Paragraph p || p.Props.Get("sectPr") is null) && changed.All(_itemIndex.ContainsKey))
         {
-            UpdateInPlace(changed);
+            UpdateInPlace(changed, dirty is not null && changed.Count == 1 && changed.First() is Table t ? ChangedRows(t, dirty) : null);
             return;
         }
         var old = Pages;
@@ -714,18 +721,58 @@ public sealed partial class DocumentLayout
     /// Chemin rapide de la frappe : les blocs modifiés sont déjà des éléments du flux (pas d'insertion ni de
     /// suppression), les indices ne changent pas ; les anciennes pages sont retrouvées par recherche dichotomique.
     /// </summary>
-    void UpdateInPlace(IReadOnlyCollection<Block> changed)
+    /// <summary>
+    /// Rangées d'un tableau qui contiennent les blocs modifiés (fusions verticales comprises) ; null si la modification
+    /// peut toucher tout le tableau (ajusté au contenu : les largeurs des colonnes dépendent du texte).
+    /// </summary>
+    static (int First, int Last)? ChangedRows(Table t, IEnumerable<Block> dirty)
     {
+        var w = t.Props.Ns;
+        var rows = t.Items.OfType<TableRow>().ToList();
+        if (t.Props.Get("tblLayout")?.Attribute(w + "type")?.Value != "fixed"
+            && rows.SelectMany(r => r.Items.OfType<TableCell>()).Any(c => c.Props.Get("tcW") is { } tcw && tcw.Attribute(w + "type")?.Value is "auto" or "nil")) return null;
+        var set = new HashSet<Block>(dirty, ReferenceEqualityComparer.Instance);
+        int first = int.MaxValue, last = -1;
+        for (int r = 0; r < rows.Count; r++)
+            foreach (var cell in rows[r].Items.OfType<TableCell>())
+                if (Contains(cell.Content, set)) { first = Math.Min(first, r); last = Math.Max(last, r); }
+        if (last < 0) return null;
+        // fusion verticale : la cellule de départ et ses suites forment une seule hauteur
+        bool Merged(int r) => rows[r].Items.OfType<TableCell>().Any(c => c.Props.Get("vMerge") is not null);
+        while (first > 0 && Merged(first)) first--;
+        while (last + 1 < rows.Count && Merged(last + 1)) last++;
+        return (first, last);
+
+        static bool Contains(Story s, HashSet<Block> set) => s.Blocks.Any(b => set.Contains(b)
+            || b is Table nt && nt.Items.OfType<TableRow>().Any(r => r.Items.OfType<TableCell>().Any(c => Contains(c.Content, set)))
+            || b is BlockContentControl sdt && Contains(sdt.Content, set));
+    }
+
+    void UpdateInPlace(IReadOnlyCollection<Block> changed, (int First, int Last)? rows = null)
+    {
+        // paragraphes nouveaux dans un tableau modifié (rangée, colonne, cellule fractionnée) : rattachés à son élément
+        if (_paraItem is not null)
+            foreach (var b in changed)
+                if (b is not Paragraph)
+                    foreach (var q in new Story { Blocks = { b } }.Paragraphs()) _paraItem[q] = _itemIndex[b];
         var old = Pages;
         int first = changed.Min(b => _itemIndex[b]), last = changed.Max(b => _itemIndex[b]);
         // page qui contient l'élément précédant la modification, et une de plus en arrière (paragraphes solidaires)
         int anchor = Math.Max(0, first - 1);
         int startPage = Math.Max(0, PageOf(old, anchor) - 1);
+        // texte modifié dans des rangées d'un tableau : reprise à la page où commence la première de ces rangées
+        // (les rangées d'avant n'ont pas changé), convergence possible dans le tableau après la dernière
+        if (rows is { } rr)
+        {
+            int k = PageOf(old, first);
+            while (k + 1 < old.Count && old[k + 1].Start.Item is not null && old[k + 1].Start.Index == first && old[k + 1].Start.Line <= rr.First) k++;
+            startPage = k;
+        }
         var start = old[startPage].Start;
         var pages = old.GetRange(0, startPage);
         Func<FlowPosition, int?> converge = pos =>
         {
-            if (pos.Item is null || pos.Index <= last) return null;
+            if (pos.Item is null || pos.Index < last || pos.Index == last && (rows is not { } r2 || pos.Line <= r2.Last)) return null;
             // ancienne page qui commence exactement au même endroit (même élément, même ligne)
             int k = PageOf(old, pos.Index);
             for (; k < old.Count && old[k].Start.Index <= pos.Index; k++)

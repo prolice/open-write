@@ -139,7 +139,8 @@ public partial class MainWindow : Window
 
     string CurrentHelpTopic() => _info is null ? Help.HelpService.OpenDocument : TabHome.IsChecked == true ? Help.HelpService.HomeTab
         : _tableDesignTab?.IsChecked == true || _tableLayoutTab?.IsChecked == true ? Help.HelpService.Tables
-        : _headerTab?.IsChecked == true ? Help.HelpService.HeadersFooters : Help.HelpService.Roadmap;
+        : _headerTab?.IsChecked == true ? Help.HelpService.HeadersFooters
+        : _objectTab?.IsChecked == true || _objSel is not null ? Help.HelpService.Objects : Help.HelpService.Roadmap;
 
     void Window_DragOver(object sender, DragEventArgs e)
     {

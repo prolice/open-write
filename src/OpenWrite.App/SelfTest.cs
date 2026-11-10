@@ -230,8 +230,19 @@ public static class SelfTest
         // presse-papiers (0.4) : copier dépose texte, RTF et HTML ; coller dans le document garde la mise en forme
         w.FindNext("Deuxième ligne", true, false);
         w.Copy();
+        // juste après l'écriture, le presse-papiers peut rendre un instant un tampon vide ou rempli de zéros : on attend
+        string ReadRtf()
+        {
+            for (int k = 0; k < 20; k++)
+            {
+                try { if (Clipboard.GetData(DataFormats.Rtf) is string r && r.TrimEnd('\0') is { Length: > 0 } t && t[0] != '\0') return t; }
+                catch (System.Runtime.InteropServices.ExternalException) { }
+                System.Threading.Thread.Sleep(30);
+            }
+            return "";
+        }
         Check(Clipboard.ContainsText() && Clipboard.ContainsData(DataFormats.Rtf) && Clipboard.ContainsData(DataFormats.Html)
-              && (Clipboard.GetData(DataFormats.Rtf) as string ?? "").Contains("\\b"), "Copier : texte, RTF (gras) et HTML");
+              && ReadRtf().Contains("\\b"), "Copier : texte, RTF (gras) et HTML");
         File.WriteAllText(Path.Combine(outDir, "copie.rtf"), Clipboard.GetData(DataFormats.Rtf) as string ?? "", System.Text.Encoding.ASCII);
         Key(System.Windows.Input.Key.End);
         Key(System.Windows.Input.Key.Enter);

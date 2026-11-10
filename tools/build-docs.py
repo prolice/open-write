@@ -220,7 +220,37 @@ fractionner le tableau, ajustement automatique, distribuer lignes et colonnes, a
 <strong>formule</strong> (=SUM(ABOVE), AVERAGE, MIN, MAX…) et <strong>Propriétés</strong> (alignement et retrait du
 tableau, hauteur des lignes, largeur des colonnes, alignement vertical, marges des cellules). Le clic droit dans un
 tableau propose aussi d'insérer, de supprimer, de fusionner et de fractionner.</p>
-{warn("Pas encore : l'orientation verticale du texte dans une cellule, les tableaux flottants habillés par le texte (version 1.0), le dessin de tableau à la gomme.")}
+<p>Un <strong>tableau flottant</strong> (placé à un endroit précis de la page dans Word) s'affiche à sa place, le
+texte l'entoure.</p>
+{warn("Pas encore : l'orientation verticale du texte dans une cellule, le dessin de tableau à la gomme.")}
+"""),
+        ("objets", "Images, formes et zones de texte", f"""
+<p><strong>Insertion ▸ Images</strong> ajoute une image depuis un fichier (PNG, JPEG, GIF, BMP, TIFF) ou depuis le
+presse-papiers ; une copie d'écran ou une image copiée dans un autre programme se colle aussi avec {k('Ctrl', 'V')}.
+L'image arrive dans la ligne, au point d'insertion, réduite à la largeur du texte si elle est plus grande.
+<strong>Insertion ▸ Formes</strong> propose les formes les plus courantes de Word (rectangles, ellipses, flèches,
+étoiles, bulles, organigramme, lignes), posées devant le texte près du point d'insertion.
+<strong>Insertion ▸ Zone de texte</strong> crée une zone où l'on écrit aussitôt ; le texte du document l'entoure.</p>
+<p><strong>Cliquez sur un objet</strong> pour le sélectionner : ses poignées apparaissent. Glissez l'objet pour le
+déplacer (il s'ancre au paragraphe le plus proche, l'ancre ⚓ s'affiche dans la marge), une poignée pour changer sa
+taille (aux coins, une image garde ses proportions ; {k('Maj')} les garde pour une forme), la poignée ronde pour le
+faire pivoter ({k('Maj')} : par pas de 15°). Au clavier : les flèches déplacent un objet flottant
+({k('Ctrl')} + flèche : d'un point), {k('Suppr')} le supprime, {k('Échap')} revient au texte. Couper, copier et
+coller fonctionnent sur l'objet sélectionné. Cliquez dans une zone de texte pour y écrire ; {k('Échap')} sélectionne
+la zone.</p>
+<p>L'onglet <strong>Format de l'image</strong> (ou <strong>Format de la forme</strong>) apparaît quand un objet est
+sélectionné : corrections de luminosité et de contraste, niveaux de gris, <strong>remplissage</strong> et
+<strong>contour</strong> (couleur, épaisseur), changer la forme (ou découper une image selon une forme),
+<strong>texte de remplacement</strong> pour les lecteurs d'écran, <strong>position</strong> sur la page,
+<strong>habillage</strong>, avancer et reculer, rotation et retournement, <strong>rogner</strong> et taille exacte.
+Le clic droit sur un objet propose les mêmes réglages.</p>
+<p>L'<strong>habillage</strong> décide de la place du texte autour d'un objet : <strong>aligné sur le texte</strong>
+(l'objet est dans la ligne, comme une grande lettre), <strong>carré</strong>, <strong>rapproché</strong> et
+<strong>au travers</strong> (le texte longe l'objet, des deux côtés s'il y a la place), <strong>haut et bas</strong>
+(le texte passe au-dessus et en dessous), <strong>derrière le texte</strong> et <strong>devant le texte</strong>.
+Les documents Word s'affichent avec leurs objets flottants à leur place et le texte habillé comme dans Word, y compris
+les dessins anciens (VML) des documents enregistrés par Word 2007 et avant, et les images EMF et WMF.</p>
+{warn("Pas encore : les graphiques et les SmartArt s'affichent comme un cadre (ils sont conservés intacts à l'enregistrement), les effets 3D et les ombres ne sont pas dessinés, le texte d'un objet ancré dans une cellule de tableau n'est pas habillé.")}
 """),
         ("rechercher", "Rechercher et remplacer", f"""
 <p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
@@ -254,7 +284,7 @@ répétés), ses images en ligne et la numérotation de ses listes. La barre d'�
 de pages ; le zoom se règle avec {k('Ctrl')} + molette ou le curseur en bas à droite.</p>
 <p>Une police absente de l'ordinateur est remplacée, comme Word le fait, par la police de remplacement indiquée dans le
 document ou par une police aux mêmes dimensions ; la barre d'état signale les remplacements.</p>
-{warn("Pas encore affichés : les images et formes flottantes et les zones de texte (version 1.0). Le texte qu'elles contiennent n'est pas perdu : il est conservé à l'enregistrement.")}
+<p>Les images, formes et zones de texte flottantes sont à leur place, le texte les entoure comme dans Word.</p>
 """),
         ("informations", "Informations sur le document", """
 <p><strong>Fichier ▸ Informations</strong> résume le document : nombre de paragraphes, tableaux, sections, images,
@@ -270,7 +300,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.5", "Styles, listes et thèmes : galerie, modifier et créer des styles, puces et numéros, polices et couleurs du thème"),
             ("0.6", "Mise en page, sections, colonnes, en-têtes et pieds de page modifiables, numéros de page, filigrane, bordures et couleur de page"),
             ("0.7", "Tableaux : insérer, sélectionner des cellules, fusionner, fractionner, styles de tableau, trier, formules, largeurs automatiques"),
-            ("1.0", "Images, formes et zones de texte"),
+            ("1.0", "Images, formes et zones de texte : objets flottants et habillage du texte comme Word, insérer, déplacer, redimensionner, faire pivoter, rogner"),
             ("1.1", "Orthographe, commentaires, suivi des modifications"),
             ("1.2", "Notes, table des matières, renvois, index"),
             ("1.3", "Champs, blocs de construction, contrôles de contenu"),
@@ -319,6 +349,13 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
             ("Normal", k("Ctrl", "Maj", "N")), ("Puces", k("Ctrl", "Maj", "L")),
             ("Saut de colonne", k("Ctrl", "Maj", "Entrée")), ("Quitter l'en-tête ou le pied", k("Échap")),
             ("Niveau de liste suivant, précédent", k("Tab") + " " + k("Maj", "Tab") + " (au début d'un élément)"),
+        ])),
+        ("objets-raccourcis", "Images, formes et zones de texte", table([
+            ("Déplacer l'objet sélectionné", k("←") + " " + k("→") + " " + k("↑") + " " + k("↓") + " (d'un point avec " + k("Ctrl") + ")"),
+            ("Supprimer l'objet sélectionné", k("Suppr")), ("Revenir au texte", k("Échap")),
+            ("Garder les proportions en changeant la taille", k("Maj") + " + poignée"),
+            ("Pivoter par pas de 15°", k("Maj") + " + poignée ronde"),
+            ("Sélectionner la zone de texte où l'on écrit", k("Échap")),
         ])),
         ("mise-en-forme", "Mise en forme", table([
             ("Gras", k("Ctrl", "G") + " ou " + k("Ctrl", "B")), ("Italique", k("Ctrl", "I")), ("Souligné", k("Ctrl", "U")),

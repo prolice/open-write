@@ -33,6 +33,7 @@ public static class HelpService
     public const string PageSetup = "documents.html#mise-en-page";
     public const string HeadersFooters = "documents.html#en-tetes";
     public const string Tables = "documents.html#tableaux";
+    public const string Objects = "documents.html#objets";
 
     public static IReadOnlyList<string> AllTopics => typeof(HelpService).GetFields(BindingFlags.Public | BindingFlags.Static)
         .Where(f => f.IsLiteral && f.FieldType == typeof(string)).Select(f => (string)f.GetRawConstantValue()!).ToList();

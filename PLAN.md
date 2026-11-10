@@ -751,3 +751,7 @@ Publiée par la pipeline (tag `v0.7.1`) : correctif du collage depuis Excel (§1
 **Tests** : `DrawingTests` (formes, lecture DrawingML et VML, segments libres, habillage, objet de cellule, modifications validées par le SDK) — 151 tests ; self-test 77 vérifications (image, habillage, déplacement, taille, annulation, forme, zone de texte, relecture).
 
 **Reporté** : graphiques et SmartArt dessinés (cadre de repli ; la partie dessin `dsp` d'un SmartArt n'est pas encore lue), effets (ombre, lueur, 3D), habillage dans une cellule, cadres `w:framePr`, rognage à la souris, zones de texte liées, lettrine.
+
+### 10.22 Version 1.0.0 (2026-11-10)
+
+Publiée par la pipeline (tag `v1.0.0`) : lot 7 tel que décrit en §10.21 — images, formes et zones de texte affichées à leur place avec le texte habillé comme dans Word, insertion et modification des objets, tableaux flottants, images EMF/WMF. Jalon 1.0 atteint ; « Prochaines versions » de l'accueil : 1.1 à 1.3.

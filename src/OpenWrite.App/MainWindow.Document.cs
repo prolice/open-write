@@ -21,7 +21,9 @@ public partial class MainWindow
     /// <summary>Étapes affichées sur l'accueil (PLAN.md §8.17).</summary>
     static readonly (string Version, string Text)[] Milestones =
     {
-        ("1.0", "Images, formes et zones de texte"),
+        ("1.1", "Orthographe, commentaires, suivi des modifications"),
+        ("1.2", "Notes, table des matières, renvois"),
+        ("1.3", "Champs et contrôles de contenu"),
     };
 
     static readonly DropShadowEffect CardShadow = new() { Color = Color.FromRgb(0x27, 0x4D, 0x9D), BlurRadius = 30, ShadowDepth = 8, Direction = 270, Opacity = 0.14 };

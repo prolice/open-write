@@ -135,35 +135,33 @@
                             <Button DockPanel.Dock="Right" Style="{StaticResource RSmall}" Tag="&#xE711;" Click="CloseFormatPane_Click" ToolTip="Fermer le volet (Affichage ▸ Mise en forme pour le rouvrir)" Padding="4,2"/>
                             <TextBlock Text="Mise en forme" FontFamily="{StaticResource TitleFont}" FontSize="16" FontWeight="ExtraBold" VerticalAlignment="Center"/>
                         </DockPanel>
-                        <Border Style="{StaticResource SoonBadge}" HorizontalAlignment="Left" Margin="0,8,0,4">
-                            <TextBlock Text="Modifiable à partir de la version 0.4" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource VersionText}"/>
-                        </Border>
-                        <TextBlock x:Name="PaneSelection" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
-                                   Text="Survolez un paragraphe de la page pour voir sa mise en forme."/>
-                        <StackPanel IsEnabled="False">
+                        <TextBlock x:Name="PaneSelection" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"
+                                   Text="Cliquez dans la page : la mise en forme du point d'insertion s'affiche ici."/>
+                        <StackPanel x:Name="PaneControls" IsEnabled="False">
                             <TextBlock Style="{StaticResource PanelTitle}" Text="STYLE"/>
-                            <ComboBox x:Name="PaneStyle" IsEditable="True" Text="Normal"/>
+                            <ComboBox x:Name="PaneStyle" IsEditable="True" IsEnabled="False" Text="Normal" ToolTip="Styles : version 0.5"/>
                             <TextBlock Style="{StaticResource PanelTitle}" Text="POLICE"/>
                             <DockPanel>
-                                <ComboBox DockPanel.Dock="Right" x:Name="PaneSize" IsEditable="True" Text="11" Width="58" Margin="6,0,0,0"/>
-                                <ComboBox x:Name="PaneFont" IsEditable="True" Text="Inter"/>
+                                <ComboBox DockPanel.Dock="Right" x:Name="PaneSize" IsEditable="True" Width="62" Margin="6,0,0,0" ToolTip="Taille (Ctrl+Maj+&gt; et Ctrl+&lt; pour agrandir et réduire)"/>
+                                <ComboBox x:Name="PaneFont" IsEditable="True" IsTextSearchEnabled="True" ToolTip="Police"/>
                             </DockPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                <Button Style="{StaticResource RSmall}"><TextBlock Text="G" FontWeight="Bold" FontSize="14" Width="14" TextAlignment="Center"/></Button>
-                                <Button Style="{StaticResource RSmall}"><TextBlock Text="I" FontStyle="Italic" FontSize="14" Width="14" TextAlignment="Center" FontFamily="Georgia"/></Button>
-                                <Button Style="{StaticResource RSmall}"><TextBlock Text="S" TextDecorations="Underline" FontSize="14" Width="14" TextAlignment="Center"/></Button>
-                                <Button Style="{StaticResource RSmall}"><TextBlock Text="abc" TextDecorations="Strikethrough" FontSize="12.5"/></Button>
+                                <ToggleButton x:Name="PaneBold" Style="{StaticResource RSmall}" Focusable="False" ToolTip="Gras (Ctrl+G)"><TextBlock Text="G" FontWeight="Bold" FontSize="14" Width="14" TextAlignment="Center"/></ToggleButton>
+                                <ToggleButton x:Name="PaneItalic" Style="{StaticResource RSmall}" Focusable="False" ToolTip="Italique (Ctrl+I)"><TextBlock Text="I" FontStyle="Italic" FontSize="14" Width="14" TextAlignment="Center" FontFamily="Georgia"/></ToggleButton>
+                                <ToggleButton x:Name="PaneUnderline" Style="{StaticResource RSmall}" Focusable="False" ToolTip="Souligné (Ctrl+U)"><TextBlock Text="S" TextDecorations="Underline" FontSize="14" Width="14" TextAlignment="Center"/></ToggleButton>
+                                <ToggleButton x:Name="PaneStrike" Style="{StaticResource RSmall}" Focusable="False" ToolTip="Barré"><TextBlock Text="abc" TextDecorations="Strikethrough" FontSize="12.5"/></ToggleButton>
+                                <Button x:Name="PaneFontDialog" Style="{StaticResource RSmall}" Focusable="False" Tag="&#xE8D2;" ToolTip="Police… (Ctrl+D)"/>
                             </StackPanel>
                             <TextBlock Style="{StaticResource PanelTitle}" Text="PARAGRAPHE"/>
                             <StackPanel Orientation="Horizontal">
-                                <Button Style="{StaticResource RSmall}" Tag="&#xE8E4;"/>
-                                <Button Style="{StaticResource RSmall}" Tag="&#xE8E3;"/>
-                                <Button Style="{StaticResource RSmall}" Tag="&#xE8E2;"/>
-                                <Button Style="{StaticResource RSmall}"><TextBlock Text="☰" FontSize="14"/></Button>
-                                <Button Style="{StaticResource RSmall}" Tag="&#xE8FD;"/>
+                                <ToggleButton x:Name="PaneLeft" Style="{StaticResource RSmall}" Focusable="False" Tag="&#xE8E4;" ToolTip="Aligner à gauche (Ctrl+Maj+G)"/>
+                                <ToggleButton x:Name="PaneCenter" Style="{StaticResource RSmall}" Focusable="False" Tag="&#xE8E3;" ToolTip="Centrer (Ctrl+E)"/>
+                                <ToggleButton x:Name="PaneRight" Style="{StaticResource RSmall}" Focusable="False" Tag="&#xE8E2;" ToolTip="Aligner à droite (Ctrl+Maj+D)"/>
+                                <ToggleButton x:Name="PaneJustify" Style="{StaticResource RSmall}" Focusable="False" ToolTip="Justifier (Ctrl+J)"><TextBlock Text="☰" FontSize="14"/></ToggleButton>
+                                <Button x:Name="PaneParagraphDialog" Style="{StaticResource RSmall}" Focusable="False" Tag="&#xE8FD;" ToolTip="Paragraphe… (retraits, espacements, enchaînements)"/>
                             </StackPanel>
-                            <TextBlock Style="{StaticResource PanelTitle}" Text="ESPACEMENT"/>
-                            <ComboBox IsEditable="True" Text="1,15"/>
+                            <TextBlock Style="{StaticResource PanelTitle}" Text="INTERLIGNE"/>
+                            <ComboBox x:Name="PaneLineSpacing" IsEditable="True" ToolTip="Interligne (multiple de la ligne simple)"/>
                         </StackPanel>
                         <TextBlock Style="{StaticResource PanelTitle}" Text="CE DOCUMENT"/>
                         <TextBlock x:Name="PaneDocInfo" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="12" LineHeight="18"

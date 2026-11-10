@@ -22,6 +22,9 @@ public static class HelpService
     public const string Roadmap = "feuille-de-route.html#versions";
     public const string Updates = "mises-a-jour.html#automatiques";
     public const string Shortcuts = "raccourcis.html#general";
+    public const string Writing = "documents.html#ecrire";
+    public const string FindReplace = "documents.html#rechercher";
+    public const string Formatting = "documents.html#mise-en-forme";
 
     public static IReadOnlyList<string> AllTopics => typeof(HelpService).GetFields(BindingFlags.Public | BindingFlags.Static)
         .Where(f => f.IsLiteral && f.FieldType == typeof(string)).Select(f => (string)f.GetRawConstantValue()!).ToList();

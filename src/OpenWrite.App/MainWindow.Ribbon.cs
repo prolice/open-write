@@ -22,7 +22,7 @@ public partial class MainWindow
         {
             new("Presse-papiers", "0.4", ("", "Coller"), ("", "Couper"), ("", "Copier")),
             new("Police", "0.4", ("", "Police"), ("", "Gras"), ("", "Italique"), ("", "Souligné")),
-            new("Paragraphe", "0.4", ("", "Gauche"), ("", "Centrer"), ("", "Droite"), ("", "Listes")),
+            new("Paragraphe", "0.4", ("", "Gauche"), ("", "Centrer"), ("", "Droite"), ("", "Listes"), ("\uE890", "Marques ¶")),
             new("Styles", "0.5", ("", "Styles"), ("", "Modifier")),
             new("Modification", "0.4", ("", "Rechercher"), ("", "Remplacer"), ("", "Sélectionner")),
         }),
@@ -91,6 +91,7 @@ public partial class MainWindow
     Dictionary<string, (Action Run, string Tip)> HomeCommands() => new()
     {
         ["Coller"] = (Paste, "Coller (Ctrl+V) — texte"),
+        ["Police"] = (ShowFontDialog, "Police… (Ctrl+D)"),
         ["Couper"] = (Cut, "Couper (Ctrl+X)"),
         ["Copier"] = (Copy, "Copier (Ctrl+C)"),
         ["Gras"] = (() => ToggleCharacter("b"), "Gras (Ctrl+G ou Ctrl+B)"),
@@ -100,6 +101,16 @@ public partial class MainWindow
         ["Centrer"] = (() => SetAlignment("center"), "Centrer (Ctrl+E)"),
         ["Droite"] = (() => SetAlignment("right"), "Aligner à droite (Ctrl+Maj+D ou Ctrl+R)"),
         ["Sélectionner"] = (SelectAll, "Sélectionner tout (Ctrl+A)"),
+        ["Rechercher"] = (() => ShowFind(replace: false), "Rechercher (Ctrl+F)"),
+        ["Remplacer"] = (() => ShowFind(replace: true), "Remplacer (Ctrl+H)"),
+        ["Marques ¶"] = (ToggleMarks, "Afficher ou masquer les marques de mise en forme (Ctrl+Maj+8)"),
+    };
+
+    /// <summary>Commandes de l'onglet Mise en page déjà disponibles.</summary>
+    Dictionary<string, (Action Run, string Tip)> LayoutCommands() => new()
+    {
+        ["Retraits"] = (ShowParagraphDialog, "Paragraphe… : retraits"),
+        ["Espacement"] = (ShowParagraphDialog, "Paragraphe… : espacement et interligne"),
     };
 
     /// <summary>Active les commandes disponibles quand un document est affiché.</summary>
@@ -111,6 +122,7 @@ public partial class MainWindow
     void BuildRibbon()
     {
         var home = HomeCommands();
+        var layoutCmds = LayoutCommands();
         foreach (var (tab, groups) in Roadmap)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Visibility = tab == "TabHome" ? Visibility.Visible : Visibility.Collapsed };
@@ -120,7 +132,7 @@ public partial class MainWindow
                 foreach (var (glyph, label) in g.Buttons)
                 {
                     var button = new Button { Style = (Style)FindResource("RBig"), Tag = glyph, Content = label, IsEnabled = false };
-                    if (tab == "TabHome" && home.TryGetValue(label, out var cmd))
+                    if ((tab == "TabHome" ? home : tab == "TabLayout" ? layoutCmds : null)?.TryGetValue(label, out var cmd) == true)
                     {
                         // le point d'insertion garde le clavier : le bouton ne prend pas le focus
                         button.Focusable = false;

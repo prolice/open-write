@@ -17,7 +17,7 @@ namespace OpenWrite.App;
 /// Captures d'écran de la vraie fenêtre, hors écran (documentation, portail, vérification visuelle) :
 /// OpenWrite.exe --screenshot document.docx|- image.png [largeur hauteur] [scène].
 /// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about », « page-N » (vue défilée à la page N),
-/// « selection » (quelques mots sélectionnés sur la première page).
+/// « selection » (quelques mots sélectionnés sur la première page), « marques » (idem, marques de mise en forme affichées).
 /// Auto-test de bout en bout (OpenWrite.exe --selftest dossier) : la vraie fenêtre, hors écran, sur un document fabriqué.
 /// </summary>
 public static class SelfTest
@@ -218,6 +218,12 @@ public static class SelfTest
         ApplicationCommands.Undo.Execute(null, w);
         Pump();
         Check(((Paragraph)w.Body!.Blocks[1]).Props.Val("jc") == "center", "Ctrl+Z : alignement d'avant");
+        // rechercher / remplacer (0.4)
+        Check(w.FindNext("ligne", false, false) && w.SelectedText() == "ligne", "Rechercher : occurrence sélectionnée");
+        Check(w.ReplaceAll("ligne", "LIGNE", true, true) == 1 && TextOf(w.Body!.Blocks[1]) == "Deuxième LIGNE", "Remplacer tout");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(TextOf(w.Body!.Blocks[1]) == "Deuxième ligne", "Ctrl+Z : remplacement annulé d'un coup");
         Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
         var reread = DocxPackage.Open(file).Main!.Stories().First();
         Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"
@@ -325,10 +331,11 @@ public static class SelfTest
             default:
                 if (scene is not null && w.FindName(scene) is RadioButton rb) rb.IsChecked = true;
                 // « selection » : quelques mots sélectionnés sur la première page
-                if (scene == "selection")
+                if (scene is "selection" or "marques")
                 {
                     Pump();
                     w.SelectSampleWords(0);
+                    if (scene == "marques") w.ToggleMarks();
                 }
                 // « page-N » : vue des pages défilée jusqu'à la page N
                 if (scene is not null && scene.StartsWith("page-") && int.TryParse(scene[5..], out var n))

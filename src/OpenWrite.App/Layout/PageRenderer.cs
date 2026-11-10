@@ -20,6 +20,11 @@ public sealed class PageRenderer
     /// <param name="image">Image d'un objet en ligne (w:drawing), ou null (un cadre gris est dessiné).</param>
     public PageRenderer(Func<XElement, ImageSource?> image) => _image = image;
 
+    /// <summary>Marques de mise en forme (Ctrl+Maj+8) : ¶, espaces, tabulations, retours à la ligne, sauts de page.</summary>
+    public bool ShowMarks { get; set; }
+
+    static readonly Brush MarkInk = Freeze(new SolidColorBrush(Color.FromRgb(0x5B, 0x74, 0xA8)));
+
     static GlyphTypeface? LoadFallback()
     {
         foreach (var name in new[] { "Segoe UI Symbol", "Segoe UI", "Arial" })
@@ -41,7 +46,58 @@ public sealed class PageRenderer
     {
         foreach (var cell in page.Cells) DrawCell(dc, cell);
         DrawParagraphBoxes(dc, page);
-        foreach (var line in page.Lines) DrawLine(dc, line, header ? HeaderInk : null);
+        foreach (var line in page.Lines)
+        {
+            DrawLine(dc, line, header ? HeaderInk : null);
+            if (ShowMarks) DrawMarks(dc, line);
+        }
+    }
+
+    /// <summary>Marques de mise en forme d'une ligne, aux positions exactes de la mise en page.</summary>
+    static void DrawMarks(DrawingContext dc, PlacedLine placed)
+    {
+        var pl = placed.Paragraph;
+        var line = pl.Lines[placed.Line];
+        var c = pl.Content;
+        double baseline = placed.Y + line.Baseline;
+        double Size(int k) => k < c.Text.Length ? c.Styles[c.StyleOf[k]].Size : c.Mark.Size;
+        for (int k = line.Start; k < line.End && k < c.Text.Length; k++)
+        {
+            char ch = c.Text[k];
+            if (ch is not (' ' or '\u00A0' or Atom.Tab)) continue;
+            double x0 = placed.X + CaretGeometry.X(pl, placed.Line, k), x1 = placed.X + CaretGeometry.X(pl, placed.Line, k + 1);
+            double size = Size(k);
+            if (ch == Atom.Tab) DrawMark(dc, "→", Math.Max(x0, (x0 + x1) / 2 - size * 0.35), baseline, size);
+            else DrawMark(dc, ch == ' ' ? "·" : "°", (x0 + x1) / 2 - size * 0.14, baseline, size);
+        }
+        double xe = placed.X + CaretGeometry.X(pl, placed.Line, line.End);
+        switch (line.EndKind)
+        {
+            case LineEnd.Paragraph: DrawMark(dc, "¶", xe + 0.5, baseline, c.Mark.Size); break;
+            case LineEnd.LineBreak: DrawMark(dc, "↵", xe + 0.5, baseline, Size(line.End)); break;
+            case LineEnd.PageBreak:
+            case LineEnd.ColumnBreak:
+                var label = line.EndKind == LineEnd.PageBreak ? "Saut de page" : "Saut de colonne";
+                var pen = Freeze(new Pen(MarkInk, 0.6) { DashStyle = DashStyles.Dot });
+                double right = placed.X + pl.Width, y = baseline - c.Mark.Size * 0.3;
+                double mid = (xe + right) / 2;
+                dc.DrawLine(pen, new Point(xe + 2, y), new Point(mid - 34, y));
+                DrawMark(dc, label, mid - 30, y + 2.5, 7);
+                dc.DrawLine(pen, new Point(mid + 34, y), new Point(right, y));
+                if (line.End >= c.Text.Length - 1) DrawMark(dc, "¶", right + 1, baseline, c.Mark.Size);
+                break;
+        }
+    }
+
+    static void DrawMark(DrawingContext dc, string text, double x, double baseline, double size)
+    {
+        if (Fallback is not { } fb) return;
+        var glyphs = new List<ushort>();
+        var adv = new List<double>();
+        foreach (var ch in text)
+            if (fb.CharacterToGlyphMap.TryGetValue(ch, out var g)) { glyphs.Add(g); adv.Add(fb.AdvanceWidths[g] * size); }
+        if (glyphs.Count == 0) return;
+        dc.DrawGlyphRun(MarkInk, new GlyphRun(fb, 0, false, size, 1.0f, glyphs.ToArray(), new Point(x, baseline), adv.ToArray(), null, null, null, null, null, null));
     }
 
     /// <summary>

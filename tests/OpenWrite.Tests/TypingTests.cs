@@ -239,6 +239,23 @@ public class TypingTests
     }
 
     [Fact]
+    public void Remplacement_garde_la_mise_en_forme_du_texte_remplace()
+    {
+        var (body, _) = Doc(P(T("Le "), T("chat", "<w:b/>"), T(" dort")));
+        // « chat » (gras, 3 à 7) → « chien » : gras, et « Le » / « dort » intacts
+        var end = TextOps.ReplaceText(body, new DocPos(new[] { 0 }, 3), new DocPos(new[] { 0 }, 7), "chien");
+        Assert.Equal(8, end.Offset);
+        var runs = Runs(body, 0);
+        Assert.Equal(new[] { "Le ", "chien", " dort" }, runs.Select(r => r.Text).ToArray());
+        Assert.True(runs[1].Props.Flag("b"));
+        // remplacement par un texte vide, et sur un seul caractère
+        TextOps.ReplaceText(body, new DocPos(new[] { 0 }, 3), new DocPos(new[] { 0 }, 4), "C");
+        Assert.Equal("Le Chien dort", Text((Paragraph)body.Blocks[0]));
+        TextOps.ReplaceText(body, new DocPos(new[] { 0 }, 0), new DocPos(new[] { 0 }, 3), "");
+        Assert.Equal("Chien dort", Text((Paragraph)body.Blocks[0]));
+    }
+
+    [Fact]
     public void Lignes_d_un_paragraphe_et_pas_a_pas_d_une_page_a_l_autre()
     {
         var paras = Enumerable.Range(0, 30).Select(i => P(T(string.Concat(Enumerable.Repeat("aaaa ", 12)).TrimEnd()))).ToArray();

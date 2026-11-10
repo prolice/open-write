@@ -118,6 +118,83 @@ public static class FormatOps
         run.Props.Set(fonts);
     }
 
+    /// <summary>
+    /// Ctrl+Espace : retire la mise en forme directe des caractères (le style de caractère, la langue et l'historique
+    /// des révisions restent).
+    /// </summary>
+    public static void ClearCharacter(Run run)
+    {
+        if (run.Props.Element is not { } rpr) return;
+        rpr.Elements().Where(e => e.Name.Namespace != run.Props.Ns
+                                  || e.Name.LocalName is not ("rStyle" or "lang" or "noProof" or "ins" or "del" or "moveFrom" or "moveTo" or "rPrChange"))
+           .Remove();
+    }
+
+    /// <summary>
+    /// Ctrl+Q : retire la mise en forme directe du paragraphe (style, liste, saut de section, marque de paragraphe,
+    /// cadre et historique des révisions restent).
+    /// </summary>
+    public static void ClearParagraph(Paragraph p)
+    {
+        if (p.Props.Element is not { } ppr) return;
+        ppr.Elements().Where(e => e.Name.Namespace != p.Props.Ns
+                                  || e.Name.LocalName is not ("pStyle" or "numPr" or "sectPr" or "rPr" or "pPrChange" or "framePr" or "cnfStyle" or "divId"))
+           .Remove();
+    }
+
+    /// <summary>Retraits (twips ; null = inchangé). <paramref name="firstLine"/> négatif = retrait suspendu (w:hanging).</summary>
+    public static void SetIndent(Paragraph p, int? left = null, int? right = null, int? firstLine = null)
+    {
+        var ns = p.Props.Ns;
+        var ind = p.Props.Get("ind") is { } existing ? new XElement(existing) : new XElement(ns + "ind");
+        void Set(string name, string alt, int value)
+        {
+            ind.Attribute(ns + alt)?.Remove();
+            ind.Attribute(ns + (alt + "Chars"))?.Remove();
+            ind.Attribute(ns + (name + "Chars"))?.Remove();
+            ind.SetAttributeValue(ns + name, value);
+        }
+        if (left is { } l) Set("left", "start", l);
+        if (right is { } r) Set("right", "end", r);
+        if (firstLine is { } f)
+        {
+            foreach (var a in new[] { "firstLine", "hanging", "firstLineChars", "hangingChars" }) ind.Attribute(ns + a)?.Remove();
+            ind.SetAttributeValue(ns + (f < 0 ? "hanging" : "firstLine"), Math.Abs(f));
+        }
+        p.Props.Set(ind);
+    }
+
+    /// <summary>Espacements avant / après (twips) et interligne (w:line, w:lineRule) ; null = inchangé.</summary>
+    public static void SetSpacing(Paragraph p, int? before = null, int? after = null, int? line = null, string? lineRule = null)
+    {
+        var ns = p.Props.Ns;
+        var sp = p.Props.Get("spacing") is { } existing ? new XElement(existing) : new XElement(ns + "spacing");
+        if (before is { } b)
+        {
+            foreach (var a in new[] { "beforeLines", "beforeAutospacing" }) sp.Attribute(ns + a)?.Remove();
+            sp.SetAttributeValue(ns + "before", b);
+        }
+        if (after is { } af)
+        {
+            foreach (var a in new[] { "afterLines", "afterAutospacing" }) sp.Attribute(ns + a)?.Remove();
+            sp.SetAttributeValue(ns + "after", af);
+        }
+        if (line is { } ln)
+        {
+            sp.SetAttributeValue(ns + "line", ln);
+            sp.SetAttributeValue(ns + "lineRule", lineRule ?? "auto");
+        }
+        p.Props.Set(sp);
+    }
+
+    /// <summary>Option de paragraphe (keepNext, keepLines, pageBreakBefore, widowControl…) ; « 0 » si retirée mais héritée.</summary>
+    public static void SetParagraphFlag(Paragraph p, string local, bool on, bool inherited)
+    {
+        if (on) { p.Props.Set(new XElement(p.Props.Ns + local)); return; }
+        p.Props.Remove(local);
+        if (inherited) p.Props.Set(new XElement(p.Props.Ns + local, new XAttribute(p.Props.Ns + "val", "0")));
+    }
+
     // ------------------------------------------------------------------ segments
 
     static IEnumerable<Run> RunsIn(List<Inline> list)

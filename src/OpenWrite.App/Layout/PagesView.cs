@@ -22,6 +22,7 @@ public sealed class PageDrawings
     }
 
     public DocumentLayout Layout => _layout;
+    public PageRenderer Renderer => _renderer;
     public IReadOnlyList<Page> Pages => _layout.Pages;
 
     /// <summary>Dessin de la page <paramref name="i"/>, en points (sans le fond).</summary>

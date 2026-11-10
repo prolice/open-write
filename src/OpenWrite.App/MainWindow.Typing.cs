@@ -227,6 +227,7 @@ public partial class MainWindow
             var rf = i > 0 ? ct.Styles[ct.StyleOf[i - 1]].Format : i < ct.Text.Length ? ct.Styles[ct.StyleOf[i]].Format : ct.Mark.Format;
             PaneSelection.Text = Describe(pl.Format, rf);
         }
+        RefreshFormatPane();
         if (scroll && rect is { } cr) ScrollIntoView(cr.Page, cr.Rect);
     }
 

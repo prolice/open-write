@@ -20,6 +20,19 @@ public partial class MainWindow
         if (!ctrl) return false;
         switch (key)
         {
+            case Key.D when !shift: ShowFontDialog(); return true;
+            case Key.F when !shift: ShowFind(replace: false); return true;
+            case Key.H when !shift: ShowFind(replace: true); return true;
+            case Key.D8 when shift:
+            case Key.Multiply: ToggleMarks(); return true;
+            case Key.Space when !shift: ClearCharacterFormatting(); return true;
+            case Key.Q when !shift: ClearParagraphFormatting(); return true;
+            // Ctrl+Maj+> et Ctrl+< (touche &lt;&gt; des claviers européens), Ctrl+Maj+. et Ctrl+Maj+, (claviers américains), Ctrl+] et Ctrl+[
+            case Key.OemBackslash: GrowFont(shift ? 1 : -1); return true;
+            case Key.OemPeriod when shift:
+            case Key.Oem6 when !shift: GrowFont(1); return true;
+            case Key.OemComma when shift:
+            case Key.Oem4 when !shift: GrowFont(-1); return true;
             case Key.G when !shift:
             case Key.B when !shift: ToggleCharacter("b"); return true;
             case Key.I when !shift: ToggleCharacter("i"); return true;
@@ -39,10 +52,11 @@ public partial class MainWindow
         "b" => f.Bold,
         "i" => f.Italic,
         "u" => f.Underline is not null and not "none",
+        "strike" => f.Strike,
         _ => false,
     };
 
-    static string LabelOf(string what) => what switch { "b" => "Gras", "i" => "Italique", _ => "Souligné" };
+    static string LabelOf(string what) => what switch { "b" => "Gras", "i" => "Italique", "strike" => "Barré", _ => "Souligné" };
 
     /// <summary>Texte visé par une mise en forme de caractère : la sélection, sinon le mot du point d'insertion.</summary>
     (TextPoint From, TextPoint To)? CharacterTarget()
@@ -94,6 +108,7 @@ public partial class MainWindow
             bool want = !current;
             _pendingFormat.Add((p, r) => Set(r, p, want));
             StatusText.Text = $"{LabelOf(what)} {(want ? "activé" : "désactivé")} pour le texte que vous allez taper.";
+            RefreshFormatPane();
             return;
         }
         var formats = FormatsIn(target.From, target.To).ToList();

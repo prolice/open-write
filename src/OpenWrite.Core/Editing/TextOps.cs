@@ -122,6 +122,26 @@ public static class TextOps
         return pos;
     }
 
+    /// <summary>
+    /// Remplace le texte d'une plage d'un même paragraphe (Rechercher / Remplacer) : le nouveau texte prend la mise en
+    /// forme du <strong>premier caractère remplacé</strong>, comme Word (pas celle du caractère qui précède).
+    /// Renvoie la position après le nouveau texte.
+    /// </summary>
+    public static DocPos ReplaceText(Story root, DocPos from, DocPos to, string text)
+    {
+        if (to < from) (from, to) = (to, from);
+        bool firstIsText = from.Path.SequenceEqual(to.Path)
+            && ParagraphAtoms.Of(from.Paragraph(root)).Any(a => a.Content is TextContent && !a.InDeletion && a.Start <= from.Offset && from.Offset < a.End);
+        if (!firstIsText || to.Offset == from.Offset || text.Length == 0)
+            return Insert(root, Delete(root, from, to), text);
+        int n = to.Offset - from.Offset;
+        // inséré après le 1er caractère (il en prend la mise en forme), puis l'ancien texte retiré de part et d'autre
+        Insert(root, from.WithOffset(from.Offset + 1), text);
+        Delete(root, from, from.WithOffset(from.Offset + 1));
+        Delete(root, from.WithOffset(from.Offset + text.Length), from.WithOffset(from.Offset + text.Length + n - 1));
+        return from.WithOffset(from.Offset + text.Length);
+    }
+
     static void InsertTextAfter(Run run, RunContent c, string text)
     {
         int i = run.Content.IndexOf(c);

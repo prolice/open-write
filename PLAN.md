@@ -669,3 +669,7 @@ Tolérances essayées et écartées : dépassement en fin de ligne (sans effet),
 - **Ruban** : boutons actifs déclarés par onglet (`HomeCommands`, `InsertCommands`, `LayoutCommands`).
 - Mesures : médiane 1 à 5 ms par touche sur le corpus (affichage compris), 5 ms sur 301 pages ; Word ouvre les 25 documents modifiés. Auto-test **39 vérifications**, **113 tests**.
 - Reportés à leur lot : saisie dans les en-têtes et pieds (lot 5, 0.6), les notes (lot 9), sélection sur plusieurs cellules (lot 6), images collées depuis un autre programme.
+
+### 10.12 Version 0.4.0 (2026-11-10)
+
+Publiée par la pipeline (tag `v0.4.0`) : lot 3 tel que décrit en §10.10 et §10.11 — saisie, sélection, mise en forme directe (volet, boîtes Police et Paragraphe, règle), presse-papiers RTF / HTML / interne, rechercher / remplacer, liens, symboles, marques de mise en forme, Tab dans les tableaux. Accueil et message d'ouverture mis à jour ; jalon 0.4 retiré de la liste « Prochaines versions ».

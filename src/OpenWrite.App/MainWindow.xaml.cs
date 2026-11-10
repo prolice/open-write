@@ -89,7 +89,7 @@ public partial class MainWindow : Window
         if (TrackRecent && remember) RecentFiles.Add(_path);
         ShowDocument();
         UpdateStatus();
-        StatusText.Text = (HasCheckBoxes ? "Cliquez sur une case pour la cocher ; Ctrl+S pour enregistrer. " : "")
+        StatusText.Text = "Cliquez dans la page pour écrire" + (HasCheckBoxes ? ", sur une case pour la cocher" : "") + " ; Ctrl+S pour enregistrer. "
             + $"Mis en page en {LastLayoutMs:0} ms" + (_fonts.Substitutions.Count > 0 ? $" · polices remplacées : {string.Join(", ", _fonts.Substitutions.Select(kv => $"{kv.Key} → {kv.Value}"))}" : "") + ".";
     }
 

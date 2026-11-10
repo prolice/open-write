@@ -21,7 +21,6 @@ public partial class MainWindow
     /// <summary>Étapes affichées sur l'accueil (PLAN.md §8.17).</summary>
     static readonly (string Version, string Text)[] Milestones =
     {
-        ("0.4", "Écriture et mise en forme, copier-coller avec Word"),
         ("0.5", "Styles et listes"),
         ("0.6", "Sections, en-têtes et pieds de page"),
         ("0.7", "Tableaux"),
@@ -58,7 +57,7 @@ public partial class MainWindow
         sp.Children.Add(new TextBlock
         {
             Text = "Traitement de texte qui ouvre et enregistre directement les documents Word. Cette version affiche un .docx " +
-                   "page par page, mis en page comme dans Word, coche les cases des formulaires et enregistre sans rien perdre du reste du document.",
+                   "page par page comme dans Word ; on y écrit, met en forme, copie-colle avec Word et le web, et l'enregistrement ne perd rien du reste du document.",
             TextWrapping = TextWrapping.Wrap, FontSize = 14.5, LineHeight = 22, Foreground = R("Muted"), Margin = new Thickness(0, 20, 0, 18),
         });
         var open = new Button { Style = (Style)FindResource("PillButton"), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(22, 11, 24, 11) };

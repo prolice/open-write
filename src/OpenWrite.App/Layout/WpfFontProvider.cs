@@ -64,6 +64,18 @@ public sealed class WpfFontProvider : IFontProvider
     }
     readonly HashSet<string> _installed = Fonts.SystemFontFamilies.Select(f => f.Source).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    IReadOnlyDictionary<string, string> _altNames = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Remplaçants proposés par le document ouvert (fontTable.xml, w:altName), essayés en premier pour une police absente,
+    /// comme Word (Syllabus : ZapfChancery → Monotype Corsiva).
+    /// </summary>
+    public IReadOnlyDictionary<string, string> AltNames
+    {
+        get => _altNames;
+        set { _altNames = value; _faces.Clear(); }
+    }
+
     /// <summary>Police demandée → police utilisée, pour les polices absentes.</summary>
     public Dictionary<string, string> Substitutions { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -104,7 +116,8 @@ public sealed class WpfFontProvider : IFontProvider
         }
         if (!_installed.Contains(name))
         {
-            used = Compatible.TryGetValue(name, out var alts) ? alts.FirstOrDefault(_installed.Contains) ?? "Arial" : "Arial";
+            used = _altNames.TryGetValue(name, out var docAlt) && _installed.Contains(docAlt) ? docAlt
+                : Compatible.TryGetValue(name, out var alts) ? alts.FirstOrDefault(_installed.Contains) ?? "Arial" : "Arial";
             Substitutions[family] = used;
         }
         var style = ital ? FontStyles.Italic : FontStyles.Normal;
@@ -145,9 +158,10 @@ public sealed class WpfFontProvider : IFontProvider
             catch (Exception) { ok = false; }
             if (ok)
             {
-                Ascent = m.WinAscent / (double)m.UnitsPerEm;
-                Descent = m.WinDescent / (double)m.UnitsPerEm;
-                ExternalLeading = m.ExternalLeading / (double)m.UnitsPerEm;
+                var (a, dsc, lead) = m.WordMetrics;
+                Ascent = a / (double)m.UnitsPerEm;
+                Descent = dsc / (double)m.UnitsPerEm;
+                ExternalLeading = lead / (double)m.UnitsPerEm;
             }
             else
             {

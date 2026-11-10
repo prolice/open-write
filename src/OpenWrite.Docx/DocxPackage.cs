@@ -115,6 +115,25 @@ public sealed class DocxPackage
     const string RelNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     const string StrictRelNs = "http://purl.oclc.org/ooxml/officeDocument/relationships";
 
+    /// <summary>Polices de remplacement proposées par le document (fontTable.xml, w:font/w:altName) : nom → remplaçant.</summary>
+    public Dictionary<string, string> FontAltNames()
+    {
+        var res = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var name = Main is null ? null : Relationships(Main.PartName).Values.FirstOrDefault(r => r.Type.EndsWith("/fontTable", StringComparison.Ordinal))?.Target;
+        if (name is null || Find(name) is not { } entry) return res;
+        try
+        {
+            foreach (var font in ParseXml(entry.Data).Root?.Elements().Where(e => e.Name.LocalName == "font") ?? Enumerable.Empty<XElement>())
+            {
+                var n = font.Attributes().FirstOrDefault(a => a.Name.LocalName == "name")?.Value;
+                var alt = font.Elements().FirstOrDefault(e => e.Name.LocalName == "altName")?.Attributes().FirstOrDefault(a => a.Name.LocalName == "val")?.Value;
+                if (!string.IsNullOrEmpty(n) && !string.IsNullOrEmpty(alt)) res[n] = alt;
+            }
+        }
+        catch (XmlException) { }
+        return res;
+    }
+
     /// <summary>Histoire d'une partie liée à la partie principale (en-tête, pied de page) par son identifiant de relation (r:id).</summary>
     public OpenWrite.Core.Model.Story? RelatedStory(string relId)
     {
@@ -124,6 +143,24 @@ public sealed class DocxPackage
     }
 
     IReadOnlyDictionary<string, Relationship>? _mainRels;
+
+    /// <summary>
+    /// Contenu d'une note de bas de page (<paramref name="kind"/> = "footnote") ou de fin ("endnote") par son w:id ;
+    /// "separator" : le séparateur (w:type="separator").
+    /// </summary>
+    public OpenWrite.Core.Model.Story? NoteStory(string kind, string id)
+    {
+        if (Main is null) return null;
+        _mainRels ??= Relationships(Main.PartName);
+        var rel = _mainRels.Values.FirstOrDefault(r => !r.External && r.Type.EndsWith("/" + kind + "s", StringComparison.Ordinal));
+        if (rel is null || !Stories.TryGetValue(rel.Target, out var part)) return null;
+        foreach (var holder in part.Items.OfType<StoryHolder>())
+        {
+            string? Attr(string local) => holder.Attributes.FirstOrDefault(a => a.Name.LocalName == local)?.Value;
+            if (id == "separator" ? Attr("type") == "separator" : Attr("id") == id && Attr("type") is null) return holder.Story;
+        }
+        return null;
+    }
 
     /// <summary>Adresse d'un lien hypertexte (w:hyperlink r:id) d'une partie ; null pour un lien interne (w:anchor seul).</summary>
     public string? HyperlinkTarget(StoryPart part, OpenWrite.Core.Model.InlineContainer link)

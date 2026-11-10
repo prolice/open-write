@@ -42,6 +42,8 @@ public sealed class ParagraphContent
     public Dictionary<int, (double W, double H)> Objects { get; init; } = new();
     /// <summary>Style de la marque de paragraphe (hauteur d'une ligne vide, dernière ligne).</summary>
     public required TextStyle Mark { get; init; }
+    /// <summary>Appels de note de bas de page : position dans le texte → w:id de la note.</summary>
+    public Dictionary<int, string> Footnotes { get; init; } = new();
     /// <summary>Le paragraphe entier est masqué (marque et texte) : il n'occupe aucune place.</summary>
     public bool Hidden { get; init; }
 }
@@ -61,10 +63,17 @@ public sealed class LineBox
     /// <summary>Position de la ligne de base depuis le haut de la ligne.</summary>
     public double Baseline { get; init; }
     public LineEnd EndKind { get; init; }
+    /// <summary>
+    /// Hauteur qui doit tenir sur la page : avec un interligne multiple, l'espace ajouté au-delà de la hauteur
+    /// naturelle peut déborder la marge du bas (Word ; Annexe : ligne à 1,5 placée à 752,9 pt, bas du corps à 771 pt).
+    /// </summary>
+    public double FitHeight { get; init; }
     /// <summary>Abscisse des morceaux depuis le bord gauche de la colonne (retraits et alignement appliqués).</summary>
     public List<LinePiece> Pieces { get; } = new();
     /// <summary>Espace ajouté à chaque espace pour la justification.</summary>
     public double ExtraPerSpace { get; init; }
+    /// <summary>Notes de bas de page appelées sur la ligne (w:id).</summary>
+    public List<string>? Footnotes { get; set; }
 }
 
 /// <summary>Paragraphe découpé en lignes pour une largeur donnée.</summary>
@@ -103,13 +112,38 @@ public sealed class ParagraphLayouter
 
     public StyleResolver Styles => _styles;
 
-    TextStyle Style(RunFormat rf)
+    /// <summary>Numéro affiché par la marque w:footnoteRef du texte d'une note (posé par l'appelant pendant sa mise en page).</summary>
+    public string? NoteNumber { get; set; }
+
+    /// <summary>
+    /// Texte justifié : Word peut resserrer les espaces de la ligne pour y faire tenir un mot de plus (mesuré par COM :
+    /// FrameView, espaces ramenés de 2,26 à 1,86 pt pour garder « provided »). La limite ne suit pas la largeur des
+    /// espaces (22 % accepté à 10 pt, 18,8 % refusé à 12 pt) mais une quantité fixe par espace : calibrée sur le corpus,
+    /// les débuts de page sont identiques entre 0,45 et 0,47 pt par espace (FrameView 6/6, Annexe 10/11), moins au-delà.
+    /// OPENWRITE_JUSTIFY_SHRINK pour recalibrer.
+    /// </summary>
+    public static double JustifyShrink { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_JUSTIFY_SHRINK"), NumberStyles.Float, CultureInfo.InvariantCulture, out var j) ? j : 0.46;
+
+    /// <summary>Dépassement toléré en fin de ligne (points), à calibrer sur le corpus (OPENWRITE_FIT_TOL).</summary>
+    public static double FitTolerance { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_FIT_TOL"), NumberStyles.Float, CultureInfo.InvariantCulture, out var t) ? t : 0;
+
+    /// <summary>Taille des minuscules en petites capitales, relative à la taille du texte (à calibrer : OPENWRITE_SMALLCAPS).</summary>
+    public static double SmallCapsScale { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_SMALLCAPS"), NumberStyles.Float, CultureInfo.InvariantCulture, out var k) ? k : 0.7;
+
+    readonly Dictionary<RunFormat, TextStyle> _smallCache = new();
+
+    TextStyle Style(RunFormat rf, bool small = false)
     {
-        if (_styleCache.TryGetValue(rf, out var s)) return s;
+        var cache = small ? _smallCache : _styleCache;
+        if (cache.TryGetValue(rf, out var s)) return s;
         double size = Math.Max(1, rf.Size);
         if (rf.VerticalAlign is "superscript" or "subscript") size *= 2.0 / 3;
+        if (small) size *= SmallCapsScale;
         s = new TextStyle { Format = rf, Face = _fonts.Face(rf.FontAscii ?? rf.FontHAnsi, rf.Bold, rf.Italic), Size = size, Tracking = rf.CharacterSpacing / 20.0 };
-        _styleCache[rf] = s;
+        cache[rf] = s;
         return s;
     }
 
@@ -122,6 +156,7 @@ public sealed class ParagraphLayouter
         var styles = new List<TextStyle>();
         var index = new Dictionary<TextStyle, int>();
         var objects = new Dictionary<int, (double, double)>();
+        var notes = new Dictionary<int, string>();
         var inCode = new Stack<bool>();
         bool anyVisible = false;
 
@@ -131,6 +166,21 @@ public sealed class ParagraphLayouter
             sb.Append(text);
             for (int k = 0; k < text.Length; k++) styleOf.Add(i);
             anyVisible = true;
+        }
+
+        // petites capitales : les minuscules deviennent des capitales d'une taille réduite
+        void AddSmallCaps(string text, RunFormat rf, TextStyle normal)
+        {
+            var small = Style(rf, small: true);
+            int k = 0;
+            while (k < text.Length)
+            {
+                bool lower = char.IsLower(text[k]);
+                int e = k;
+                while (e < text.Length && char.IsLower(text[e]) == lower) e++;
+                Add(lower ? text[k..e].ToUpper(CultureInfo.CurrentCulture) : text[k..e], lower ? small : normal);
+                k = e;
+            }
         }
 
         void Walk(IEnumerable<Inline> inlines)
@@ -158,7 +208,8 @@ public sealed class ParagraphLayouter
                                     if (inCode.Count > 0) inCode.Pop();
                                     break;
                                 case TextContent { Deleted: false } t when !hidden:
-                                    Add(rf.Caps ? t.Value.ToUpper(CultureInfo.CurrentCulture) : t.Value, st);
+                                    if (rf.SmallCaps && !rf.Caps) AddSmallCaps(t.Value, rf, st);
+                                    else Add(rf.Caps ? t.Value.ToUpper(CultureInfo.CurrentCulture) : t.Value, st);
                                     break;
                                 case TabContent when !hidden:
                                     Add("\t", st);
@@ -166,6 +217,13 @@ public sealed class ParagraphLayouter
                                 case BreakContent b when !hidden:
                                     var type = b.Attributes.FirstOrDefault(a => a.Name.LocalName == "type")?.Value;
                                     Add(type == "page" ? "\f" : type == "column" ? "\v" : "\n", st);
+                                    break;
+                                // appel de note : son numéro (w:id, dans l'ordre du document chez Word) dans le style de l'appel ;
+                                // marque dans le texte d'une note (w:footnoteRef) : idem
+                                case OpaqueRunContent o when !hidden && o.Xml.Name.LocalName is "footnoteReference" or "endnoteReference" or "footnoteRef" or "endnoteRef":
+                                    var id = o.Xml.Attributes().FirstOrDefault(a => a.Name.LocalName == "id")?.Value ?? NoteNumber ?? "1";
+                                    if (o.Xml.Name.LocalName == "footnoteReference") notes[sb.Length] = id;
+                                    Add(id, st);
                                     break;
                                 case OpaqueRunContent o when !hidden && InlineObjectSize(o.Xml) is { } size:
                                     objects[sb.Length] = size;
@@ -188,7 +246,7 @@ public sealed class ParagraphLayouter
         var mark = Style(_styles.ParagraphMark(p, tableStyle));
         return new ParagraphContent
         {
-            Text = sb.ToString(), StyleOf = styleOf.ToArray(), Styles = styles, Objects = objects, Mark = mark,
+            Text = sb.ToString(), StyleOf = styleOf.ToArray(), Styles = styles, Objects = objects, Mark = mark, Footnotes = notes,
             Hidden = !anyVisible && mark.Format.Hidden,
         };
     }
@@ -205,7 +263,10 @@ public sealed class ParagraphLayouter
         var ext = inline?.Elements().FirstOrDefault(e => e.Name.LocalName == "extent");
         if (ext is null) return null;
         static double Emu(XAttribute? a) => a is not null && long.TryParse(a.Value, out var v) ? v / 12700.0 : 0;
-        return (Emu(ext.Attribute("cx")), Emu(ext.Attribute("cy")));
+        // marges d'effet (ombre, reflet) : comptées dans la place de l'objet (Annexe : image de 105,9 pt + 0,6 pt en bas)
+        var eff = inline!.Elements().FirstOrDefault(e => e.Name.LocalName == "effectExtent");
+        return (Emu(ext.Attribute("cx")) + Emu(eff?.Attribute("l")) + Emu(eff?.Attribute("r")),
+                Emu(ext.Attribute("cy")) + Emu(eff?.Attribute("t")) + Emu(eff?.Attribute("b")));
     }
 
     // ------------------------------------------------------------------ lignes
@@ -256,15 +317,33 @@ public sealed class ParagraphLayouter
             if (kind is LineEnd.LineBreak or LineEnd.PageBreak or LineEnd.ColumnBreak) pos = end + 1;
             else pos = end;
             if (pos >= n && kind is LineEnd.Paragraph or LineEnd.Wrap) break;
-            if (pos >= n && kind is LineEnd.LineBreak or LineEnd.PageBreak or LineEnd.ColumnBreak)
+            // saut de page ou de colonne en fin de paragraphe : la marque de paragraphe reste sur la ligne du saut
+            // (Word 2013 et suivants ; Annexe : paragraphe « saut ¶ » en bas de page 5, page 6 commence au suivant)
+            if (pos >= n && kind is LineEnd.PageBreak or LineEnd.ColumnBreak) break;
+            if (pos >= n && kind is LineEnd.LineBreak)
             {
-                // saut en fin de paragraphe : Word ajoute une ligne vide (la marque de paragraphe)
+                // saut de ligne en fin de paragraphe : Word ajoute une ligne vide (la marque de paragraphe)
                 layout.Lines.Add(MakeLine(content, pf, n, n, LineEnd.Paragraph, left, limit, last: true));
                 break;
             }
         }
+        if (TraceText is { Length: > 0 } needle && content.Text.StartsWith(needle, StringComparison.Ordinal))
+        {
+            Console.WriteLine($"    § « {needle} » largeur {width:0.0}, retraits {left:0.0}/{right:0.0}/{first:0.0}, alignement {pf.Alignment}");
+            foreach (var l in layout.Lines)
+            {
+                double w = 0;
+                for (int k = l.Start; k < l.End; k++) w += Advance(content, k);
+                Console.WriteLine($"      {w,6:0.0} pt « {content.Text[l.Start..l.End]} »");
+            }
+            foreach (var st in content.Styles.Distinct())
+                Console.WriteLine($"      style : {st.Face.Name} {st.Size} pt{(st.Format.Bold ? " gras" : "")}{(st.Format.Italic ? " italique" : "")}{(st.Face.Substituted ? " (remplacée)" : "")}");
+        }
         return layout;
     }
+
+    /// <summary>Mise au point : décrit la coupure des paragraphes qui commencent par ce texte (OPENWRITE_TRACE_TEXT).</summary>
+    public static string? TraceText { get; set; } = Environment.GetEnvironmentVariable("OPENWRITE_TRACE_TEXT");
 
     double Advance(ParagraphContent c, int i)
     {
@@ -302,6 +381,9 @@ public sealed class ParagraphLayouter
         double x = x0;
         int lastBreak = -1;            // position après le dernier espace (début du mot suivant)
         bool anyInk = false;
+        bool justified = pf.Alignment is "both" or "distribute";
+        double spaces = 0;             // largeur des espaces entre les mots de la ligne (compressibles si justifié)
+        int spaceCount = 0;
         for (int i = start; i < n; i++)
         {
             char ch = text[i];
@@ -317,12 +399,17 @@ public sealed class ParagraphLayouter
                     if (x > limit + 0.01 && anyInk) return (i, LineEnd.Wrap);
                     continue;
                 case ' ':
-                    x += Advance(c, i);
+                    double sw = Advance(c, i);
+                    x += sw;
+                    if (anyInk) { spaces += sw; spaceCount++; }
                     lastBreak = i + 1;     // les espaces de fin de ligne débordent sans forcer la coupure
                     continue;
             }
             double w = Advance(c, i);
-            if (x + w > limit + 0.01 && anyInk)
+            double shrink = justified ? Math.Min(JustifyShrink * spaceCount, spaces) : 0;
+            if (TraceText is { Length: > 0 } tt && (tt == "*" || c.Text.StartsWith(tt, StringComparison.Ordinal)) && x + w > limit + 0.01 && x + w <= limit + shrink + 0.01)
+                Console.WriteLine($"      compression acceptée à « {c.Text[Math.Max(start, i - 12)..(i + 1)]} » : {(x + w - limit) / Math.Max(1, spaceCount):0.000} pt par espace ({spaceCount} espaces)");
+            if (x + w > limit + FitTolerance + shrink + 0.01 && anyInk)
             {
                 if (lastBreak > start) return (lastBreak, LineEnd.Wrap);
                 return (i, LineEnd.Wrap);       // mot plus long que la ligne : coupé au caractère
@@ -337,7 +424,7 @@ public sealed class ParagraphLayouter
     {
         // hauteur naturelle : plus grand ascent + plus grand descent des polices de la ligne (marque de paragraphe
         // comprise sur la dernière ligne, comme Word), objets en ligne posés sur la ligne de base
-        double asc = 0, desc = 0, lead = 0;
+        double asc = 0, desc = 0, lead = 0, objects = 0;
         void Measure(TextStyle st)
         {
             asc = Math.Max(asc, st.Face.Ascent * st.Size);
@@ -347,12 +434,17 @@ public sealed class ParagraphLayouter
         int prevStyle = -1;
         for (int i = start; i < end; i++)
         {
+            // une tabulation ne donne pas sa hauteur à la ligne (Word ; Syllabus, en-tête de la première page : ligne
+            // faite d'une tabulation en Palatino 12 pt, hauteur de la marque de paragraphe en 10 pt)
+            if (c.Text[i] == Atom.Tab) continue;
             int s = c.StyleOf[i];
-            if (c.Text[i] == Atom.Object && c.Objects.TryGetValue(i, out var o)) asc = Math.Max(asc, o.H);
+            // objet en ligne : la ligne prend la hauteur de l'objet si elle dépasse celle du texte, sans y ajouter le
+            // descendant de la police (Annexe : ligne d'une image = hauteur de l'image, mesuré dans Word)
+            if (c.Text[i] == Atom.Object && c.Objects.TryGetValue(i, out var o)) objects = Math.Max(objects, o.H);
             if (s != prevStyle) { Measure(c.Styles[s]); prevStyle = s; }
         }
         if (last || end == start) Measure(c.Mark);
-        double natural = asc + desc + lead;
+        double natural = Math.Max(asc + desc + lead, objects);
         double h = pf.LineRule switch
         {
             "exact" => Math.Abs(pf.Line) / 20.0,
@@ -395,7 +487,11 @@ public sealed class ParagraphLayouter
         if (shift != 0)
             for (int k = 0; k < line.Pieces.Count; k++)
                 line.Pieces[k] = line.Pieces[k] with { X = line.Pieces[k].X + shift };
-        return new LineBox { Start = start, End = end, Height = h, Baseline = baseline, EndKind = kind, ExtraPerSpace = extra }.WithPieces(line.Pieces);
+        double fit = pf.LineRule is "exact" or "atLeast" ? h : Math.Min(h, natural);
+        List<string>? lineNotes = null;
+        foreach (var (pos, id) in c.Footnotes)
+            if (pos >= start && pos < end) (lineNotes ??= new()).Add(id);
+        return new LineBox { Start = start, End = end, Height = h, FitHeight = fit, Baseline = baseline, EndKind = kind, ExtraPerSpace = extra, Footnotes = lineNotes }.WithPieces(line.Pieces);
     }
 }
 

@@ -104,6 +104,41 @@ public class LayoutTests
     }
 
     [Fact]
+    public void Saut_de_page_en_fin_de_paragraphe_la_marque_reste_sur_sa_ligne()
+    {
+        var (body, l) = Doc("<w:p><w:r><w:t>fin</w:t><w:br w:type=\"page\"/></w:r></w:p>", P("suite"));
+        Assert.Equal(new[] { 1, 1 }, LinesPerPage(l));
+        Assert.Same(body.Blocks[1], l.Pages[1].Start.Item?.Block);
+    }
+
+    static string Row(string cell, bool header = false, bool cantSplit = false) =>
+        $"<w:tr>{(header || cantSplit ? $"<w:trPr>{(header ? "<w:tblHeader/>" : "")}{(cantSplit ? "<w:cantSplit/>" : "")}</w:trPr>" : "")}<w:tc>{cell}</w:tc></w:tr>";
+
+    static string Table(params string[] rows) =>
+        $"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w=\"6216\"/></w:tblGrid>{string.Concat(rows)}</w:tbl>";
+
+    [Fact]
+    public void Rangee_de_tableau_coupee_entre_deux_pages_avec_en_tete_repete()
+    {
+        // 5 lignes occupées, puis un tableau : en-tête d'une ligne, rangée de 8 paragraphes d'une ligne
+        var cell = string.Concat(Enumerable.Repeat(P("x"), 8));
+        var (_, l) = Doc(Enumerable.Repeat(P("y"), 5).Append(Table(Row(P("en-tête"), header: true), Row(cell))).ToArray());
+        // page 1 : 5 + en-tête + 4 lignes de la rangée ; page 2 : en-tête répété + 4 lignes restantes
+        Assert.Equal(new[] { 10, 5 }, LinesPerPage(l));
+        Assert.Equal(1, l.Pages[1].Start.Line);
+        Assert.True(l.Pages[1].Start.Offset > 0);
+        Assert.Equal(30, l.Pages[1].Lines.Min(x => x.Y), 3);
+    }
+
+    [Fact]
+    public void Rangee_insecable_passe_entiere_a_la_page_suivante()
+    {
+        var cell = string.Concat(Enumerable.Repeat(P("x"), 8));
+        var (_, l) = Doc(Enumerable.Repeat(P("y"), 5).Append(Table(Row(cell, cantSplit: true))).ToArray());
+        Assert.Equal(new[] { 5, 8 }, LinesPerPage(l));
+    }
+
+    [Fact]
     public void Titre_solidaire_du_paragraphe_suivant()
     {
         // 9 lignes occupées : le titre tiendrait, mais pas les deux premières lignes du paragraphe qui suit

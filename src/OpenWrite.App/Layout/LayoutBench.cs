@@ -51,9 +51,10 @@ static class LayoutBench
                     for (int r = 1; r < repeat; r++) body.Blocks.AddRange(copy.Select(b => b.Clone()));
                 }
                 var styles = new Core.Styles.StyleResolver(pkg.StyleSheet());
+                fonts.AltNames = pkg.FontAltNames();
                 // mise en page complète : une fois à froid (polices), puis mesurée
-                new DocumentLayout(body, styles, fonts, pkg.RelatedStory) { SuppressSpaceBeforeAtPageTop = suppress }.LayoutAll();
-                var layout = new DocumentLayout(body, styles, fonts, pkg.RelatedStory) { SuppressSpaceBeforeAtPageTop = suppress };
+                new DocumentLayout(body, styles, fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id)) { SuppressSpaceBeforeAtPageTop = suppress }.LayoutAll();
+                var layout = new DocumentLayout(body, styles, fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id)) { SuppressSpaceBeforeAtPageTop = suppress };
                 var sw = Stopwatch.StartNew();
                 layout.LayoutAll();
                 double full = sw.Elapsed.TotalMilliseconds;
@@ -78,7 +79,7 @@ static class LayoutBench
                     parasRedone += layout.LastParagraphsLaidOut;
                 }
                 // contrôle : la reprise donne les mêmes pages qu'une mise en page complète
-                var check = new DocumentLayout(body, styles, fonts, pkg.RelatedStory) { SuppressSpaceBeforeAtPageTop = suppress };
+                var check = new DocumentLayout(body, styles, fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id)) { SuppressSpaceBeforeAtPageTop = suppress };
                 check.LayoutAll();
                 bool consistent = check.Pages.Count == layout.Pages.Count && check.Pages.Zip(layout.Pages).All(z =>
                     ReferenceEquals(z.First.Start.Item?.Block, z.Second.Start.Item?.Block) && z.First.Start.Line == z.Second.Start.Line);
@@ -137,7 +138,7 @@ static class LayoutBench
             if (first.TryGetValue(p, out var pos)) list.Add((Key(p.Text), pos.Item1, pos.Item2));
         // OPENWRITE_BENCH_DUMP=n : positions d'OpenWrite sur la page n (mise au point)
         if (int.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_BENCH_DUMP"), out var dump))
-            foreach (var x in list.Where(x => x.Item2 == dump).Take(12)) Console.WriteLine($"    OpenWrite p.{dump} {x.Item3,6:0.0} « {x.Item1} »");
+            foreach (var x in list.Where(x => x.Item2 == dump).TakeLast(Environment.GetEnvironmentVariable("OPENWRITE_BENCH_END") == "1" ? 12 : 1000).Take(80)) Console.WriteLine($"    OpenWrite p.{dump} {x.Item3,6:0.0} « {x.Item1} »");
         return list;
     }
 
@@ -150,40 +151,66 @@ static class LayoutBench
         var word = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file)).RootElement.EnumerateArray()
             .Select(e => (Key: Key(e.GetProperty("text").GetString() ?? ""), Page: e.GetProperty("page").GetInt32(), Y: e.GetProperty("y").GetDouble()))
             .Where(w => w.Key.Length >= 4).ToList();
+        mine = mine.Where(m => m.Key.Length >= 4).ToList();
         var deltas = new List<double>();
-        int j = 0, shown = 0, otherPage = 0;
-        foreach (var w in word)
+        int shown = 0, otherPage = 0;
+        foreach (var (wi, mi) in Align(word.Select(w => w.Key).ToList(), mine.Select(m => m.Key).ToList()))
         {
-            int k = mine.FindIndex(j, m => m.Key == w.Key);
-            if (k < 0 || k - j > 30) continue;
-            j = k + 1;
-            if (mine[k].Page != w.Page) { otherPage++; continue; }
-            double d = mine[k].Y - w.Y;
+            var w = word[wi];
+            var m = mine[mi];
+            if (m.Page != w.Page) { otherPage++; continue; }
+            double d = m.Y - w.Y;
             deltas.Add(d);
             if (detail && (Environment.GetEnvironmentVariable("OPENWRITE_BENCH_ALL") == "1" || Math.Abs(d) > 2 && shown++ < 6))
-                Console.WriteLine($"    p.{w.Page} « {w.Key} » : Word {w.Y:0.0} / OpenWrite {mine[k].Y:0.0} ({d:+0.0;-0.0})");
+                Console.WriteLine($"    p.{w.Page} « {w.Key} » : Word {w.Y:0.0} / OpenWrite {m.Y:0.0} ({d:+0.0;-0.0})");
         }
         if (deltas.Count == 0) return "";
         deltas.Sort();
         return $"Δy médian {deltas[deltas.Count / 2]:+0.0;-0.0} pt, pire {deltas.MaxBy(Math.Abs):+0.0;-0.0}, {deltas.Count(d => Math.Abs(d) <= 1)}/{deltas.Count} à 1 pt, {otherPage} autre page";
     }
 
+    /// <summary>Appariement de deux suites de clés par plus longue sous-suite commune (paires d'indices).</summary>
+    static List<(int, int)> Align(List<string> a, List<string> b)
+    {
+        var t = new int[a.Count + 1, b.Count + 1];
+        for (int i = a.Count - 1; i >= 0; i--)
+            for (int j = b.Count - 1; j >= 0; j--)
+                t[i, j] = a[i] == b[j] ? t[i + 1, j + 1] + 1 : Math.Max(t[i + 1, j], t[i, j + 1]);
+        var res = new List<(int, int)>();
+        for (int i = 0, j = 0; i < a.Count && j < b.Count;)
+        {
+            if (a[i] == b[j]) { res.Add((i, j)); i++; j++; }
+            else if (t[i + 1, j] >= t[i, j + 1]) i++;
+            else j++;
+        }
+        return res;
+    }
+
     /// <summary>Texte du début de la page : première ligne placée et suivantes.</summary>
     static string StartText(Page page)
     {
+        // page commencée au milieu d'une rangée coupée : Word donne le début de la rangée (Range.GoTo)
+        if (page.Start is { Item.Block: Table t, Offset: > 0 } st && t.Items.OfType<TableRow>().ElementAtOrDefault(st.Line) is { } row)
+            return string.Concat(row.Items.OfType<TableCell>().Select(cell => string.Concat(cell.Content.Paragraphs().Select(p => p.Text))));
         var sb = new System.Text.StringBuilder();
         foreach (var l in page.Lines)
         {
             var c = l.Paragraph.Content;
             var line = l.Paragraph.Lines[l.Line];
-            sb.Append(c.Text, line.Start, line.End - line.Start).Append(' ');
+            // les numéros d'appel de note ne sont pas du texte pour Word (caractère spécial dans Range.Text)
+            for (int k = line.Start; k < line.End; k++)
+            {
+                if (c.Footnotes.TryGetValue(k, out var id)) { k += id.Length - 1; continue; }
+                sb.Append(c.Text[k]);
+            }
+            sb.Append(' ');
             if (sb.Length > 80) break;
         }
         return sb.ToString();
     }
 
     /// <summary>12 premiers caractères alphanumériques (sans espaces, marques de cellule, objets).</summary>
-    static string Key(string s) => new string(s.Where(char.IsLetterOrDigit).Take(12).ToArray());
+    static string Key(string s) => new string(s.Where(char.IsLetterOrDigit).Take(12).ToArray()).ToUpperInvariant();
 
     // noms de fichiers du corpus personnel : seulement le début dans la sortie
     static string Short(string name) => name.Length <= 34 ? name : name[..31] + "...";

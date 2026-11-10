@@ -607,3 +607,30 @@ Restent hors du résolveur : mise en forme conditionnelle des styles de tableau 
 
 **Suite du lot 2** : calibrer ces écarts un par un avec `--word-pages --detail` (et `OPENWRITE_BENCH_DUMP=<page>`) jusqu'à retrouver puis dépasser 21/22 et 37/77 ; colonnes ; lignes de tableau fractionnables et bordures de cellules ; puis la vue des pages virtualisée (`DocumentView`) dans l'application, la barre d'état (page x sur y) et le rendu PNG des pages comparé aux PDF de Word.
 
+### 10.8 Lot 2 — calibration de la pagination sur Word (2026-11-10)
+
+Méthode : `--layout --word-pages --detail` donne, document par document, les pages qui ne commencent pas au même endroit que dans Word et l'écart vertical paragraphe par paragraphe (appariement par plus longue sous-suite commune) ; `OPENWRITE_LAYOUT_TRACE=1` décrit chaque coupure de page et chaque cellule coupée, `OPENWRITE_TRACE_TEXT=<début d'un paragraphe>` sa coupure en lignes, `OPENWRITE_BENCH_DUMP=<page>` les positions d'OpenWrite. Pour la coupure des lignes, la position horizontale de chaque mot dans Word est relevée par COM (`Information(wdHorizontalPositionRelativeToPage)`). Les paramètres incertains sont réglables par variable d'environnement et calibrés sur tout le corpus, pas sur un cas.
+
+**Résultat : 61/78 pages qui commencent au même endroit que dans Word** (37/77 au premier relevé). FrameView 6/6 et 76/76 paragraphes à 1 pt près ; Annexe 10/11 ; PV, convocations, tables : tous les paragraphes à 1 pt près ; Syllabus 27/37 (193 paragraphes à 1 pt près).
+
+**Calibrations Word (mesurées)**
+1. **Métriques typo quand la police les demande** (OS/2 USE_TYPO_METRICS) : Aptos 1,2207 em et non 1,2847 (formule GDI) ; vérifié sur le PV : 17,0 pt par ligne à 12 pt × 1,158. La formule GDI reste celle des autres polices. (Corrige le §10.7.)
+2. **Interligne multiple** : l'espace ajouté au-delà de la hauteur naturelle peut déborder la marge du bas (ligne à 1,5 placée à 752,9 pt, bas du corps à 771 pt).
+3. **En-têtes et pieds** : l'espacement après de leur dernier paragraphe compte, ainsi que leurs bordures (corps du Syllabus à 53 + 13,8 + 10 + 0,75 = 77,5 pt comme dans Word).
+4. **Polices de remplacement du document** (`fontTable.xml`, `w:altName`) essayées en premier pour une police absente : ZapfChancery → Monotype Corsiva.
+5. **Une tabulation ne donne pas sa hauteur à la ligne** : en-tête dont la ligne n'est faite que d'une tabulation en 12 pt → hauteur de la marque de paragraphe en 10 pt.
+6. **Petites capitales** : minuscules en capitales à 70 % de la taille (largeurs) ; 70 à 80 % donnent le même résultat sur le corpus.
+7. **Tableau flottant** (`w:tblpPr`) hors du flux ; ancré en bas de marge, il réduit le bas du corps de la page (page de garde du Syllabus).
+8. **Une ligne qui ne contient que le saut de page reste en bas de page** (pas de page blanche) ; **la marque de paragraphe reste sur la ligne d'un saut de page final** (pas de ligne en tête de la page suivante).
+9. **Objet en ligne** : la ligne prend la hauteur de l'objet (marges d'effet `wp:effectExtent` comprises) sans y ajouter le descendant de la police.
+10. **Bordures de cellule** : chaque rangée ajoute l'épaisseur de sa bordure du bas (cellule, sinon `insideH` / `bottom` du tableau ou de son style) ; entre deux rangées, la plus épaisse des deux bordures partagées ; la première ajoute celle du haut.
+11. **Justification : Word resserre les espaces pour faire tenir un mot de plus**, d'une quantité fixe par espace et non proportionnelle (22 % accepté à 10 pt, 18,8 % refusé à 12 pt) : **0,46 pt par espace** (débuts de page identiques entre 0,45 et 0,47).
+12. **Rangées de tableau coupées entre deux pages** au niveau des lignes de chaque cellule (sauf `w:cantSplit`), **rangées d'en-tête répétées** (`w:tblHeader`) ; **une rangée à hauteur minimale (`w:trHeight`) ne se coupe pas** (rangée de 146 pt renvoyée entière par Word avec 120 pt libres ; écart ramené de −137 à −3 pt).
+13. **Notes de bas de page** (premier pas du lot 9) : numéro d'appel affiché dans son style, place du texte de la note et du séparateur réservée en bas de la page de l'appel, la ligne de l'appel descend si sa note ne tient pas.
+
+Tolérances essayées et écartées : dépassement en fin de ligne (sans effet), dépassement en bas de page (dégrade Annexe au-delà de 0,5 pt).
+
+**Écarts restants** : pages commencées dans une cellule fusionnée verticalement (la clé de Word est le début du bloc fusionné : artefact de mesure) ; Syllabus pages 14 à 37 (prochaine cause à chercher) ; Horaires (sections continues à colonnes inégales avec équilibrage, saut de colonne, zone de texte, images flottantes) ; convocations (texte en zones de texte : lot 7). Performance inchangée : 0,2 à 0,3 ms par frappe (pire 3 ms) sur 333 et 740 pages, reprise incrémentale identique à la mise en page complète sur tout le corpus.
+
+**Suite du lot 2** : colonnes (remplissage, saut de colonne, équilibrage en fin de section continue), écarts restants du Syllabus, puis la vue des pages dans l'application.
+

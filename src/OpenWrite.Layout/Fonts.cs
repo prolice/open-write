@@ -55,6 +55,19 @@ public sealed class MonoFontProvider : IFontProvider
 /// <summary>Métriques verticales lues dans les tables 'head', 'hhea' et 'OS/2' d'un fichier TrueType/OpenType (ou d'une collection .ttc).</summary>
 public readonly record struct FontVerticalMetrics(int UnitsPerEm, int WinAscent, int WinDescent, int HheaAscender, int HheaDescender, int HheaLineGap)
 {
+    /// <summary>OS/2 fsSelection bit 7 (USE_TYPO_METRICS) : la police demande ses métriques typo.</summary>
+    public bool UseTypoMetrics { get; init; }
+    public int TypoAscender { get; init; }
+    public int TypoDescender { get; init; }
+    public int TypoLineGap { get; init; }
+
+    /// <summary>
+    /// Ascent, descent et interligne externe retenus par Word, en unités : métriques typo si la police les demande
+    /// (Aptos : 1,2207 em, vérifié sur le corpus : 17,0 pt par ligne à 12 pt × 1,158), sinon formule GDI.
+    /// </summary>
+    public (int Ascent, int Descent, int Leading) WordMetrics =>
+        UseTypoMetrics && TypoAscender - TypoDescender > 0 ? (TypoAscender, -TypoDescender, Math.Max(0, TypoLineGap)) : (WinAscent, WinDescent, ExternalLeading);
+
     /// <summary>
     /// tmExternalLeading de GDI : max(0, lineGap − ((winAscent + winDescent) − (ascender − descender))).
     /// Calibri : 0 (ligne 1,2207 em) ; Times New Roman : 87 unités (ligne 1,15 em : 13,8 pt à 12 pt, comme Word).
@@ -86,6 +99,12 @@ public readonly record struct FontVerticalMetrics(int UnitsPerEm, int WinAscent,
             int winAsc = os2 >= 0 ? U16(d, os2 + 74) : asc, winDesc = os2 >= 0 ? U16(d, os2 + 76) : -desc;
             if (upm <= 0) return false;
             m = new FontVerticalMetrics(upm, winAsc, winDesc, asc, desc, gap);
+            if (os2 >= 0 && U16(d, os2) >= 4)
+                m = m with
+                {
+                    UseTypoMetrics = (U16(d, os2 + 62) & 0x80) != 0,
+                    TypoAscender = (short)U16(d, os2 + 68), TypoDescender = (short)U16(d, os2 + 70), TypoLineGap = (short)U16(d, os2 + 72),
+                };
             return true;
         }
         catch (IndexOutOfRangeException) { return false; }

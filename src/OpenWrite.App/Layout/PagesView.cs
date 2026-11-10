@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using OpenWrite.Layout;
 using Page = OpenWrite.Layout.Page;
 
@@ -38,6 +39,13 @@ public sealed class PageDrawings
 
     /// <summary>Oublie les dessins (après une nouvelle mise en page : numéros et contenus changent).</summary>
     public void Clear() => _cache.Clear();
+
+    /// <summary>Après une remise en page incrémentale : oublie les dessins des pages qui n'existent plus.</summary>
+    public void Retain()
+    {
+        var live = new HashSet<Page>(_layout.Pages, ReferenceEqualityComparer.Instance);
+        foreach (var p in _cache.Keys.Where(p => !live.Contains(p)).ToList()) _cache.Remove(p);
+    }
 }
 
 /// <summary>
@@ -50,6 +58,9 @@ public sealed class PagesView : FrameworkElement
     readonly PageDrawings _drawings;
     readonly List<Rect> _rects = new();
     ScrollViewer? _scroller;
+    // calques au-dessus des pages : sélection, point d'insertion (clignotant)
+    readonly DrawingVisual _selectionVisual = new(), _caretVisual = new();
+    readonly DispatcherTimer _blink = new() { Interval = TimeSpan.FromMilliseconds(530) };
 
     public PagesView(PageDrawings drawings, double scale, double gap, bool thumbnails = false)
     {
@@ -57,6 +68,16 @@ public sealed class PagesView : FrameworkElement
         Scale = scale;
         Gap = gap;
         Thumbnails = thumbnails;
+        if (!thumbnails)
+        {
+            AddVisualChild(_selectionVisual);
+            AddVisualChild(_caretVisual);
+            Focusable = true;
+            FocusVisualStyle = null;
+            _blink.Tick += (_, _) => _caretVisual.Opacity = IsKeyboardFocusWithin && _caretVisual.Opacity == 0 ? 1 : 0;
+            GotKeyboardFocus += (_, _) => { _caretVisual.Opacity = 1; _blink.Start(); };
+            LostKeyboardFocus += (_, _) => { _caretVisual.Opacity = 0; _blink.Stop(); };
+        }
         Loaded += (_, _) =>
         {
             _scroller = FindScroller(this);
@@ -66,7 +87,54 @@ public sealed class PagesView : FrameworkElement
         {
             if (_scroller is not null) _scroller.ScrollChanged -= OnScroll;
             _scroller = null;
+            _blink.Stop();
         };
+    }
+
+    protected override int VisualChildrenCount => Thumbnails ? 0 : 2;
+    protected override Visual GetVisualChild(int index) => index == 0 ? _selectionVisual : _caretVisual;
+
+    /// <summary>Rectangles de la sélection sur une page (points de la page) ; null : pas de sélection.</summary>
+    public Func<int, IEnumerable<Rect>>? Selection { get; set; }
+
+    /// <summary>Point d'insertion : page et rectangle (points de la page) ; null : pas de point d'insertion.</summary>
+    public (int Page, Rect Rect)? Caret
+    {
+        get;
+        set
+        {
+            field = value;
+            DrawCaret();
+            // visible tout de suite après un déplacement, puis clignote
+            _caretVisual.Opacity = IsKeyboardFocusWithin ? 1 : 0;
+            if (IsKeyboardFocusWithin) { _blink.Stop(); _blink.Start(); }
+        }
+    }
+
+    static readonly Brush SelectionBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x48, 0x08, 0x7C, 0xFF)));
+
+    void DrawCaret()
+    {
+        using var dc = _caretVisual.RenderOpen();
+        if (Caret is not { } c || c.Page < 0 || c.Page >= _rects.Count) return;
+        var r = _rects[c.Page];
+        dc.DrawRectangle(Brushes.Black, null, new Rect(r.X + c.Rect.X * Scale - 0.5, r.Y + c.Rect.Y * Scale, Math.Max(1.5, Scale * 0.75), c.Rect.Height * Scale));
+    }
+
+    /// <summary>Redessine la sélection (pages visibles seulement).</summary>
+    public void DrawSelection()
+    {
+        using var dc = _selectionVisual.RenderOpen();
+        if (Selection is null || Thumbnails) return;
+        var visible = Visible();
+        visible.Inflate(0, 200);
+        for (int i = 0; i < _rects.Count; i++)
+        {
+            var r = _rects[i];
+            if (r.Bottom < visible.Top || r.Top > visible.Bottom) continue;
+            foreach (var s in Selection(i))
+                dc.DrawRectangle(SelectionBrush, null, new Rect(r.X + s.X * Scale, r.Y + s.Y * Scale, Math.Max(0, s.Width * Scale), s.Height * Scale));
+        }
     }
 
     void OnScroll(object? sender, ScrollChangedEventArgs e)
@@ -147,6 +215,11 @@ public sealed class PagesView : FrameworkElement
                     new Typeface("Segoe UI"), 11, i == Current ? CurrentBorder.Brush : Brushes.DimGray, 1.0);
                 dc.DrawText(label, new Point(r.X + (r.Width - label.Width) / 2, r.Bottom + 2));
             }
+        }
+        if (!Thumbnails)
+        {
+            DrawSelection();
+            DrawCaret();
         }
     }
 

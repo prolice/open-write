@@ -16,7 +16,8 @@ namespace OpenWrite.App;
 /// <summary>
 /// Captures d'écran de la vraie fenêtre, hors écran (documentation, portail, vérification visuelle) :
 /// OpenWrite.exe --screenshot document.docx|- image.png [largeur hauteur] [scène].
-/// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about », « page-N » (vue défilée à la page N).
+/// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about », « page-N » (vue défilée à la page N),
+/// « selection » (quelques mots sélectionnés sur la première page).
 /// Auto-test de bout en bout (OpenWrite.exe --selftest dossier) : la vraie fenêtre, hors écran, sur un document fabriqué.
 /// </summary>
 public static class SelfTest
@@ -79,7 +80,7 @@ public static class SelfTest
         enc.Save(fs);
     }
 
-    // ================================================================ auto-test (versions 0.2 et 0.3)
+    // ================================================================ auto-test (versions 0.2 à 0.4)
 
     static int _ok, _ko;
 
@@ -172,12 +173,116 @@ public static class SelfTest
         Check(diffs.Count == 1 && diffs[0].Contains("checked"), "fichier relu : seule la case a changé (" + string.Join(" ; ", diffs) + ")");
         Check(!AppSettings.Load().KeepBackup || File.Exists(file + ".bak"), "version précédente gardée (.bak)");
 
+        // saisie (0.4) : touches et caractères envoyés à la vue des pages comme par le clavier
+        Pump();
+        Idle();
+        var view = w.PagesViewForTest!;
+        void Key(Key k)
+        {
+            view.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(view)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
+            Pump();
+        }
+        void Type(string text)
+        {
+            foreach (var ch in text)
+                view.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, view, ch.ToString()))
+                    { RoutedEvent = TextCompositionManager.TextInputEvent });
+            Pump();
+        }
+        static string TextOf(Block b) => b is Paragraph p ? string.Concat(p.Runs().SelectMany(r => r.Content).OfType<TextContent>().Select(t => t.Value)) : "";
+        Check(w.CaretPoint is { Index: 0 } c0 && ReferenceEquals(c0.Paragraph, w.Body!.Blocks[1]), "Ctrl+Y : point d'insertion sur le paragraphe de la case");
+        Key(System.Windows.Input.Key.Up);
+        Key(System.Windows.Input.Key.End);
+        Type(" complet");
+        Check(TextOf(w.Body!.Blocks[0]) == "Formulaire d'essai complet", $"frappe en fin de ligne : « {TextOf(w.Body!.Blocks[0])} »");
+        Key(System.Windows.Input.Key.Enter);
+        Type("Deuxième ligne");
+        Check(w.Body!.Blocks.Count == 4 && TextOf(w.Body!.Blocks[1]) == "Deuxième ligne", "Entrée : nouveau paragraphe, frappe dedans");
+        Check(w.LastUpdateMs < 100, $"remise en page incrémentale : {w.LastUpdateMs:0.0} ms");
+        Key(System.Windows.Input.Key.Home);
+        Key(System.Windows.Input.Key.Back);
+        Check(w.Body!.Blocks.Count == 3 && TextOf(w.Body!.Blocks[0]) == "Formulaire d'essai completDeuxième ligne", "Retour arrière en début de paragraphe : fusion");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(w.Body!.Blocks.Count == 4 && w.CaretPoint is { Index: 0 } cp && ReferenceEquals(cp.Paragraph, w.Body!.Blocks[1]), "Ctrl+Z : paragraphes séparés, point d'insertion revenu");
+        // mise en forme : « Deuxième ligne » continue le titre en gras (Entrée en fin de texte gras, comme Word) ;
+        // point d'insertion dans « Deuxième » → le mot perd le gras ; paragraphe aligné à droite
+        for (int k = 0; k < 3; k++) Key(System.Windows.Input.Key.Right);
+        w.ToggleCharacter("b");
+        Pump();
+        var runs2 = ((Paragraph)w.Body!.Blocks[1]).Runs().ToList();
+        Check(runs2.Count == 2 && runs2[0].Text == "Deuxième" && !runs2[0].Props.Flag("b") && runs2[1].Props.Flag("b"), "Ctrl+G sur le mot du point d'insertion : gras retiré au mot seul");
+        w.SetAlignment("right");
+        Pump();
+        Check(((Paragraph)w.Body!.Blocks[1]).Props.Val("jc") == "right" && w.CaretPoint is { Index: 3 }, "Aligner à droite, point d'insertion gardé");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(((Paragraph)w.Body!.Blocks[1]).Props.Val("jc") == "center", "Ctrl+Z : alignement d'avant");
+        Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
+        var reread = DocxPackage.Open(file).Main!.Stories().First();
+        Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"
+              && !((Paragraph)reread.Blocks[1]).Runs().First().Props.Flag("b")
+              && FieldIndex.Build(reread).All.Single(f => f.CheckBox is not null).CheckBox!.Checked, "fichier relu : texte saisi, case toujours cochée");
+
         Idle();
         var content = (FrameworkElement)w.Content;
         Save(content, (int)content.ActualWidth, (int)content.ActualHeight, Path.Combine(outDir, "auto-test.png"));
         w.Close();
         Console.WriteLine($"{_ok} vérification(s) réussie(s), {_ko} échec(s)");
         return _ko == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Banc de saisie dans la vraie fenêtre (hors écran) : OpenWrite.exe --typing-bench document.docx [répétitions].
+    /// Frappe au milieu du document, Entrée, Retour arrière, gras, centrage : durée de chaque touche, affichage compris.
+/// Ne modifie pas le fichier ; --save copie.docx enregistre le résultat ailleurs (pour le faire ouvrir par Word).
+    /// </summary>
+    public static int TypingBench(string file, int repeat, string? saveCopy = null)
+    {
+        var w = new MainWindow { Left = -6000, Top = 0, Width = 1402, Height = 948, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual, SkipConfirm = true };
+        w.Show();
+        w.OpenFile(file);
+        Pump();
+        w.RepeatBodyForBench(repeat);
+        Pump();
+        Idle();
+        var layout = w.CurrentLayout!;
+        Console.WriteLine($"{Path.GetFileName(file)} ×{repeat} : {layout.Pages.Count} pages, mise en page complète {w.LastLayoutMs:0} ms");
+        int page = layout.Pages.Count / 2;
+        w.PlaceCaretOnPage(page);
+        Pump();
+        Idle();
+        var view = w.PagesViewForTest!;
+        var times = new List<double>();
+        var updates = new List<double>();
+        void Measure(Action a)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            a();
+            Idle();                      // jusqu'à l'affichage compris
+            times.Add(sw.Elapsed.TotalMilliseconds);
+            updates.Add(w.LastUpdateMs);
+        }
+        void Key(Key k) => view.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(view)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
+        void Char(char ch) => view.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, view, ch.ToString()))
+            { RoutedEvent = TextCompositionManager.TextInputEvent });
+        foreach (var ch in "Essai de frappe au milieu du document, avec une phrase assez longue pour changer de ligne. ") Measure(() => Char(ch));
+        Measure(() => Key(System.Windows.Input.Key.Enter));
+        foreach (var ch in "Nouveau paragraphe.") Measure(() => Char(ch));
+        for (int i = 0; i < 20; i++) Measure(() => Key(System.Windows.Input.Key.Back));
+        for (int i = 0; i < 10; i++) Measure(() => Key(System.Windows.Input.Key.Down));
+        // mise en forme du mot du point d'insertion, puis copie enregistrée (à faire ouvrir par Word)
+        Measure(() => Key(System.Windows.Input.Key.Left));
+        Measure(() => Key(System.Windows.Input.Key.Left));
+        Measure(() => w.ToggleCharacter("b"));
+        Measure(() => w.SetAlignment("center"));
+        if (saveCopy is not null) w.SaveCopy(saveCopy);
+        times.Sort();
+        updates.Sort();
+        Console.WriteLine($"{times.Count} touches : médiane {times[times.Count / 2]:0.0} ms, 95e centile {times[(int)(times.Count * 0.95)]:0.0} ms, max {times[^1]:0.0} ms " +
+                          $"(remise en page seule : médiane {updates[updates.Count / 2]:0.00} ms, max {updates[^1]:0.00} ms) ; {layout.Pages.Count} → {w.CurrentLayout!.Pages.Count} pages");
+        w.Close();
+        return 0;
     }
 
     public static int Screenshot(string? file, string png, int width = 1402, int height = 948, string? scene = null)
@@ -219,6 +324,12 @@ public static class SelfTest
             }
             default:
                 if (scene is not null && w.FindName(scene) is RadioButton rb) rb.IsChecked = true;
+                // « selection » : quelques mots sélectionnés sur la première page
+                if (scene == "selection")
+                {
+                    Pump();
+                    w.SelectSampleWords(0);
+                }
                 // « page-N » : vue des pages défilée jusqu'à la page N
                 if (scene is not null && scene.StartsWith("page-") && int.TryParse(scene[5..], out var n))
                 {

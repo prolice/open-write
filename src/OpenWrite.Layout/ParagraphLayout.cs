@@ -50,6 +50,13 @@ public sealed class ParagraphContent
     public Dictionary<int, string> Footnotes { get; init; } = new();
     /// <summary>Le paragraphe entier est masqué (marque et texte) : il n'occupe aucune place.</summary>
     public bool Hidden { get; init; }
+    /// <summary>
+    /// Position dans le modèle (décalage de <c>DocPos</c>, voir ParagraphAtoms) du début et de la fin de chaque
+    /// caractère affiché. Un caractère qui représente un champ entier (case à cocher, numéro de page calculé) couvre
+    /// le champ du caractère de début au caractère de fin ; un appel de note couvre sa marque.
+    /// </summary>
+    public int[] ModelStart { get; init; } = Array.Empty<int>();
+    public int[] ModelEnd { get; init; } = Array.Empty<int>();
 }
 
 public enum LineEnd { Wrap, Paragraph, LineBreak, PageBreak, ColumnBreak }
@@ -169,10 +176,21 @@ public sealed class ParagraphLayouter
         // champs en cours : code (w:instrText) masqué ; résultat affiché, ou remplacé par FieldValue (PAGE, NUMPAGES)
         var fields = new Stack<FieldState>();
         bool anyVisible = false;
+        // correspondance avec le modèle : décalage courant, début du contenu en cours, texte (1 caractère = 1 position) ou non
+        var modelStart = new List<int>();
+        var modelEnd = new List<int>();
+        int mo = 0, cStart = 0;
+        bool perChar = false;
 
         void Add(string text, TextStyle st)
         {
             if (!index.TryGetValue(st, out var i)) { i = styles.Count; styles.Add(st); index[st] = i; }
+            for (int k = 0; k < text.Length; k++)
+            {
+                modelStart.Add(perChar ? cStart + k : cStart);
+                modelEnd.Add(perChar ? cStart + k + 1 : mo);
+            }
+            if (perChar) cStart += text.Length;
             sb.Append(text);
             for (int k = 0; k < text.Length; k++) styleOf.Add(i);
             anyVisible = true;
@@ -205,15 +223,20 @@ public sealed class ParagraphLayouter
                         foreach (var c in r.Content)
                         {
                             bool hidden = fields.Any(f => f.InCode || f.Replaced) || rf.Hidden;
+                            cStart = mo;
+                            mo += ParagraphAtoms.LengthOf(c);
+                            perChar = c is TextContent;
                             switch (c)
                             {
                                 case FieldChar { Kind: FieldCharKind.Begin } fc:
+                                    var state = new FieldState { Begin = cStart };
                                     if (!hidden && fc.FormData?.Element(W + "checkBox") is { } cb)
                                     {
                                         boxes[sb.Length] = fc;
+                                        state.Covering.Add(sb.Length);
                                         Add(IsChecked(cb) ? "☒" : "☐", st);
                                     }
-                                    fields.Push(new FieldState());
+                                    fields.Push(state);
                                     break;
                                 case FieldCode code when fields.Count > 0 && fields.Peek().InCode:
                                     fields.Peek().Code.Append(code.Value);
@@ -225,13 +248,19 @@ public sealed class ParagraphLayouter
                                         f.InCode = false;
                                         if (!fields.Skip(1).Any(x => x.InCode || x.Replaced) && FieldValue?.Invoke(f.Code.ToString().Trim()) is { } value)
                                         {
+                                            for (int k = 0; k < value.Length; k++) f.Covering.Add(sb.Length + k);
                                             Add(value, st);
                                             f.Replaced = true;
                                         }
                                     }
                                     break;
                                 case FieldChar:
-                                    if (fields.Count > 0) fields.Pop();
+                                    if (fields.Count > 0)
+                                    {
+                                        // caractères qui représentent le champ entier : du début à la fin du champ
+                                        var done = fields.Pop();
+                                        foreach (var k in done.Covering) { modelStart[k] = done.Begin; modelEnd[k] = mo; }
+                                    }
                                     break;
                                 case TextContent { Deleted: false } t when !hidden:
                                     if (rf.SmallCaps && !rf.Caps) AddSmallCaps(t.Value, rf, st);
@@ -265,6 +294,9 @@ public sealed class ParagraphLayouter
                     case InlineContentControl sdt:
                         Walk(sdt.Content);
                         break;
+                    default:
+                        mo += ParagraphAtoms.LengthOf(inline);
+                        break;
                 }
             }
         }
@@ -276,6 +308,7 @@ public sealed class ParagraphLayouter
             Text = sb.ToString(), StyleOf = styleOf.ToArray(), Styles = styles, Objects = objects, Mark = mark, Footnotes = notes,
             ObjectXml = objectXml, CheckBoxes = boxes,
             Hidden = !anyVisible && mark.Format.Hidden,
+            ModelStart = modelStart.ToArray(), ModelEnd = modelEnd.ToArray(),
         };
     }
 
@@ -284,6 +317,10 @@ public sealed class ParagraphLayouter
         public readonly System.Text.StringBuilder Code = new();
         public bool InCode = true;
         public bool Replaced;
+        /// <summary>Décalage du caractère de début du champ (modèle).</summary>
+        public int Begin;
+        /// <summary>Caractères affichés qui représentent tout le champ (case à cocher, valeur calculée).</summary>
+        public readonly List<int> Covering = new();
     }
 
     /// <summary>

@@ -173,9 +173,10 @@ public sealed class DocumentLayout
         // numéros de liste : recalculés à chaque reconstruction du flux (paragraphes insérés ou supprimés) ; les
         // paragraphes dont le numéro change sont remis en page
         var numbers = ListNumbering.Compute(_body, _lines.Styles);
+        _renumbered.Clear();
         if (_lines.ListNumbers is { } old)
             foreach (var (p, n) in numbers)
-                if (!old.TryGetValue(p, out var o) || o != n) _cache.Remove(p);
+                if (old.TryGetValue(p, out var o) && o != n) { _cache.Remove(p); _renumbered.Add(p); }
         _lines.ListNumbers = numbers;
         Sections.Clear();
         var items = new List<FlowItem>();
@@ -213,6 +214,53 @@ public sealed class DocumentLayout
         _topCount = _body.Blocks.Count;
         _itemIndex = new Dictionary<Block, int>(items.Count, ReferenceEqualityComparer.Instance);
         for (int i = 0; i < items.Count; i++) _itemIndex[items[i].Block] = i;
+        _paraItem = null;
+    }
+
+    /// <summary>Paragraphes dont le numéro de liste a changé à la dernière reconstruction du flux (à remettre en page).</summary>
+    readonly HashSet<Paragraph> _renumbered = new(ReferenceEqualityComparer.Instance);
+
+    Dictionary<Paragraph, int>? _paraItem;
+
+    /// <summary>
+    /// Lignes placées d'un paragraphe du corps (cellules de tableau comprises), dans l'ordre : page et rang dans
+    /// <see cref="Page.Lines"/>. Vide pour un paragraphe masqué ou hors du corps.
+    /// </summary>
+    public List<LineRef> LinesOf(Paragraph p)
+    {
+        var res = new List<LineRef>();
+        if (_paraItem is null)
+        {
+            _paraItem = new Dictionary<Paragraph, int>(ReferenceEqualityComparer.Instance);
+            for (int i = 0; i < _items.Count; i++)
+                foreach (var q in new Story { Blocks = { _items[i].Block } }.Paragraphs()) _paraItem[q] = i;
+        }
+        if (!_paraItem.TryGetValue(p, out var idx) || Pages.Count == 0) return res;
+        for (int k = PageOf(Pages, idx); k < Pages.Count; k++)
+        {
+            var pg = Pages[k];
+            if (pg.Start.Item is not null && pg.Start.Index > idx) break;
+            for (int j = 0; j < pg.Lines.Count; j++)
+                if (ReferenceEquals(pg.Lines[j].Paragraph.Paragraph, p)) res.Add(new LineRef(k, j));
+        }
+        return res;
+    }
+
+    /// <summary>Ligne placée désignée par <paramref name="r"/>.</summary>
+    public PlacedLine Line(LineRef r) => Pages[r.Page].Lines[r.Line];
+
+    /// <summary>Ligne placée suivante (ou précédente) dans l'ordre du document, en passant d'une page à l'autre.</summary>
+    public LineRef? Step(LineRef r, int delta)
+    {
+        int page = r.Page, line = r.Line + delta;
+        while (page >= 0 && page < Pages.Count)
+        {
+            if (line >= 0 && line < Pages[page].Lines.Count) return new LineRef(page, line);
+            page += delta;
+            if (page < 0 || page >= Pages.Count) return null;
+            line = delta > 0 ? 0 : Pages[page].Lines.Count - 1;
+        }
+        return null;
     }
 
     /// <summary>
@@ -433,7 +481,7 @@ public sealed class DocumentLayout
         for (int i = 0; i < _items.Count; i++)
         {
             var b = _items[i].Block;
-            bool touched = changedSet.Contains(b) || !oldIndex.ContainsKey(b);
+            bool touched = changedSet.Contains(b) || !oldIndex.ContainsKey(b) || (_renumbered.Count > 0 && Renumbered(b));
             if (!touched && i > 0 && oldIndex.TryGetValue(_items[i - 1].Block, out var prevOld) && oldIndex.TryGetValue(b, out var curOld) && curOld != prevOld + 1)
                 touched = true;   // un élément a disparu juste avant
             if (touched) { if (first < 0) first = i; last = i; }
@@ -516,6 +564,8 @@ public sealed class DocumentLayout
         while (lo > 0 && pages[lo].Start.Index == index && pages[lo].Start.Line > 0) lo--;
         return lo;
     }
+
+    bool Renumbered(Block b) => b is Paragraph p ? _renumbered.Contains(p) : new Story { Blocks = { b } }.Paragraphs().Any(_renumbered.Contains);
 
     /// <summary>La page contient (au moins en partie) l'élément de flux <paramref name="b"/>.</summary>
     bool Covers(Page pg, Block b) => _oldIndex.TryGetValue(b, out var i) && pg.Start.Index <= i && (pg.End.Item is null || i <= pg.End.Index);

@@ -87,17 +87,20 @@ public partial class MainWindow
     {
         var label = undo ? _journal.UndoLabel : _journal.RedoLabel;
         if (label is null) return;
-        if (undo) _journal.Undo(); else _journal.Redo();
-        AfterEdit($"{(undo ? "Annulé" : "Rétabli")} : {label}.");
+        var caret = undo ? _journal.Undo() : _journal.Redo();
+        AfterEdit($"{(undo ? "Annulé" : "Rétabli")} : {label}.", caret);
     }
 
-    void AfterEdit(string status)
+    /// <summary>Après une modification hors frappe (case, annuler, rétablir) : remise en page incrémentale, point d'insertion.</summary>
+    void AfterEdit(string status, DocPos? caret = null)
     {
-        var offset = Scroller.VerticalOffset;
-        ShowDocument();
+        Relayout();
+        _anchor = null;
+        if (caret is not null && FromDocPos(caret) is { } t) _caret = t;
+        else if (_caret is { } c && _layout?.LinesOf(c.Paragraph).Count == 0) _caret = DocumentStart();
         Scroller.UpdateLayout();
-        Scroller.ScrollToVerticalOffset(offset);
-        UpdateStatus();
+        UpdateCaret(scroll: caret is not null);
+        UpdateModifiedMarker();
         StatusText.Text = status;
         EnsureAutoSaveTimer();
         CommandManager.InvalidateRequerySuggested();
@@ -161,6 +164,9 @@ public partial class MainWindow
         StatusText.Text = $"Enregistré à {DateTime.Now:HH:mm}" + (AppSettings.Load().KeepBackup ? " (version précédente : .bak)." : ".");
         return true;
     }
+
+    /// <summary>Banc de saisie : enregistre le document modifié dans un autre fichier (le document ouvert reste intact).</summary>
+    internal void SaveCopy(string target) => _pkg?.Save(target, keepBackup: false);
 
     /// <summary>Avant de fermer ou de remplacer le document : propose d'enregistrer les modifications. Faux = ne pas continuer.</summary>
     internal bool ConfirmDiscard()

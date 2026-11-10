@@ -54,6 +54,74 @@ public static class TextOps
         return pos.WithOffset(o + text.Length);
     }
 
+    /// <summary>
+    /// Insère un caractère spécial (tabulation, retour à la ligne, saut de page) à une position, avec les mêmes règles de
+    /// mise en forme que <see cref="Insert"/> ; un texte coupé en deux reste dans le même segment. Renvoie la position après.
+    /// </summary>
+    public static DocPos InsertSpecial(Story root, DocPos pos, SpecialChar kind)
+    {
+        var p = pos.Paragraph(root);
+        var ns = p.Props.Ns;
+        RunContent content = kind switch
+        {
+            SpecialChar.Tab => new TabContent(),
+            SpecialChar.LineBreak => new BreakContent(),
+            SpecialChar.PageBreak => new BreakContent { Attributes = { new XAttribute(ns + "type", "page") } },
+            SpecialChar.ColumnBreak => new BreakContent { Attributes = { new XAttribute(ns + "type", "column") } },
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+        var atoms = ParagraphAtoms.Of(p);
+        int o = pos.Offset;
+        if (o < 0 || o > atoms.Sum(a => a.Length)) throw new ArgumentOutOfRangeException(nameof(pos), $"Décalage {o} hors du paragraphe.");
+        var result = pos.WithOffset(o + 1);
+        // au milieu d'un texte : coupé en deux dans le même segment
+        var inside = atoms.FirstOrDefault(a => a.Content is TextContent && !a.InDeletion && a.Start < o && o < a.End);
+        if (inside is not null)
+        {
+            var t = (TextContent)inside.Content!;
+            var tail = new TextContent { Value = t.Value[(o - inside.Start)..] };
+            t.Value = t.Value[..(o - inside.Start)];
+            int i = inside.Run!.Content.IndexOf(t);
+            inside.Run.Content.InsertRange(i + 1, new[] { content, tail });
+            return result;
+        }
+        var before = atoms.LastOrDefault(a => a.Length > 0 && a.End == o && a.Run is not null && !a.InDeletion);
+        if (before is not null) { before.Run!.Content.Insert(before.Run.Content.IndexOf(before.Content!) + 1, content); return result; }
+        var after = atoms.FirstOrDefault(a => a.Length > 0 && a.Start == o && a.Run is not null && !a.InDeletion);
+        if (after is not null) { after.Run!.Content.Insert(after.Run.Content.IndexOf(after.Content!), content); return result; }
+        var run = new Run { Props = MarkProps(p) };
+        run.Content.Add(content);
+        var anchor = atoms.LastOrDefault(a => a.End <= o && !a.InDeletion);
+        if (anchor is null) p.Inlines.Insert(0, run);
+        else anchor.Owner.Insert(anchor.Owner.IndexOf(anchor.Inline) + 1, run);
+        return result;
+    }
+
+    /// <summary>
+    /// Insère un texte de plusieurs lignes (collage) : chaque fin de ligne crée un paragraphe, les tabulations et les
+    /// retours à la ligne (\v, comme Word en texte brut) deviennent des caractères spéciaux.
+    /// </summary>
+    public static DocPos InsertMultiline(Story root, DocPos pos, string text, Func<string> newParaId)
+    {
+        var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        for (int k = 0; k < lines.Length; k++)
+        {
+            if (k > 0) pos = Split(root, pos, newParaId);
+            var line = lines[k];
+            int start = 0;
+            for (int i = 0; i <= line.Length; i++)
+            {
+                if (i < line.Length && line[i] is not ('\t' or '\v' or '\f')) continue;
+                // caractères de contrôle restants (hors tabulation et sauts) : ignorés
+                var chunk = new string(line[start..i].Where(ch => !char.IsControl(ch)).ToArray());
+                pos = Insert(root, pos, chunk);
+                if (i < line.Length) pos = InsertSpecial(root, pos, line[i] switch { '\t' => SpecialChar.Tab, '\f' => SpecialChar.PageBreak, _ => SpecialChar.LineBreak });
+                start = i + 1;
+            }
+        }
+        return pos;
+    }
+
     static void InsertTextAfter(Run run, RunContent c, string text)
     {
         int i = run.Content.IndexOf(c);
@@ -149,8 +217,13 @@ public static class TextOps
     /// Scinde le paragraphe à une position (Entrée). Les deux paragraphes gardent les propriétés ; le second reçoit de
     /// nouveaux w14:paraId/w14:textId ; un saut de section reste sur le second ; un lien coupé en deux est dupliqué.
     /// Renvoie le début du second paragraphe.
+    /// <para>
+    /// En fin de paragraphe (Entrée après le dernier caractère), comme Word : le nouveau paragraphe prend le style
+    /// suivant (<paramref name="nextStyle"/> : w:next du style, « Titre 1 » → « Normal ») ; s'il garde le même style,
+    /// sa marque reprend la mise en forme du dernier caractère, et la frappe continue en gras après un texte en gras.
+    /// </para>
     /// </summary>
-    public static DocPos Split(Story root, DocPos pos, Func<string> newParaId)
+    public static DocPos Split(Story root, DocPos pos, Func<string> newParaId, Func<string?, string?>? nextStyle = null)
     {
         var container = DocPos.ResolveContainer(root, pos.ContainerPath);
         var p = pos.Paragraph(root);
@@ -163,6 +236,23 @@ public static class TextOps
         p.Inlines.Clear();
         p.Inlines.AddRange(left);
         p2.Inlines.AddRange(right);
+        if (pos.Offset >= ParagraphAtoms.Length(p) && ParagraphAtoms.Length(p2) == 0)
+        {
+            var style = p.Props.Val("pStyle");
+            var next = nextStyle?.Invoke(style);
+            if (next is not null && next != style)
+            {
+                p2.Props.SetVal("pStyle", next);
+                p2.Props.Remove("rPr");
+            }
+            else if (LastRun(left) is { } last)
+            {
+                var mark = last.Props.Element is { } rpr ? new XElement(rpr) : new XElement(p.Props.Ns + "rPr");
+                mark.Elements().Where(e => e.Name.LocalName is "ins" or "del" or "moveFrom" or "moveTo" or "rPrChange").Remove();
+                p2.Props.Remove("rPr");
+                if (mark.HasElements) p2.Props.Set(mark);
+            }
+        }
         container.Blocks.Insert(pos.BlockIndex + 1, p2);
         return new DocPos(pos.ContainerPath.Append(pos.BlockIndex + 1).ToArray(), 0);
     }
@@ -237,6 +327,21 @@ public static class TextOps
         return (left, right);
     }
 
+    /// <summary>Dernier segment qui porte du texte (ou une tabulation…), en descendant dans les liens et révisions.</summary>
+    static Run? LastRun(List<Inline> list)
+    {
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            switch (list[i])
+            {
+                case Run r when r.Content.Any(c => c is TextContent or TabContent or BreakContent): return r;
+                case InlineContainer box when LastRun(box.Children) is { } inBox: return inBox;
+                case InlineContentControl sdt when LastRun(sdt.Content) is { } inSdt: return inSdt;
+            }
+        }
+        return null;
+    }
+
     static (RunContent Head, RunContent Tail) CutContent(RunContent c, int at)
     {
         RunContent tail;
@@ -291,6 +396,24 @@ public static class TextOps
                     () => Delete(root, from, to), p => p);
     }
 
-    public static DocPos SplitParagraph(UndoJournal journal, Story root, DocPos pos, Func<string> newParaId) =>
-        Edit(journal, root, "Nouveau paragraphe", pos.ContainerPath, pos.BlockIndex, 1, pos, () => Split(root, pos, newParaId), p => p);
+    public static DocPos SplitParagraph(UndoJournal journal, Story root, DocPos pos, Func<string> newParaId, Func<string?, string?>? nextStyle = null) =>
+        Edit(journal, root, "Nouveau paragraphe", pos.ContainerPath, pos.BlockIndex, 1, pos, () => Split(root, pos, newParaId, nextStyle), p => p);
+
+    /// <summary>
+    /// Remplace la plage [<paramref name="from"/>, <paramref name="to"/>] (éventuellement vide) par un texte de
+    /// plusieurs lignes, en une seule opération annulable (frappe sur une sélection, collage).
+    /// </summary>
+    public static DocPos Replace(UndoJournal journal, Story root, string label, DocPos from, DocPos to, string text, Func<string> newParaId)
+    {
+        if (to < from) (from, to) = (to, from);
+        return Edit(journal, root, label, from.ContainerPath, from.BlockIndex, to.BlockIndex - from.BlockIndex + 1, to,
+            () => InsertMultiline(root, from.Equals(to) ? from : Delete(root, from, to), text, newParaId), p => p);
+    }
+
+    public static DocPos InsertSpecial(UndoJournal journal, Story root, DocPos pos, SpecialChar kind) =>
+        Edit(journal, root, kind switch { SpecialChar.Tab => "Tabulation", SpecialChar.PageBreak => "Saut de page", _ => "Saut de ligne" },
+             pos.ContainerPath, pos.BlockIndex, 1, pos, () => InsertSpecial(root, pos, kind), p => p);
 }
+
+/// <summary>Caractères spéciaux insérés au clavier : Tab, Maj+Entrée, Ctrl+Entrée, Ctrl+Maj+Entrée.</summary>
+public enum SpecialChar { Tab, LineBreak, PageBreak, ColumnBreak }

@@ -43,6 +43,12 @@ public sealed class UndoJournal
     /// <summary>Une racine a été modifiée (opération, annulation ou rétablissement) : sa partie est à régénérer.</summary>
     public event Action<Story>? Changed;
 
+    /// <summary>
+    /// Zone touchée par la dernière modification, annulation ou rétablissement : suite de blocs, conteneur, premier bloc
+    /// et nombre de blocs qui l'occupent maintenant (pour la remise en page incrémentale).
+    /// </summary>
+    public (Story Root, IReadOnlyList<int> Container, int Index, int Count)? LastChange { get; private set; }
+
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public string? UndoLabel => _undo.Count > 0 ? _undo[^1].Label : null;
@@ -88,6 +94,7 @@ public sealed class UndoJournal
             return;
         }
         var after = container.Blocks.GetRange(tx.Index, newCount).Select(b => b.Clone()).ToList();
+        LastChange = (tx.Root, tx.Container, tx.Index, newCount);
         if (_savedAt is not null && _redo.Contains(_savedAt)) _savedLost = true;      // l'état enregistré n'est plus atteignable
         _redo.Clear();
         var last = _undo.Count > 0 ? _undo[^1] : null;
@@ -125,6 +132,7 @@ public sealed class UndoJournal
         var e = _undo[^1];
         _undo.RemoveAt(_undo.Count - 1);
         Replace(DocPos.ResolveContainer(e.Root, e.Container), e.Index, e.After.Count, e.Before.Select(b => b.Clone()));
+        LastChange = (e.Root, e.Container, e.Index, e.Before.Count);
         _redo.Add(e);
         Changed?.Invoke(e.Root);
         return e.CaretBefore;
@@ -137,6 +145,7 @@ public sealed class UndoJournal
         var e = _redo[^1];
         _redo.RemoveAt(_redo.Count - 1);
         Replace(DocPos.ResolveContainer(e.Root, e.Container), e.Index, e.Before.Count, e.After.Select(b => b.Clone()));
+        LastChange = (e.Root, e.Container, e.Index, e.After.Count);
         _undo.Add(e);
         Changed?.Invoke(e.Root);
         return e.CaretAfter;
@@ -147,6 +156,7 @@ public sealed class UndoJournal
     {
         _undo.Clear();
         _redo.Clear();
+        LastChange = null;
         _savedAt = null;
         _savedLost = false;
     }

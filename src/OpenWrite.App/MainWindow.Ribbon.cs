@@ -84,8 +84,33 @@ public partial class MainWindow
     /// <summary>Bouton « Volet Mise en forme » de l'onglet Affichage (actif dès la 0.1).</summary>
     ToggleButton? FormatPaneToggle;
 
+    /// <summary>Boutons déjà actifs (version 0.4) : actifs dès qu'un document est affiché.</summary>
+    readonly List<Button> _liveButtons = new();
+
+    /// <summary>Commandes de l'onglet Accueil déjà disponibles, par libellé de bouton.</summary>
+    Dictionary<string, (Action Run, string Tip)> HomeCommands() => new()
+    {
+        ["Coller"] = (Paste, "Coller (Ctrl+V) — texte"),
+        ["Couper"] = (Cut, "Couper (Ctrl+X)"),
+        ["Copier"] = (Copy, "Copier (Ctrl+C)"),
+        ["Gras"] = (() => ToggleCharacter("b"), "Gras (Ctrl+G ou Ctrl+B)"),
+        ["Italique"] = (() => ToggleCharacter("i"), "Italique (Ctrl+I)"),
+        ["Souligné"] = (() => ToggleCharacter("u"), "Souligné (Ctrl+U)"),
+        ["Gauche"] = (() => SetAlignment("left"), "Aligner à gauche (Ctrl+Maj+G ou Ctrl+L)"),
+        ["Centrer"] = (() => SetAlignment("center"), "Centrer (Ctrl+E)"),
+        ["Droite"] = (() => SetAlignment("right"), "Aligner à droite (Ctrl+Maj+D ou Ctrl+R)"),
+        ["Sélectionner"] = (SelectAll, "Sélectionner tout (Ctrl+A)"),
+    };
+
+    /// <summary>Active les commandes disponibles quand un document est affiché.</summary>
+    void UpdateRibbonState()
+    {
+        foreach (var b in _liveButtons) b.IsEnabled = _layout is not null;
+    }
+
     void BuildRibbon()
     {
+        var home = HomeCommands();
         foreach (var (tab, groups) in Roadmap)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Visibility = tab == "TabHome" ? Visibility.Visible : Visibility.Collapsed };
@@ -93,7 +118,18 @@ public partial class MainWindow
             {
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal };
                 foreach (var (glyph, label) in g.Buttons)
-                    buttons.Children.Add(new Button { Style = (Style)FindResource("RBig"), Tag = glyph, Content = label, IsEnabled = false });
+                {
+                    var button = new Button { Style = (Style)FindResource("RBig"), Tag = glyph, Content = label, IsEnabled = false };
+                    if (tab == "TabHome" && home.TryGetValue(label, out var cmd))
+                    {
+                        // le point d'insertion garde le clavier : le bouton ne prend pas le focus
+                        button.Focusable = false;
+                        button.ToolTip = cmd.Tip;
+                        button.Click += (_, _) => { cmd.Run(); _pagesView?.Focus(); };
+                        _liveButtons.Add(button);
+                    }
+                    buttons.Children.Add(button);
+                }
                 panel.Children.Add(new HeaderedContentControl
                 {
                     Style = (Style)FindResource("RGroup"), Header = $"{g.Header} · {g.Version}", Content = buttons,

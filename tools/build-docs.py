@@ -94,15 +94,16 @@ rapports d'erreur anonymes.</p>
 {shot("menu-fichier", "Menu Fichier d'OpenWrite")}
 """),
         ("accueil", "L'onglet Accueil", f"""
-<p>Presse-papiers, police, paragraphe, styles et recherche : comme dans Word. Ces commandes s'activent avec
-l'édition du texte (version 0.4) et les styles (version 0.5).</p>
+<p>Presse-papiers, police, paragraphe, styles et recherche : comme dans Word. Coller, Couper, Copier, Gras, Italique,
+Souligné, les alignements et Sélectionner sont actifs ; les boîtes Police et Paragraphe, la recherche et les styles
+(version 0.5) arrivent ensuite.</p>
 {shot("onglet-accueil", "Onglet Accueil du ruban")}
 """),
         ("volets", "Les volets", f"""
 <p>À gauche, le volet de navigation a deux onglets : <strong>Pages</strong>, les miniatures de toutes les pages (un clic
 sur une miniature affiche la page), et <strong>Titres</strong>, le plan du document. À droite, le volet
-<strong>Mise en forme</strong> décrit le paragraphe sous la souris : style, police, taille, alignement, retraits,
-espacements, liste. Les deux se masquent depuis l'onglet <strong>Affichage</strong>, qui règle aussi le zoom
+<strong>Mise en forme</strong> décrit le paragraphe du point d'insertion : style, police, taille, alignement,
+retraits, espacements, liste. Les deux se masquent depuis l'onglet <strong>Affichage</strong>, qui règle aussi le zoom
 ({k('Ctrl')} + molette).</p>
 {shot("onglet-affichage", "Onglet Affichage du ruban")}
 """),
@@ -121,7 +122,23 @@ reste celui du document : un <code>.docm</code> reste un <code>.docm</code>.</p>
 <p>OpenWrite ne réécrit que les parties du fichier qu'il a modifiées ; tout le reste (images, objets, réglages
 qu'il ne connaît pas encore) est recopié <strong>à l'identique</strong>. La version précédente est gardée à côté,
 avec l'extension <code>.bak</code> (réglage dans le menu Fichier).</p>
-{warn("Tant que la saisie du texte n'est pas disponible (version 0.4), seules les cases à cocher des formulaires se modifient.")}
+"""),
+        ("ecrire", "Écrire et mettre en forme", f"""
+<p>Cliquez dans la page pour placer le point d'insertion, puis tapez. {k('Entrée')} commence un nouveau paragraphe
+(après un titre, le paragraphe suivant prend le style prévu, en général « Normal »), {k('Maj', 'Entrée')} passe à la
+ligne dans le même paragraphe, {k('Ctrl', 'Entrée')} insère un saut de page et {k('Tab')} une tabulation.
+{k('Retour arrière')} et {k('Suppr')} effacent un caractère ; au début ou à la fin d'un paragraphe, ils le
+réunissent au précédent ou au suivant.</p>
+<p>Pour sélectionner : glissez avec la souris, double-cliquez sur un mot, triple-cliquez sur un paragraphe, ou
+maintenez {k('Maj')} avec les flèches. Le texte tapé remplace la sélection.</p>
+<p>{k('Ctrl', 'G')} met en gras, {k('Ctrl', 'I')} en italique, {k('Ctrl', 'U')} souligne — la sélection, ou le mot
+où se trouve le point d'insertion ; entre deux mots, la mise en forme s'applique au texte que vous tapez ensuite.
+{k('Ctrl', 'E')} centre le paragraphe, {k('Ctrl', 'J')} le justifie, {k('Ctrl', 'Maj', 'G')} et
+{k('Ctrl', 'Maj', 'D')} l'alignent à gauche et à droite. Les raccourcis de Word en anglais ({k('Ctrl', 'B')},
+{k('Ctrl', 'L')}, {k('Ctrl', 'R')}) fonctionnent aussi.</p>
+<p>{k('Ctrl', 'C')}, {k('Ctrl', 'X')} et {k('Ctrl', 'V')} copient, coupent et collent du texte, avec les autres
+programmes aussi ; chaque ligne collée devient un paragraphe.</p>
+{warn("Pas encore modifiables : les en-têtes et pieds de page, les notes, et une sélection qui sort d'un tableau. La mise en forme collée depuis un autre programme (RTF, HTML) arrive dans une prochaine version : seul le texte est collé.")}
 """),
         ("annuler", "Annuler et rétablir", f"""
 <p>{k('Ctrl', 'Z')} annule la dernière modification, {k('Ctrl', 'Y')} la rétablit. Le titre de la fenêtre affiche
@@ -186,6 +203,21 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
             ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")),
             ("Annuler", k("Ctrl", "Z")), ("Rétablir", k("Ctrl", "Y")),
             ("Zoom", k("Ctrl") + " + molette"), ("Aide", k("F1")), ("Quitter", k("Alt", "F4")),
+        ])),
+        ("saisie", "Saisie et déplacements", table([
+            ("Nouveau paragraphe", k("Entrée")), ("Saut de ligne", k("Maj", "Entrée")), ("Saut de page", k("Ctrl", "Entrée")),
+            ("Mot précédent, suivant", k("Ctrl", "←") + " " + k("Ctrl", "→")),
+            ("Début, fin de ligne", k("Origine") + " " + k("Fin")), ("Début, fin du document", k("Ctrl", "Origine") + " " + k("Ctrl", "Fin")),
+            ("Page précédente, suivante", k("Pg.préc") + " " + k("Pg.suiv")),
+            ("Effacer le mot précédent, suivant", k("Ctrl", "Retour arrière") + " " + k("Ctrl", "Suppr")),
+            ("Étendre la sélection", k("Maj") + " + déplacement"), ("Tout sélectionner", k("Ctrl", "A")),
+            ("Copier, couper, coller", k("Ctrl", "C") + " " + k("Ctrl", "X") + " " + k("Ctrl", "V")),
+        ])),
+        ("mise-en-forme", "Mise en forme", table([
+            ("Gras", k("Ctrl", "G") + " ou " + k("Ctrl", "B")), ("Italique", k("Ctrl", "I")), ("Souligné", k("Ctrl", "U")),
+            ("Centrer", k("Ctrl", "E")), ("Justifier", k("Ctrl", "J")),
+            ("Aligner à gauche", k("Ctrl", "Maj", "G") + " ou " + k("Ctrl", "L")),
+            ("Aligner à droite", k("Ctrl", "Maj", "D") + " ou " + k("Ctrl", "R")),
         ])),
     ]),
     ("faq.html", "Questions fréquentes", "Compatibilité avec Word, sauvegardes, confidentialité.", "❓", [

@@ -175,6 +175,7 @@ public partial class MainWindow : Window
         PaneDocInfo.Text = DocSummary();
         RefreshPanes();
         UpdatePageStatus();
+        UpdateRibbonState();
     }
 
     /// <summary>Langue principale affichée dans la barre d'état (la première langue de rédaction trouvée).</summary>

@@ -162,12 +162,14 @@ static class Bench
         var path = Path.Combine(outDir, variant, r.File);
         if (target.run is null) { pkg.Save(path); r.Edits[variant] = "sans objet"; return; }
         var text = target.run.Content.OfType<TextContent>().First(t => !t.Deleted && t.Value.Trim().Length >= 2);
+        // partie d'origine lue avant l'enregistrement (qui met à jour le paquet en mémoire)
+        var original = pkg.Find(main.PartName)!.Data;
         var expected = act(target.p, target.run, text, body);
         main.Dirty = true;
         pkg.Save(path);
         if (expected.Item1 < 0) { r.Edits[variant] = "non applicable"; return; }
         var after = ReadZip(path).First(e => e.Name == main.PartName).Data;
-        var span = XmlCompare.ChangedSpan(BodyBlocks(pkg.Find(main.PartName)!.Data), BodyBlocks(after));
+        var span = XmlCompare.ChangedSpan(BodyBlocks(original), BodyBlocks(after));
         r.Edits[variant] = span == expected ? "local" : $"ÉTENDUE {span.Removed}→{span.Added}";
     }
 
@@ -226,13 +228,14 @@ static class Bench
     static void Edit2(string file, string outDir, string variant, Result r, Func<DocxPackage, (int, int)?> act)
     {
         var pkg = DocxPackage.Open(file);
+        var original = pkg.Find(pkg.Main!.PartName)!.Data;
         var expected = act(pkg);
         var path = Path.Combine(outDir, variant, r.File);
         if (expected is null) { pkg.Save(path); r.Edits[variant] = "sans objet"; return; }
-        pkg.Main!.Dirty = true;
+        pkg.Main.Dirty = true;
         pkg.Save(path);
         var after = ReadZip(path).First(e => e.Name == pkg.Main.PartName).Data;
-        var span = XmlCompare.ChangedSpan(BodyBlocks(pkg.Find(pkg.Main.PartName)!.Data), BodyBlocks(after));
+        var span = XmlCompare.ChangedSpan(BodyBlocks(original), BodyBlocks(after));
         r.Edits[variant] = span == expected ? "local" : $"ÉTENDUE {span.Removed}→{span.Added}";
     }
 

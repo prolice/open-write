@@ -107,7 +107,8 @@ public partial class MainWindow
 
     // ================================================================ vue des pages (version 0.3)
 
-    Dictionary<FieldChar, Field> _fieldsByBegin = new();
+    /// <summary>Champs par caractère de début (clic sur une case) ; recalculé à la demande après une modification.</summary>
+    Dictionary<FieldChar, Field>? _fieldsByBegin;
     readonly Layout.WpfFontProvider _fonts = new();
     DocumentLayout? _layout;
     Layout.PageDrawings? _drawings;
@@ -126,7 +127,7 @@ public partial class MainWindow
         if (_info is null || _path is null || Body is not { } body || _styles is not { } styles || _pkg is not { } pkg) return;
         Workspace.Children.Clear();
         Scroller.HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto;
-        _fieldsByBegin = FieldIndex.Build(body).All.Where(f => f.Begin is not null).ToDictionary(f => f.Begin!);
+        _fieldsByBegin = null;
         _fonts.AltNames = pkg.FontAltNames();
         _images.Clear();
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -134,10 +135,11 @@ public partial class MainWindow
         _layout.LayoutAll();
         LastLayoutMs = sw.Elapsed.TotalMilliseconds;
         _drawings = new Layout.PageDrawings(_layout, new Layout.PageRenderer(ImageOf));
-        _pagesView = new Layout.PagesView(_drawings, PtToDip, 24) { Cursor = Cursors.Arrow };
+        _pagesView = new Layout.PagesView(_drawings, PtToDip, 24);
         _pagesView.MouseMove += PagesView_MouseMove;
         _pagesView.MouseLeftButtonUp += PagesView_MouseLeftButtonUp;
         Workspace.Children.Add(_pagesView);
+        InitTyping(_pagesView);
         BuildThumbnails();
         UpdatePageStatus();
     }
@@ -221,28 +223,22 @@ public partial class MainWindow
         if (e.VerticalChange != 0 || e.ViewportHeightChange != 0) UpdatePageStatus();
     }
 
-    /// <summary>Survol : le volet de droite décrit le paragraphe (et le caractère) sous la souris ; main sur une case.</summary>
+    /// <summary>Survol : main sur une case à cocher, curseur de texte ailleurs ; bouton enfoncé : sélection.</summary>
     void PagesView_MouseMove(object sender, MouseEventArgs e)
     {
         if (_pagesView is null || _layout is null) return;
+        DragSelect(e);
         var (page, at) = _pagesView.HitPage(e.GetPosition(_pagesView));
-        if (page < 0 || Layout.PagesView.HitLine(_layout.Pages[page], at) is not { } hit)
-        {
-            _pagesView.Cursor = Cursors.Arrow;
-            return;
-        }
-        var c = hit.Line.Paragraph.Content;
-        bool onBox = hit.Char >= 0 && c.CheckBoxes.ContainsKey(hit.Char);
-        _pagesView.Cursor = onBox ? Cursors.Hand : Cursors.Arrow;
-        var rf = hit.Char >= 0 && hit.Char < c.StyleOf.Length ? c.Styles[c.StyleOf[hit.Char]].Format : c.Mark.Format;
-        PaneSelection.Text = Describe(hit.Line.Paragraph.Format, rf);
+        bool onBox = page >= 0 && Layout.PagesView.HitLine(_layout.Pages[page], at) is { } hit && hit.Char >= 0
+                     && hit.Line.Paragraph.Content.CheckBoxes.ContainsKey(hit.Char);
+        _pagesView.Cursor = onBox ? Cursors.Hand : Cursors.IBeam;
     }
 
-    /// <summary>Clic : une case à cocher de formulaire change d'état (annulable par Ctrl+Z).</summary>
+    /// <summary>Fin d'un clic : un clic simple sur une case à cocher de formulaire la coche (annulable par Ctrl+Z).</summary>
     void PagesView_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_pagesView is null) return;
-        if (ClickAt(_pagesView.HitPage(e.GetPosition(_pagesView)))) e.Handled = true;
+        if (EndMouseSelect() && ClickAt(_pagesView.HitPage(e.GetPosition(_pagesView)))) e.Handled = true;
     }
 
     /// <summary>Clic sur une page (points) : coche ou décoche la case de formulaire sous le pointeur ; vrai si une case a changé.</summary>
@@ -250,7 +246,9 @@ public partial class MainWindow
     {
         if (_layout is null || target.Page < 0 || target.Page >= _layout.Pages.Count) return false;
         if (Layout.PagesView.HitLine(_layout.Pages[target.Page], target.At) is not { } hit || hit.Char < 0) return false;
-        if (!hit.Line.Paragraph.Content.CheckBoxes.TryGetValue(hit.Char, out var begin) || !_fieldsByBegin.TryGetValue(begin, out var field)) return false;
+        if (!hit.Line.Paragraph.Content.CheckBoxes.TryGetValue(hit.Char, out var begin) || Body is not { } body) return false;
+        _fieldsByBegin ??= FieldIndex.Build(body).All.Where(f => f.Begin is not null).ToDictionary(f => f.Begin!);
+        if (!_fieldsByBegin.TryGetValue(begin, out var field)) return false;
         ToggleCheckBox(hit.Line.Paragraph.Paragraph, field);
         return true;
     }

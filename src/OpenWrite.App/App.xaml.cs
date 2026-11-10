@@ -8,6 +8,7 @@ namespace OpenWrite.App;
 /// <summary>
 /// Point d'entrée. Modes en ligne de commande (sans fenêtre), utiles pour l'automatisation et les tests :
 ///   OpenWrite.exe --info document.docx                 résumé du document (version 0.1)
+///   OpenWrite.exe --typing-bench doc.docx [n] [--save copie.docx]   banc de saisie (milieu du document, corps répété n fois)
 ///   OpenWrite.exe --selftest dossier                   auto-test de bout en bout sur la vraie fenêtre (hors écran)
 ///   OpenWrite.exe --screenshot document.docx|- image.png [largeur hauteur] [scène]
 ///   OpenWrite.exe --help-topics | --gen-update-key cle.pem | --public-key cle.pem
@@ -100,6 +101,14 @@ public partial class App : Application
             {
                 foreach (var t in Help.HelpService.AllTopics) Console.WriteLine(t);
                 Shutdown(0);
+                return;
+            }
+            if (args.Length >= 2 && args[0] == "--typing-bench")
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                int n = args.Length >= 3 && int.TryParse(args[2], out var rep) ? rep : 1;
+                int save = Array.IndexOf(args, "--save");
+                Shutdown(SelfTest.TypingBench(args[1], n, save > 0 && save + 1 < args.Length ? args[save + 1] : null));
                 return;
             }
             if (args.Length >= 2 && args[0] == "--selftest")

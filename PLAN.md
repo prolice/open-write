@@ -755,3 +755,11 @@ Publiée par la pipeline (tag `v0.7.1`) : correctif du collage depuis Excel (§1
 ### 10.22 Version 1.0.0 (2026-11-10)
 
 Publiée par la pipeline (tag `v1.0.0`) : lot 7 tel que décrit en §10.21 — images, formes et zones de texte affichées à leur place avec le texte habillé comme dans Word, insertion et modification des objets, tableaux flottants, images EMF/WMF. Jalon 1.0 atteint ; « Prochaines versions » de l'accueil : 1.1 à 1.3.
+
+### 10.23 Sous-menus et auto-test de l'interface (2026-11-10, après 1.0.0)
+
+Retour utilisateur : clic droit dans un tableau ▸ Supprimer ne faisait rien. Cause : le modèle des `MenuItem` d'`App.xaml` n'avait pas de `PART_Popup`, aucun sous-menu ne s'affichait (Insérer ▸ / Supprimer ▸ du tableau, Habillage ▸ / Ordre ▸ / Rotation ▸ des objets). Ajout de la fenêtre surgissante et d'une flèche. L'auto-test appelait les commandes directement et ne pouvait pas le voir : nouvelle étape `SelfTest.Ui.cs` qui passe par les vrais contrôles avec l'automatisation de l'interface (Expand / Invoke / Select des pairs d'automatisation) — menus contextuels du texte, d'un tableau et d'un objet (chaque sous-menu ouvert, ses entrées doivent être affichées), onglet Disposition et menu de son bouton Supprimer. Sans le correctif : 8 échecs. 92 vérifications ; l'auto-test tourne dans `ci.yml` et bloque `release-app.yml` (sur l'exécutable publié). Règle : toute nouvelle commande d'interface est vérifiée dans `InterfaceChecks` par son contrôle réel.
+
+### 10.24 Version 1.0.1 (2026-11-10)
+
+Publiée par la pipeline (tag `v1.0.1`) : sous-menus des menus contextuels (§10.23).

@@ -32,6 +32,14 @@ public partial class MainWindow
         view.KeyDown += PagesView_KeyDown;
         view.TextInput += PagesView_TextInput;
         view.MouseLeftButtonDown += PagesView_MouseLeftButtonDown;
+        view.MouseRightButtonDown += (_, e) =>
+        {
+            // clic droit hors de la sélection : le point d'insertion vient sous le pointeur (Word)
+            if (HitView(e.GetPosition(view)) is { } t && !(HasSelection && Ordered() is { } sel && Compare(sel.From, t) <= 0 && Compare(t, sel.To) <= 0))
+                MoveTo(t, extend: false);
+            view.Focus();
+        };
+        view.ContextMenuOpening += (_, _) => view.ContextMenu = BuildContextMenu();
         view.Selection = SelectionRects;
         _newParaId = null;
         _anchor = null;
@@ -404,8 +412,15 @@ public partial class MainWindow
         if (_caret is not { } c || _layout is null) return;
         var mods = Keyboard.Modifiers;
         bool shift = mods.HasFlag(ModifierKeys.Shift), ctrl = mods.HasFlag(ModifierKeys.Control), alt = mods.HasFlag(ModifierKeys.Alt);
-        if (alt) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        // Ctrl+Alt+1, 2, 3 : Titre 1, 2, 3 (Word)
+        if (ctrl && alt && key is Key.D1 or Key.D2 or Key.D3 or Key.NumPad1 or Key.NumPad2 or Key.NumPad3)
+        {
+            ApplyStyle(key is Key.D1 or Key.NumPad1 ? "heading 1" : key is Key.D2 or Key.NumPad2 ? "heading 2" : "heading 3");
+            e.Handled = true;
+            return;
+        }
+        if (alt) return;
         if (FormattingKey(key, ctrl, shift)) { e.Handled = true; return; }
         bool handled = true;
         switch (key)
@@ -418,6 +433,8 @@ public partial class MainWindow
             case Key.End: MoveTo(ctrl ? DocumentEnd() : LineEdge(c, end: true), shift); break;
             case Key.PageUp: MoveTo(Paging(c, -1), shift, keepGoal: true); break;
             case Key.PageDown: MoveTo(Paging(c, 1), shift, keepGoal: true); break;
+            // Retour arrière au début d'un élément de liste : il sort de la liste (Word)
+            case Key.Back when !ctrl && !HasSelection && c.Index == 0 && CaretInList(): EndList(); break;
             case Key.Back: Backspace(ctrl); break;
             case Key.Delete when shift && !ctrl: Cut(); break;
             case Key.Delete: DeleteForward(ctrl); break;
@@ -427,7 +444,13 @@ public partial class MainWindow
                 else NewParagraph();
                 break;
             // dans un tableau : cellule suivante (Maj : précédente) ; Ctrl+Tab y insère une vraie tabulation
-            case Key.Tab when !ctrl && InTableCell() && !alt: MoveToCell(shift ? -1 : 1); break;
+            // au début d'un élément de liste (ou sur plusieurs éléments) : niveau suivant / précédent
+            case Key.Tab when !ctrl && CaretInList() && (c.Index == 0 || HasSelection && !ReferenceEquals(_anchor!.Value.Paragraph, c.Paragraph)):
+                ChangeListLevel(shift ? -1 : 1);
+                break;
+            case Key.Tab when !ctrl && InTableCell(): MoveToCell(shift ? -1 : 1); break;
+            case Key.N when ctrl && shift: ApplyStyle("Normal"); break;
+            case Key.L when ctrl && shift: ToggleList(Core.Styles.ListKind.Bullet); break;
             case Key.Tab: InsertSpecial(SpecialChar.Tab); break;
             // Ctrl+Maj+Espace : espace insécable ; Ctrl+Maj+- : trait d'union insécable (Word)
             case Key.Space when ctrl && shift: ReplaceSelection("\u00A0", "Espace insécable"); break;
@@ -620,6 +643,8 @@ public partial class MainWindow
     void NewParagraph()
     {
         if (HasSelection) { ReplaceSelection("\n", "Nouveau paragraphe"); return; }
+        // Entrée sur un élément de liste vide : fin de la liste (Word)
+        if (CaretInList() && _caret is { } lc && LayoutOf(lc.Paragraph) is { } lpl && lpl.Content.Text.Length == 0) { EndList(); return; }
         if (Body is not { } body || _caret is not { } c || ToDocPos(c) is not { } at) { NotEditable(); return; }
         AfterTyping(TextOps.SplitParagraph(_journal, body, at, NewParaId(), NextStyle));
     }
@@ -713,7 +738,15 @@ public partial class MainWindow
     /// </summary>
     void Relayout()
     {
-        if (_layout is null || _drawings is null || _pagesView is null || Body is not { } body || _journal.LastChange is not { } ch || !ReferenceEquals(ch.Root, body))
+        // styles ou numérotation modifiés : résolveur refait, document entier remis en page
+        bool stylesChanged = _journal.LastXml.Count > 0;
+        if (stylesChanged && _pkg is not null)
+        {
+            _styles = new Core.Styles.StyleResolver(_pkg.StyleSheet());
+            _paneState = null;
+            Dispatcher.BeginInvoke(UpdateStyleGallery, System.Windows.Threading.DispatcherPriority.Background);
+        }
+        if (stylesChanged || _layout is null || _drawings is null || _pagesView is null || Body is not { } body || _journal.LastChange is not { } ch || !ReferenceEquals(ch.Root, body))
         {
             var offset = Scroller.VerticalOffset;
             ShowDocument();
@@ -726,7 +759,8 @@ public partial class MainWindow
         var changed = ch.Container.Count == 0
             ? body.Blocks.GetRange(ch.Index, Math.Min(ch.Count, body.Blocks.Count - ch.Index))
             : new List<Block> { body.Blocks[ch.Container[0]] };
-        _layout.Update(changed);
+        _layout.Update(changed, rebuildFlow: _listsTouched || changed.OfType<Paragraph>().Any(p => p.Props.Get("numPr") is not null));
+        _listsTouched = false;
         LastUpdateMs = sw.Elapsed.TotalMilliseconds;
         _fieldsByBegin = null;
         // numéros de page (en-têtes, pieds) : tout redessiner si le nombre de pages change
@@ -736,6 +770,9 @@ public partial class MainWindow
         if (_thumbsView is not null) { _thumbsView.InvalidateMeasure(); _thumbsView.InvalidateVisual(); }
         UpdatePageStatus();
     }
+
+    /// <summary>La dernière opération a changé des listes : numéros à recalculer (pas de chemin rapide).</summary>
+    bool _listsTouched;
 
     /// <summary>Durée de la dernière remise en page incrémentale (millisecondes).</summary>
     internal double LastUpdateMs { get; private set; }

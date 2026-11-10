@@ -5,6 +5,7 @@ using System.Windows.Input;
 using OpenWrite.Core.Editing;
 using OpenWrite.Core.Model;
 using OpenWrite.Core.Styles;
+using StyleOps = OpenWrite.Core.Styles.StyleOps;
 
 namespace OpenWrite.App;
 
@@ -23,6 +24,7 @@ public partial class MainWindow
 
     void InitFormatPane()
     {
+        InitStylePane();
         PaneFont.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies.Select(f => f.Source).Distinct().OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase).ToList();
         PaneSize.ItemsSource = FontSizes.Select(s => s.ToString(Cu)).ToList();
         PaneLineSpacing.ItemsSource = LineSpacings.Select(s => s.ToString("0.0#", Cu)).ToList();
@@ -100,7 +102,8 @@ public partial class MainWindow
             PaneJustify.IsChecked = pf.Alignment is "both" or "distribute";
             PaneLineSpacing.SelectedItem = null;
             PaneLineSpacing.Text = pf.LineRule == "auto" ? (pf.Line / 240.0).ToString("0.0#", Cu) : $"{pf.Line / 20.0:0.#} pt";
-            PaneStyle.Text = pf.StyleId is { } id ? _styles?.Sheet.NameOf(id) ?? id : "Normal";
+            var styleName = _styles is { } st ? StyleOps.DisplayName(st.Sheet, pf.StyleId ?? st.Sheet.DefaultStyle("paragraph")?.Attribute(st.Sheet.W + "styleId")?.Value) : "Normal";
+            if (!PaneStyle.IsDropDownOpen) { PaneStyle.ItemsSource = new[] { styleName }; PaneStyle.SelectedIndex = 0; }
         }
         finally { _refreshingPane = false; }
     }

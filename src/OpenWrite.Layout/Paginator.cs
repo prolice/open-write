@@ -454,11 +454,12 @@ public sealed class DocumentLayout
     /// la pagination repart de la page qui précède la première modification et s'arrête dès qu'une page retrouve le
     /// point de départ d'une ancienne page située après toutes les modifications.
     /// </summary>
-    public void Update(IReadOnlyCollection<Block> changed)
+    public void Update(IReadOnlyCollection<Block> changed, bool rebuildFlow = false)
     {
         LastParagraphsLaidOut = 0;
         Invalidate(changed);
-        if (Pages.Count > 0 && changed.Count > 0 && _body.Blocks.Count == _topCount && changed.All(b => b is not Paragraph p || p.Props.Get("sectPr") is null) && changed.All(_itemIndex.ContainsKey))
+        // rebuildFlow : listes touchées (numéros à recalculer) — pas de chemin rapide
+        if (!rebuildFlow && Pages.Count > 0 && changed.Count > 0 && _body.Blocks.Count == _topCount && changed.All(b => b is not Paragraph p || p.Props.Get("sectPr") is null) && changed.All(_itemIndex.ContainsKey))
         {
             UpdateInPlace(changed);
             return;

@@ -146,7 +146,7 @@
                                    Text="Cliquez dans la page : la mise en forme du point d'insertion s'affiche ici."/>
                         <StackPanel x:Name="PaneControls" IsEnabled="False">
                             <TextBlock Style="{StaticResource PanelTitle}" Text="STYLE"/>
-                            <ComboBox x:Name="PaneStyle" IsEditable="True" IsEnabled="False" Text="Normal" ToolTip="Styles : version 0.5"/>
+                            <ComboBox x:Name="PaneStyle" ToolTip="Style du paragraphe : choisir pour l'appliquer (Ctrl+Alt+1, 2, 3 : titres ; Ctrl+Maj+N : Normal)"/>
                             <TextBlock Style="{StaticResource PanelTitle}" Text="POLICE"/>
                             <DockPanel>
                                 <ComboBox DockPanel.Dock="Right" x:Name="PaneSize" IsEditable="True" Width="62" Margin="6,0,0,0" ToolTip="Taille (Ctrl+Maj+&gt; et Ctrl+&lt; pour agrandir et réduire)"/>

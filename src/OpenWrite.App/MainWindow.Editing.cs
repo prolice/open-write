@@ -62,6 +62,11 @@ public partial class MainWindow
         {
             if (_pkg?.Stories.Values.FirstOrDefault(p => p.Stories().Contains(root)) is { } part) part.Dirty = true;
         };
+        // styles, numérotation : partie à réécrire
+        _journal.XmlChanged += root =>
+        {
+            if (_pkg?.XmlParts.FirstOrDefault(p => ReferenceEquals(p.Doc.Root, root)) is { } xp) xp.Dirty = true;
+        };
         Closing += OnClosing;
         Activated += OnActivatedCheckFile;
     }

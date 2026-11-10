@@ -22,7 +22,7 @@ public partial class MainWindow
         {
             new("Presse-papiers", "0.4", ("", "Coller"), ("", "Couper"), ("", "Copier")),
             new("Police", "0.4", ("", "Police"), ("", "Gras"), ("", "Italique"), ("", "Souligné")),
-            new("Paragraphe", "0.4", ("", "Gauche"), ("", "Centrer"), ("", "Droite"), ("", "Listes"), ("\uE890", "Marques ¶")),
+            new("Paragraphe", "0.4", ("", "Gauche"), ("", "Centrer"), ("", "Droite"), ("\uE8FD", "Puces"), ("\uF146", "Numéros"), ("\uE9D5", "Titres 1.1"), ("\uE890", "Marques ¶")),
             new("Styles", "0.5", ("", "Styles"), ("", "Modifier")),
             new("Modification", "0.4", ("", "Rechercher"), ("", "Remplacer"), ("", "Sélectionner")),
         }),
@@ -104,6 +104,11 @@ public partial class MainWindow
         ["Rechercher"] = (() => ShowFind(replace: false), "Rechercher (Ctrl+F)"),
         ["Remplacer"] = (() => ShowFind(replace: true), "Remplacer (Ctrl+H)"),
         ["Marques ¶"] = (ToggleMarks, "Afficher ou masquer les marques de mise en forme (Ctrl+Maj+8)"),
+        ["Puces"] = (() => ToggleList(Core.Styles.ListKind.Bullet), "Liste à puces (Ctrl+Maj+L) ; Tab / Maj+Tab au début d'un élément : niveau"),
+        ["Numéros"] = (() => ToggleList(Core.Styles.ListKind.Numbered), "Liste numérotée ; clic droit sur un élément : recommencer à 1, continuer"),
+        ["Titres 1.1"] = (NumberHeadings, "Liste à plusieurs niveaux liée aux titres : 1. / 1.1 / 1.1.1"),
+        ["Styles"] = (ShowStylesWindow, "Tous les styles : appliquer, modifier, créer"),
+        ["Modifier"] = (ModifyCurrentStyle, "Modifier le style du paragraphe"),
     };
 
     /// <summary>Commandes de l'onglet Insertion déjà disponibles.</summary>
@@ -125,6 +130,39 @@ public partial class MainWindow
     void UpdateRibbonState()
     {
         foreach (var b in _liveButtons) b.IsEnabled = _layout is not null;
+        UpdateStyleGallery();
+    }
+
+    StackPanel? _styleGallery;
+
+    /// <summary>Galerie : six styles rapides avec aperçu (police, taille bornée, gras, italique, couleur du style).</summary>
+    void UpdateStyleGallery()
+    {
+        if (_styleGallery is null) return;
+        _styleGallery.Children.Clear();
+        if (_layout is null || _styles is null) return;
+        foreach (var (key, display, type) in StyleChoices().Where(c => c.Type == "paragraph").Take(5))
+        {
+            var preview = new TextBlock { Text = display, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 68 };
+            if (_styles.Sheet.Style(key) is { } st)
+            {
+                var probe = new Core.Model.Paragraph { Props = new Core.Model.PropertyBag("pPr", _styles.Sheet.W) };
+                probe.Props.SetVal("pStyle", key);
+                var rf = _styles.ParagraphMark(probe);
+                if (rf.FontAscii is { } font) preview.FontFamily = new FontFamily(font);
+                preview.FontSize = Math.Clamp(rf.Size * 96 / 72 * 0.8, 10, 15);
+                if (rf.Bold) preview.FontWeight = FontWeights.Bold;
+                if (rf.Italic) preview.FontStyle = FontStyles.Italic;
+                if (rf.Color is { Length: 6 } col) preview.Foreground = new SolidColorBrush(Color.FromRgb(Convert.ToByte(col[..2], 16), Convert.ToByte(col[2..4], 16), Convert.ToByte(col[4..], 16)));
+            }
+            var b = new Button
+            {
+                Content = preview, Width = 76, Height = 50, Margin = new Thickness(2, 0, 2, 0), Focusable = false, ToolTip = $"Style {display}",
+                Background = Brushes.White, BorderBrush = (Brush)FindResource("Line"), Padding = new Thickness(4, 2, 4, 2),
+            };
+            b.Click += (_, _) => { ApplyStyle(key); _pagesView?.Focus(); };
+            _styleGallery.Children.Add(b);
+        }
     }
 
     void BuildRibbon()
@@ -150,6 +188,12 @@ public partial class MainWindow
                         _liveButtons.Add(button);
                     }
                     buttons.Children.Add(button);
+                }
+                if (tab == "TabHome" && g.Header == "Styles")
+                {
+                    // galerie des styles rapides, remplie à l'ouverture d'un document
+                    _styleGallery = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+                    buttons.Children.Insert(0, _styleGallery);
                 }
                 panel.Children.Add(new HeaderedContentControl
                 {

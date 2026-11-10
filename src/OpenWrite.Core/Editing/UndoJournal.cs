@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using OpenWrite.Core.Model;
 
 namespace OpenWrite.Core.Editing;
@@ -28,6 +29,8 @@ public sealed class UndoJournal
         public DocPos? CaretAfter { get; set; }
         public string? MergeKey { get; init; }
         public DateTime Time { get; set; }
+        /// <summary>Parties XML modifiées (styles, numérotation) : racine vivante, copies avant / après.</summary>
+        public List<(XElement Root, XElement Before, XElement After)> Xml { get; init; } = new();
     }
 
     readonly List<Entry> _undo = new();
@@ -42,6 +45,12 @@ public sealed class UndoJournal
 
     /// <summary>Une racine a été modifiée (opération, annulation ou rétablissement) : sa partie est à régénérer.</summary>
     public event Action<Story>? Changed;
+
+    /// <summary>Une partie XML suivie (styles, numérotation) a changé : à régénérer, résolveur de styles à refaire.</summary>
+    public event Action<XElement>? XmlChanged;
+
+    /// <summary>Parties XML touchées par la dernière opération, annulation ou rétablissement (vide le plus souvent).</summary>
+    public IReadOnlyList<XElement> LastXml { get; private set; } = Array.Empty<XElement>();
 
     /// <summary>
     /// Zone touchée par la dernière modification, annulation ou rétablissement : suite de blocs, conteneur, premier bloc
@@ -89,16 +98,19 @@ public sealed class UndoJournal
         int newCount = tx.Before.Count + container.Blocks.Count - tx.ContainerCount;
         if (!commit)
         {
-            // échec : on remet les blocs d'avant (l'opération a pu les modifier en partie)
+            // échec : on remet les blocs d'avant (l'opération a pu les modifier en partie), et les parties XML
             Replace(container, tx.Index, Math.Max(0, newCount), tx.Before.Select(b => b.Clone()));
+            foreach (var (root, before) in tx.Xml) Restore(root, before);
             return;
         }
+        var xml = tx.Xml.Select(x => (x.Root, x.Before, new XElement(x.Root))).ToList();
+        LastXml = xml.Select(x => x.Root).ToList();
         var after = container.Blocks.GetRange(tx.Index, newCount).Select(b => b.Clone()).ToList();
         LastChange = (tx.Root, tx.Container, tx.Index, newCount);
         if (_savedAt is not null && _redo.Contains(_savedAt)) _savedLost = true;      // l'état enregistré n'est plus atteignable
         _redo.Clear();
         var last = _undo.Count > 0 ? _undo[^1] : null;
-        if (tx.MergeKey is not null && last is not null && last.MergeKey == tx.MergeKey && last != _savedAt && last.Root == tx.Root
+        if (tx.MergeKey is not null && xml.Count == 0 && last is not null && last.Xml.Count == 0 && last.MergeKey == tx.MergeKey && last != _savedAt && last.Root == tx.Root
             && last.Container.SequenceEqual(tx.Container) && last.Index == tx.Index && last.After.Count == tx.Before.Count
             && Equals(last.CaretAfter, tx.CaretBefore))
         {
@@ -112,7 +124,7 @@ public sealed class UndoJournal
             _undo.Add(new Entry
             {
                 Label = tx.Label, Root = tx.Root, Container = tx.Container, Index = tx.Index, Before = tx.Before, After = after,
-                CaretBefore = tx.CaretBefore, CaretAfter = caretAfter, MergeKey = tx.MergeKey, Time = DateTime.UtcNow,
+                CaretBefore = tx.CaretBefore, CaretAfter = caretAfter, MergeKey = tx.MergeKey, Time = DateTime.UtcNow, Xml = xml,
             });
             if (_undo.Count > MaxEntries)
             {
@@ -121,6 +133,14 @@ public sealed class UndoJournal
             }
         }
         Changed?.Invoke(tx.Root);
+        foreach (var x in xml) XmlChanged?.Invoke(x.Root);
+    }
+
+    /// <summary>Remet une racine XML dans l'état d'une copie (même objet racine : les références restent valables).</summary>
+    static void Restore(XElement root, XElement state)
+    {
+        root.ReplaceAttributes(state.Attributes().Select(a => new XAttribute(a)));
+        root.ReplaceNodes(state.Nodes());
     }
 
     // ---------------------------------------------------------------- annuler / rétablir
@@ -133,8 +153,11 @@ public sealed class UndoJournal
         _undo.RemoveAt(_undo.Count - 1);
         Replace(DocPos.ResolveContainer(e.Root, e.Container), e.Index, e.After.Count, e.Before.Select(b => b.Clone()));
         LastChange = (e.Root, e.Container, e.Index, e.Before.Count);
+        foreach (var (root, before, _) in e.Xml) Restore(root, before);
+        LastXml = e.Xml.Select(x => x.Root).ToList();
         _redo.Add(e);
         Changed?.Invoke(e.Root);
+        foreach (var x in e.Xml) XmlChanged?.Invoke(x.Root);
         return e.CaretBefore;
     }
 
@@ -146,8 +169,11 @@ public sealed class UndoJournal
         _redo.RemoveAt(_redo.Count - 1);
         Replace(DocPos.ResolveContainer(e.Root, e.Container), e.Index, e.Before.Count, e.After.Select(b => b.Clone()));
         LastChange = (e.Root, e.Container, e.Index, e.After.Count);
+        foreach (var (root, _, after) in e.Xml) Restore(root, after);
+        LastXml = e.Xml.Select(x => x.Root).ToList();
         _undo.Add(e);
         Changed?.Invoke(e.Root);
+        foreach (var x in e.Xml) XmlChanged?.Invoke(x.Root);
         return e.CaretAfter;
     }
 
@@ -218,6 +244,17 @@ public sealed class EditTransaction : IDisposable
     internal List<Block> Before { get; }
     internal DocPos? CaretBefore { get; }
     internal string? MergeKey { get; }
+    internal List<(XElement Root, XElement Before)> Xml { get; } = new();
+
+    /// <summary>
+    /// Suit une partie XML (styles.xml, numbering.xml) dans cette transaction : copie prise maintenant, restaurée à
+    /// l'annulation ou si la transaction échoue.
+    /// </summary>
+    public void TrackXml(XElement root)
+    {
+        if (Xml.Any(x => ReferenceEquals(x.Root, root))) return;
+        Xml.Add((root, new XElement(root)));
+    }
 
     public void Commit(DocPos? caretAfter = null)
     {

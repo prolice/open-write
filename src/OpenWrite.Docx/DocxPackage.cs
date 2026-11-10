@@ -226,7 +226,107 @@ public sealed class DocxPackage
             if (name is null || Find(name) is not { } e) return null;
             try { return ParseXml(e.Data).Root; } catch (XmlException) { return null; }
         }
-        return new OpenWrite.Core.Styles.StyleSheet(Part("styles"), Part("numbering"), Part("theme"), Part("settings"), Main?.W);
+        // styles et numérotation : parties modifiables (lot 4), les mêmes objets XML que ceux que l'on modifie
+        return new OpenWrite.Core.Styles.StyleSheet(XmlPartOf("styles")?.Doc.Root, XmlPartOf("numbering")?.Doc.Root, Part("theme"), Part("settings"), Main?.W);
+    }
+
+    // ================================================================ parties XML modifiables (styles, numérotation)
+
+    /// <summary>Partie XML du document principal que l'on modifie (styles.xml, numbering.xml) : régénérée si <see cref="Dirty"/>.</summary>
+    public sealed class XmlPart
+    {
+        public required string Name { get; init; }
+        public required XDocument Doc { get; init; }
+        public bool Dirty { get; set; }
+    }
+
+    readonly Dictionary<string, XmlPart> _xmlParts = new(StringComparer.OrdinalIgnoreCase);
+
+    static readonly Dictionary<string, (string Root, string ContentType)> XmlKinds = new()
+    {
+        ["styles"] = ("styles", "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"),
+        ["numbering"] = ("numbering", "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"),
+    };
+
+    /// <summary>Parties XML déjà chargées pour modification.</summary>
+    public IEnumerable<XmlPart> XmlParts => _xmlParts.Values;
+
+    /// <summary>
+    /// Partie styles ou numérotation du document principal, chargée une fois (les modifications s'y font en place) ;
+    /// <paramref name="create"/> : créée si le document n'en a pas (entrée, relation, type de contenu).
+    /// </summary>
+    public XmlPart? XmlPartOf(string kind, bool create = false)
+    {
+        if (Main is null || !XmlKinds.TryGetValue(kind, out var k)) return null;
+        var name = Targets(Main.PartName, t => t.EndsWith("/" + kind, StringComparison.Ordinal)).FirstOrDefault().Name;
+        if (name is not null && _xmlParts.TryGetValue(name, out var known)) return known;
+        if (name is not null && Find(name) is { } e)
+        {
+            try
+            {
+                var part = new XmlPart { Name = name, Doc = ParseXml(e.Data) };
+                _xmlParts[name] = part;
+                return part;
+            }
+            catch (XmlException) { return null; }
+        }
+        if (!create) return null;
+        // nouvelle partie à côté du document principal
+        var dir = Main.PartName.Contains('/') ? Main.PartName[..Main.PartName.LastIndexOf('/')] : "";
+        var newName = (dir.Length > 0 ? dir + "/" : "") + kind + ".xml";
+        var w = Main.W;
+        var doc = new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), new XElement(w + k.Root, new XAttribute(XNamespace.Xmlns + "w", w.NamespaceName)));
+        Entries.Add(new Entry(newName, Array.Empty<byte>(), DateTimeOffset.Now));
+        AddRelationship(Main.PartName, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/" + kind, kind + ".xml", external: false);
+        AddContentTypeOverride("/" + newName, k.ContentType);
+        var created = new XmlPart { Name = newName, Doc = doc, Dirty = true };
+        _xmlParts[newName] = created;
+        return created;
+    }
+
+    void AddRelationship(string partName, string type, string target, bool external)
+    {
+        var dir = partName.Contains('/') ? partName[..partName.LastIndexOf('/')] : "";
+        var relsName = (dir.Length > 0 ? dir + "/" : "") + "_rels/" + partName[(partName.LastIndexOf('/') + 1)..] + ".rels";
+        XNamespace pr = "http://schemas.openxmlformats.org/package/2006/relationships";
+        var entry = Find(relsName);
+        var x = entry is not null ? ParseXml(entry.Data) : new XDocument(new XElement(pr + "Relationships"));
+        var root = x.Root!;
+        var ids = root.Elements().Select(e => e.Attribute("Id")?.Value).Where(v => v is not null).ToHashSet(StringComparer.Ordinal);
+        int n = ids.Select(v => v!.StartsWith("rId", StringComparison.Ordinal) && int.TryParse(v[3..], out var kk) ? kk : 0).DefaultIfEmpty(0).Max() + 1;
+        while (ids.Contains("rId" + n)) n++;
+        var rel = new XElement(root.Name.Namespace + "Relationship", new XAttribute("Id", "rId" + n), new XAttribute("Type", type), new XAttribute("Target", target));
+        if (external) rel.Add(new XAttribute("TargetMode", "External"));
+        root.Add(rel);
+        SetEntry(relsName, x, entry);
+    }
+
+    void AddContentTypeOverride(string partName, string contentType)
+    {
+        var entry = Find("[Content_Types].xml");
+        if (entry is null) return;
+        var x = ParseXml(entry.Data);
+        var root = x.Root!;
+        if (root.Elements().Any(e => e.Name.LocalName == "Override" && string.Equals(e.Attribute("PartName")?.Value, partName, StringComparison.OrdinalIgnoreCase))) return;
+        root.Add(new XElement(root.Name.Namespace + "Override", new XAttribute("PartName", partName), new XAttribute("ContentType", contentType)));
+        SetEntry("[Content_Types].xml", x, entry);
+    }
+
+    void SetEntry(string name, XDocument x, Entry? entry)
+    {
+        using var ms = new MemoryStream();
+        using (var w = XmlWriter.Create(ms, new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = false })) x.Save(w);
+        var data = ms.ToArray();
+        if (entry is not null) Entries[Entries.IndexOf(entry)] = entry with { Data = data, LastWrite = DateTimeOffset.Now };
+        else Entries.Add(new Entry(name, data, DateTimeOffset.Now));
+    }
+
+    static byte[] Serialize(XDocument doc)
+    {
+        using var ms = new MemoryStream();
+        var settings = new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = false, NewLineHandling = NewLineHandling.Entitize };
+        using (var w = XmlWriter.Create(ms, settings)) doc.Save(w);
+        return ms.ToArray();
     }
 
     // ================================================================ écriture
@@ -249,6 +349,7 @@ public sealed class DocxPackage
         foreach (var e in Entries)
         {
             if (Stories.TryGetValue(e.Name, out var part) && (part.Dirty || regenerateAll)) yield return (e, Serialize(part), true);
+            else if (_xmlParts.TryGetValue(e.Name, out var xp) && xp.Dirty) yield return (e, Serialize(xp.Doc), true);
             else yield return (e, e.Data, false);
         }
     }
@@ -272,6 +373,7 @@ public sealed class DocxPackage
         for (int i = 0; i < Entries.Count; i++)
             if (output[i].Regenerated) Entries[i] = Entries[i] with { Data = output[i].Data };
         foreach (var part in Stories.Values) part.Dirty = false;
+        foreach (var xp in _xmlParts.Values) xp.Dirty = false;
     }
 
     static void Write(Stream target, IEnumerable<(Entry Entry, byte[] Data, bool Regenerated)> output)

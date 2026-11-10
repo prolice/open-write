@@ -177,16 +177,18 @@ public static class SelfTest
         // saisie (0.4) : touches et caractères envoyés à la vue des pages comme par le clavier
         Pump();
         Idle();
-        var view = w.PagesViewForTest!;
+        // la vue est refaite quand les styles changent (remise en page complète) : toujours la vue courante
         void Key(Key k)
         {
-            view.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(view)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
+            var v = w.PagesViewForTest!;
+            v.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(v)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
             Pump();
         }
         void Type(string text)
         {
+            var v = w.PagesViewForTest!;
             foreach (var ch in text)
-                view.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, view, ch.ToString()))
+                v.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, v, ch.ToString()))
                     { RoutedEvent = TextCompositionManager.TextInputEvent });
             Pump();
         }
@@ -293,6 +295,34 @@ public static class SelfTest
         Key(System.Windows.Input.Key.Right);
         Key(System.Windows.Input.Key.Tab);
         Check(w.SelectedText() == "B1", $"Tab dans un tableau : cellule suivante sélectionnée (« {w.SelectedText()} »)");
+        // styles et listes (0.5) : Titre 1 sur le titre, puces sur « Deuxième ligne » et la case, niveau, fin de liste
+        w.FindNext("Formulaire", true, false);
+        w.ApplyStyle("heading 1");
+        Pump();
+        var sheet5 = new Core.Styles.StyleSheet(w.StylesXmlForTest, null);
+        var h1 = Core.Styles.StyleOps.ByName(sheet5, "heading 1")?.Attribute(sheet5.W + "styleId")?.Value;
+        Check(h1 is not null && ((Paragraph)w.Body!.Blocks[0]).StyleId == h1, "Titre 1 appliqué (style ajouté à styles.xml)");
+        w.FindNext("Deuxième", true, false);
+        var listStart = w.AnchorPoint!.Value;
+        w.FindNext("conditions", true, true);
+        w.Select(listStart, w.CaretPoint!.Value);
+        w.ToggleList(Core.Styles.ListKind.Bullet);
+        Pump();
+        bool InList(int b) => ((Paragraph)w.Body!.Blocks[b]).Props.Get("numPr") is not null;
+        Check(InList(1) && InList(2), "Puces sur deux paragraphes");
+        w.FindNext("J'accepte", true, false);
+        Key(System.Windows.Input.Key.Home);
+        Key(System.Windows.Input.Key.Tab);
+        Check(((Paragraph)w.Body!.Blocks[2]).Props.Get("numPr")?.Elements().FirstOrDefault(e => e.Name.LocalName == "ilvl")?.Attributes().First().Value == "1",
+              "Tab au début d'un élément de liste : niveau 2");
+        Key(System.Windows.Input.Key.End);
+        Key(System.Windows.Input.Key.Enter);
+        Key(System.Windows.Input.Key.Enter);
+        Check(w.Body!.Blocks.Count == 5 && !InList(3), "Entrée sur un élément vide : fin de la liste");
+        ApplicationCommands.Undo.Execute(null, w);
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(w.Body!.Blocks.Count == 4 && InList(2), "Ctrl+Z : élément vide retiré");
         Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
         var reread = DocxPackage.Open(file).Main!.Stories().First();
         Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"
@@ -300,6 +330,9 @@ public static class SelfTest
               && FieldIndex.Build(reread).All.Single(f => f.CheckBox is not null).CheckBox!.Checked, "fichier relu : texte saisi, case toujours cochée");
         var rereadPkg = DocxPackage.Open(file);
         var rereadLink = ((Paragraph)rereadPkg.Main!.Stories().First().Blocks[2]).Inlines.OfType<InlineContainer>().FirstOrDefault(c => c.Name.LocalName == "hyperlink");
+        var reStyles = rereadPkg.XmlPartOf("styles")?.Doc.Root;
+        Check(reStyles is not null && rereadPkg.XmlPartOf("numbering") is not null
+              && Core.Styles.StyleOps.ByName(new Core.Styles.StyleSheet(reStyles, null), "heading 1") is not null, "fichier relu : styles.xml et numbering.xml créés");
         Check(rereadLink is not null && rereadPkg.HyperlinkTarget(rereadPkg.Main!, rereadLink) == "https://exemple.be", "fichier relu : lien vers https://exemple.be");
 
         Idle();

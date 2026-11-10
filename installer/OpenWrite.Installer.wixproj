@@ -3,7 +3,7 @@
        Construire d'abord l'executable autonome : voir tools/build-installer.ps1.
        La version se fixe a la construction : dotnet build ... -p:ProductVersion=X.Y.Z -->
   <PropertyGroup>
-    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
     <OutputName>OpenWrite-$(ProductVersion)</OutputName>
     <OutputType>Package</OutputType>
     <Platform>x64</Platform>

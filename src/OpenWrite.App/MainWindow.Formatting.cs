@@ -22,6 +22,7 @@ public partial class MainWindow
         {
             case Key.D when !shift: ShowFontDialog(); return true;
             case Key.F when !shift: ShowFind(replace: false); return true;
+            case Key.K when !shift: ShowLinkDialog(); return true;
             case Key.H when !shift: ShowFind(replace: true); return true;
             case Key.D8 when shift:
             case Key.Multiply: ToggleMarks(); return true;

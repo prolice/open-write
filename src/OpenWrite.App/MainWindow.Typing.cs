@@ -439,6 +439,9 @@ public partial class MainWindow
         _pagesView.Focus();
         var p = e.GetPosition(_pagesView);
         if (HitView(p) is not { } t) return;
+        // Ctrl+clic sur un lien : le suivre (comme Word)
+        if (e.ClickCount == 1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _pagesView.HitPage(p).Page >= 0
+            && HitCharacter(p) is { } ch && FollowLink(ch)) { e.Handled = true; return; }
         if (e.ClickCount == 2 && LayoutOf(t.Paragraph) is { } pl)
         {
             // double-clic : le mot

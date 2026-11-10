@@ -109,6 +109,37 @@ public sealed class DocxPackage
         return res;
     }
 
+    public const string HyperlinkType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+
+    /// <summary>
+    /// Relation externe d'une partie (adresse d'un lien hypertexte) : reprend une relation identique existante, sinon
+    /// l'ajoute au fichier .rels (créé au besoin). Une relation inutilisée ensuite (lien annulé) est sans effet pour Word.
+    /// </summary>
+    public string AddExternalRelationship(string partName, string type, string target)
+    {
+        var dir = partName.Contains('/') ? partName[..partName.LastIndexOf('/')] : "";
+        var relsName = (dir.Length > 0 ? dir + "/" : "") + "_rels/" + partName[(partName.LastIndexOf('/') + 1)..] + ".rels";
+        XNamespace pr = "http://schemas.openxmlformats.org/package/2006/relationships";
+        var entry = Find(relsName);
+        XDocument x = entry is not null ? ParseXml(entry.Data) : new XDocument(new XElement(pr + "Relationships"));
+        var root = x.Root!;
+        foreach (var rel in root.Elements().Where(e => e.Name.LocalName == "Relationship"))
+            if (rel.Attribute("Type")?.Value == type && rel.Attribute("Target")?.Value == target && rel.Attribute("TargetMode")?.Value == "External")
+                return rel.Attribute("Id")!.Value;
+        var ids = root.Elements().Select(e => e.Attribute("Id")?.Value).Where(v => v is not null).ToHashSet(StringComparer.Ordinal);
+        int n = ids.Select(v => v!.StartsWith("rId", StringComparison.Ordinal) && int.TryParse(v[3..], out var k) ? k : 0).DefaultIfEmpty(0).Max() + 1;
+        while (ids.Contains("rId" + n)) n++;
+        var id = "rId" + n;
+        root.Add(new XElement(root.Name.Namespace + "Relationship", new XAttribute("Id", id), new XAttribute("Type", type),
+            new XAttribute("Target", target), new XAttribute("TargetMode", "External")));
+        using var ms = new MemoryStream();
+        using (var w = XmlWriter.Create(ms, new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = false })) x.Save(w);
+        var data = ms.ToArray();
+        if (entry is not null) Entries[Entries.IndexOf(entry)] = entry with { Data = data, LastWrite = DateTimeOffset.Now };
+        else Entries.Add(new Entry(relsName, data, DateTimeOffset.Now));
+        return id;
+    }
+
     IEnumerable<(string Name, string Type)> Targets(string partName, Func<string, bool> typeFilter) =>
         Relationships(partName).Values.Where(r => !r.External && typeFilter(r.Type)).Select(r => (r.Target, r.Type));
 

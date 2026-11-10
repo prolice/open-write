@@ -232,6 +232,7 @@ public partial class MainWindow
         bool onBox = page >= 0 && Layout.PagesView.HitLine(_layout.Pages[page], at) is { } hit && hit.Char >= 0
                      && hit.Line.Paragraph.Content.CheckBoxes.ContainsKey(hit.Char);
         _pagesView.Cursor = onBox ? Cursors.Hand : Cursors.IBeam;
+        HoverLink(HitCharacter(e.GetPosition(_pagesView)));
     }
 
     /// <summary>Fin d'un clic : un clic simple sur une case à cocher de formulaire la coche (annulable par Ctrl+Z).</summary>

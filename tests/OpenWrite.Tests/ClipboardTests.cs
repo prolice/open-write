@@ -114,4 +114,43 @@ public class ClipboardTests
         journal.Undo();
         Assert.Equal(new[] { "Avant après" }, Texts(body));
     }
+
+    [Fact]
+    public void Lien_pose_sur_une_plage_puis_retire()
+    {
+        var body = Body($"<w:p>{T("Voir le site officiel")}</w:p>");
+        var p = (Paragraph)body.Blocks[0];
+        var link = LinkOps.NewLink(p.Props.Ns, "rId9", null);
+        LinkOps.Wrap(p, 8, 15, link);
+        Assert.Equal("site of", string.Concat(link.Runs().Select(r => r.Text)));
+        Assert.Equal("Voir le site officiel", p.Text);
+        Assert.Equal((8, 15), LinkOps.LinkAt(p, 10) is { } f ? (f.Start, f.End) : default);
+        Assert.Null(LinkOps.LinkAt(p, 3));
+        Assert.True(LinkOps.Unwrap(p, link));
+        Assert.DoesNotContain(p.Inlines, i => i is InlineContainer);
+        Assert.Equal("Voir le site officiel", p.Text);
+    }
+
+    [Fact]
+    public void Lien_a_cheval_sur_un_autre_lien_refuse()
+    {
+        var body = Body($"<w:p>{T("abc")}<w:hyperlink w:anchor=\"x\">{T("def")}</w:hyperlink>{T("ghi")}</w:p>");
+        var p = (Paragraph)body.Blocks[0];
+        Assert.Throws<NotSupportedException>(() => LinkOps.Wrap(p, 1, 4, LinkOps.NewLink(p.Props.Ns, null, "y")));
+    }
+
+    [Fact]
+    public void Relation_de_lien_ajoutee_puis_reprise()
+    {
+        var docx = RoundTripTests.Docx(RoundTripTests.Root + "<w:body><w:p><w:r><w:t>x</w:t></w:r></w:p></w:body></w:document>");
+        var pkg = DocxPackage.Open(new MemoryStream(docx));
+        var id = pkg.AddExternalRelationship("word/document.xml", DocxPackage.HyperlinkType, "https://exemple.be/");
+        Assert.Equal(id, pkg.AddExternalRelationship("word/document.xml", DocxPackage.HyperlinkType, "https://exemple.be/"));
+        Assert.NotEqual(id, pkg.AddExternalRelationship("word/document.xml", DocxPackage.HyperlinkType, "https://autre.be/"));
+        var ms = new MemoryStream();
+        pkg.Save(ms);
+        var rels = DocxPackage.Open(new MemoryStream(ms.ToArray())).Relationships("word/document.xml");
+        Assert.True(rels[id].External);
+        Assert.Equal("https://exemple.be/", rels[id].Target);
+    }
 }

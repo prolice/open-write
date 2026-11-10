@@ -257,11 +257,22 @@ public static class SelfTest
         ApplicationCommands.Undo.Execute(null, w);
         Pump();
         Check(w.Body!.Blocks.Count == 4, "Ctrl+Z ×3 : collages et nouveau paragraphe annulés");
+        // lien hypertexte (Ctrl+K) sur « conditions »
+        w.FindNext("conditions", true, true);
+        w.ApplyLink("exemple.be", "", remove: false);
+        Pump();
+        var linkPara = (Paragraph)w.Body!.Blocks[2];
+        var link = linkPara.Inlines.OfType<InlineContainer>().FirstOrDefault(c => c.Name.LocalName == "hyperlink");
+        Check(link is not null && string.Concat(link.Runs().Select(r => r.Text)) == "conditions" && TextOf(linkPara) == " J'accepte les conditions.",
+              "Ctrl+K : lien posé sur le mot, texte inchangé");
         Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
         var reread = DocxPackage.Open(file).Main!.Stories().First();
         Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"
               && !((Paragraph)reread.Blocks[1]).Runs().First().Props.Flag("b")
               && FieldIndex.Build(reread).All.Single(f => f.CheckBox is not null).CheckBox!.Checked, "fichier relu : texte saisi, case toujours cochée");
+        var rereadPkg = DocxPackage.Open(file);
+        var rereadLink = ((Paragraph)rereadPkg.Main!.Stories().First().Blocks[2]).Inlines.OfType<InlineContainer>().FirstOrDefault(c => c.Name.LocalName == "hyperlink");
+        Check(rereadLink is not null && rereadPkg.HyperlinkTarget(rereadPkg.Main!, rereadLink) == "https://exemple.be", "fichier relu : lien vers https://exemple.be");
 
         Idle();
         var content = (FrameworkElement)w.Content;

@@ -698,3 +698,7 @@ Publiée par la pipeline (tag `v0.5.0`) : lot 4 tel que décrit en §10.13 — g
 - **Onglets** : Mise en page (Marges, Orientation, Taille, Colonnes, Sauts, Numéros de ligne, boîte Mise en page) ; Création (Filigrane VML écrit comme Word, Couleur de page w:background + w:displayBackgroundShape, Bordures de page).
 - Vérifié : Word relit l'en-tête créé (texte, champ PAGE, style En-tête), le filigrane (forme BROUILLON tournée à 315°), la couleur de page ; les 25 documents du corpus modifiés (en-tête édité ou créé avec numéro de page, deux colonnes, en plus des lots 3 et 4) s'ouvrent dans Word. Auto-test **54 vérifications**, **125 tests**.
 - Reporté : filigrane image, BorderArt (bordures artistiques), position exacte des colonnes dans les documents à objets flottants, notes continuées sur la page suivante.
+
+### 10.16 Version 0.6.0 (2026-11-10)
+
+Publiée par la pipeline (tag `v0.6.0`) : lot 5 tel que décrit en §10.15 — colonnes et sections, onglet Mise en page, en-têtes et pieds modifiables en place avec numéros de page, première page / paires et impaires / lier au précédent, filigrane, couleur et bordures de page, numéros de ligne. Jalon 0.6 retiré de la liste « Prochaines versions ».

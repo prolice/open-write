@@ -21,7 +21,6 @@ public partial class MainWindow
     /// <summary>Étapes affichées sur l'accueil (PLAN.md §8.17).</summary>
     static readonly (string Version, string Text)[] Milestones =
     {
-        ("0.6", "Sections, en-têtes et pieds de page"),
         ("0.7", "Tableaux"),
         ("1.0", "Images, formes et zones de texte"),
     };

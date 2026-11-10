@@ -26,6 +26,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         InitEditing();
         InitFormatPane();
+        InitRuler();
         BuildRibbon();
         ShowWelcome();
         UpdateStatus();
@@ -201,6 +202,7 @@ public partial class MainWindow : Window
         Workspace.LayoutTransform = new ScaleTransform(_zoom, _zoom);
         ZoomStatus.Text = $"{_zoom * 100:0} %";
         if (Math.Abs(ZoomSlider.Value - _zoom * 100) > 0.5) ZoomSlider.Value = _zoom * 100;
+        Dispatcher.BeginInvoke(UpdateRuler, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

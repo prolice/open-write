@@ -228,6 +228,7 @@ public partial class MainWindow
             PaneSelection.Text = Describe(pl.Format, rf);
         }
         RefreshFormatPane();
+        UpdateRuler();
         if (scroll && rect is { } cr) ScrollIntoView(cr.Page, cr.Rect);
     }
 

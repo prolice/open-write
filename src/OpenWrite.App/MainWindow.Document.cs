@@ -220,6 +220,7 @@ public partial class MainWindow
 
     void Scroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        if (e.HorizontalChange != 0 || e.ViewportWidthChange != 0 || e.ExtentWidthChange != 0) UpdateRuler();
         if (e.VerticalChange != 0 || e.ViewportHeightChange != 0) UpdatePageStatus();
     }
 

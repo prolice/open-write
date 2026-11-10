@@ -1,6 +1,7 @@
 <Window x:Class="OpenWrite.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:layout="clr-namespace:OpenWrite.App.Layout"
         Title="OpenWrite" Height="900" Width="1480" MinWidth="760" MinHeight="480" WindowStartupLocation="CenterScreen"
         Background="{StaticResource Chrome}" Foreground="{StaticResource Ink}" FontFamily="{StaticResource UiFont}" FontSize="13" Icon="Assets/openwrite.ico"
         TextOptions.TextFormattingMode="Display" AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
@@ -122,10 +123,16 @@
             </Border>
 
             <!-- Zone de travail -->
-            <ScrollViewer Grid.Column="1" x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          Background="{StaticResource WorkspaceBrush}" Focusable="False" PreviewMouseWheel="Scroller_PreviewMouseWheel" ScrollChanged="Scroller_ScrollChanged">
-                <Grid x:Name="Workspace" Margin="24,24,24,40" HorizontalAlignment="Center"/>
-            </ScrollViewer>
+            <DockPanel Grid.Column="1">
+                <!-- Règle (lot 3) : retraits et taquets du paragraphe du point d'insertion -->
+                <Border DockPanel.Dock="Top" x:Name="RulerBorder" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Visibility="Collapsed">
+                    <layout:RulerBar x:Name="Ruler"/>
+                </Border>
+                <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                              Background="{StaticResource WorkspaceBrush}" Focusable="False" PreviewMouseWheel="Scroller_PreviewMouseWheel" ScrollChanged="Scroller_ScrollChanged">
+                    <Grid x:Name="Workspace" Margin="24,24,24,40" HorizontalAlignment="Center"/>
+                </ScrollViewer>
+            </DockPanel>
 
             <!-- Volet droit « Mise en forme » (maquette) : actif avec l'édition, version 0.4 -->
             <Border Grid.Column="2" x:Name="FormatPane" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">

@@ -266,6 +266,17 @@ public static class SelfTest
         var link = linkPara.Inlines.OfType<InlineContainer>().FirstOrDefault(c => c.Name.LocalName == "hyperlink");
         Check(link is not null && string.Concat(link.Runs().Select(r => r.Text)) == "conditions" && TextOf(linkPara) == " J'accepte les conditions.",
               "Ctrl+K : lien posé sur le mot, texte inchangé");
+        // règle : retrait gauche à 36 pt et taquet à 100 pt sur « Deuxième ligne »
+        w.FindNext("Deuxième", true, false);
+        w.RulerAction(Layout.RulerHandle.Left, -1, 36);
+        w.RulerAction(Layout.RulerHandle.None, -1, 100);
+        var ruled = (Paragraph)w.Body!.Blocks[1];
+        Check(ruled.Props.Get("ind")?.Attributes().FirstOrDefault(a => a.Name.LocalName == "left")?.Value == "720"
+              && ruled.Props.Get("tabs")?.Elements().Any(t => t.Attributes().Any(a => a.Name.LocalName == "pos" && a.Value == "2000")) == true,
+              "Règle : retrait gauche et taquet posés");
+        ApplicationCommands.Undo.Execute(null, w);
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
         // tableau : Tab passe à la cellule suivante (contenu sélectionné), Maj+Tab revient… sans modifier le document
         w.FindNext("A1", true, true);
         Key(System.Windows.Input.Key.Right);

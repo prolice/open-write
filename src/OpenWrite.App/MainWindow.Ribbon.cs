@@ -183,6 +183,9 @@ public partial class MainWindow
         FormatPaneToggle.Click += (_, _) => ShowFormatPane(FormatPaneToggle.IsChecked == true);
         panes.Children.Add(FormatPaneToggle);
         panes.Children.Add(Big("", "Navigation", "Plan des titres du document", () => { PaneOutline.IsChecked = true; }));
+        _rulerToggle = new ToggleButton { Style = (Style)FindResource("RBig"), Tag = "\uECC6", Content = "Règle", IsChecked = true, ToolTip = "Afficher ou masquer la règle" };
+        _rulerToggle.Click += (_, _) => ToggleRuler();
+        panes.Children.Add(_rulerToggle);
         panel.Children.Insert(2, new HeaderedContentControl { Style = (Style)FindResource("RGroup"), Header = "Afficher", Content = panes });
     }
 

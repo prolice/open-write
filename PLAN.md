@@ -717,3 +717,7 @@ Publiée par la pipeline (tag `v0.6.0`) : lot 5 tel que décrit en §10.15 — c
 - Vérifié : Word ouvre les 25 documents du corpus modifiés par le banc de saisie (tableau inséré et stylé, ligne fusionnée, ligne et colonne insérées, cellule fractionnée, en plus des lots 3 à 5) et le document de l'auto-test (tableau stylé à 3 colonnes). Auto-test **64 vérifications**, **141 tests**.
 - **Piège** : les variables d'environnement de WSL n'arrivent pas au .NET de Windows ; `OPENWRITE_*` doivent être listées dans `WSLENV` (ex. `WSLENV=OPENWRITE_BENCH_DUMP`).
 - Reporté : orientation verticale du texte dans une cellule, tableaux flottants habillés (lot 7, objets flottants), dessin de tableau et gomme, règle avec les colonnes du tableau, sélection d'une cellule / ligne / colonne par la marge à la souris (le menu Sélectionner le fait), espacement entre cellules (`w:tblCellSpacing`), nouveaux styles de tableau.
+
+### 10.18 Version 0.7.0 (2026-11-10)
+
+Publiée par la pipeline (tag `v0.7.0`) : lot 6 tel que décrit en §10.17 — tableaux insérés et modifiés comme dans Word (sélection de cellules, fusionner, fractionner, lignes et colonnes, largeurs à la souris), galerie des styles de tableau, trame et bordures, trier, formules, texte ↔ tableau, collage depuis Excel ; mise en page des tableaux recalibrée sur Word. Jalon 0.7 retiré de la liste « Prochaines versions ».

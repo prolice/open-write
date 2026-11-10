@@ -269,7 +269,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.4", "Saisie et mise en forme directe, presse-papiers"),
             ("0.5", "Styles, listes et thèmes : galerie, modifier et créer des styles, puces et numéros, polices et couleurs du thème"),
             ("0.6", "Mise en page, sections, colonnes, en-têtes et pieds de page modifiables, numéros de page, filigrane, bordures et couleur de page"),
-            ("0.7", "Tableaux"),
+            ("0.7", "Tableaux : insérer, sélectionner des cellules, fusionner, fractionner, styles de tableau, trier, formules, largeurs automatiques"),
             ("1.0", "Images, formes et zones de texte"),
             ("1.1", "Orthographe, commentaires, suivi des modifications"),
             ("1.2", "Notes, table des matières, renvois, index"),

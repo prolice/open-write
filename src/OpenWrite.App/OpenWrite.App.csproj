@@ -15,7 +15,7 @@
     <AssemblyName>OpenWrite</AssemblyName>
     <RootNamespace>OpenWrite.App</RootNamespace>
     <ApplicationIcon>Assets\openwrite.ico</ApplicationIcon>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Product>OpenWrite</Product>
     <Description>Traitement de texte (remplacement de Microsoft Word, format .docx)</Description>
   </PropertyGroup>

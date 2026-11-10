@@ -21,7 +21,7 @@ namespace OpenWrite.App;
 /// boîtes « symbole », « police », « paragraphe », « en-tete » (édition de l'en-tête de la première page).
 /// Auto-test de bout en bout (OpenWrite.exe --selftest dossier) : la vraie fenêtre, hors écran, sur un document fabriqué.
 /// </summary>
-public static class SelfTest
+public static partial class SelfTest
 {
     static void Pump() => Application.Current.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
 
@@ -518,6 +518,8 @@ public static class SelfTest
         Check(reBox is not null && reBox.TextBoxes.Count == 1 && TextOf(reBox.TextBoxes[0].Blocks[0]) == "Dans la zone"
               && Core.Drawing.DrawingReader.Read(reBox) is { Inline: false, Wrap: Core.Drawing.WrapKind.Square },
               "fichier relu : zone de texte flottante avec son texte");
+
+        InterfaceChecks(w);
 
         Idle();
         var content = (FrameworkElement)w.Content;

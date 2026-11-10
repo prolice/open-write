@@ -85,6 +85,18 @@ jobs:
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
           -p:DebugType=none -p:Version=${{ steps.meta.outputs.version }} -o dist/OpenWrite --nologo
 
+      # l'executable publie lui-meme : vraie fenetre hors ecran, puis menus et ruban pilotes par l'automatisation de
+      # l'interface ; aucune version n'est publiee si une verification echoue
+      - name: Auto-test de l'interface
+        shell: pwsh
+        run: |
+          $out = "$env:RUNNER_TEMP\selftest"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $p = Start-Process dist/OpenWrite/OpenWrite.exe -ArgumentList '--selftest', $out -Wait -PassThru -NoNewWindow `
+                 -RedirectStandardOutput "$out\sortie.txt" -RedirectStandardError "$out\erreurs.txt"
+          Get-Content "$out\sortie.txt", "$out\erreurs.txt" -Encoding utf8 -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "Auto-test de l'interface : échec (code $($p.ExitCode))" }
+
       - name: Installeur MSI
         shell: pwsh
         run: |

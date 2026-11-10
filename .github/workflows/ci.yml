@@ -37,6 +37,22 @@ jobs:
       - name: Tests unitaires
         run: dotnet test tests/OpenWrite.Tests -c Release --no-build --nologo
 
+      # vraie fenetre hors ecran : frappe, presse-papiers, tableaux, objets, puis menus contextuels, sous-menus et
+      # ruban pilotes par l'automatisation de l'interface (un menu qui ne s'ouvre pas fait echouer la verification)
+      - name: Auto-test de l'interface
+        shell: pwsh
+        run: |
+          dotnet src/OpenWrite.App/bin/Release/net10.0-windows/OpenWrite.dll --selftest "$env:RUNNER_TEMP\selftest"
+          if ($LASTEXITCODE -ne 0) { throw "Auto-test de l'interface : échec (code $LASTEXITCODE)" }
+
+      - name: Capture de l'auto-test
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: auto-test
+          path: ${{ runner.temp }}/selftest
+          if-no-files-found: ignore
+
   site-api:
     name: Relais des rapports d'erreur (Node)
     runs-on: ubuntu-latest

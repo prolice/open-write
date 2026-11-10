@@ -225,9 +225,22 @@
                                 <Border x:Name="uncheck" Width="18" Height="18" CornerRadius="5" BorderBrush="{StaticResource FieldBorder}" BorderThickness="1.5" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"/>
                                 <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{StaticResource Muted}" FontSize="12" Margin="24,0,2,0" VerticalAlignment="Center"/>
+                                <!-- sous-menu (Insérer ▸, Supprimer ▸, Habillage ▸…) : flèche et fenêtre surgissante de ses entrées -->
+                                <TextBlock x:Name="chevron" Grid.Column="2" Text="&#xE76C;" FontFamily="{StaticResource Icons}" FontSize="10" Foreground="{StaticResource Muted}" Margin="24,0,2,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="2" VerticalOffset="-13" AllowsTransparency="True" Focusable="False" PopupAnimation="None"
+                                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <Border Padding="10,6,10,14" Background="Transparent">
+                                        <Border Background="White" BorderBrush="#E3E8F5" BorderThickness="1" CornerRadius="14" Padding="6" MinWidth="200">
+                                            <Border.Effect><DropShadowEffect Color="#2E529A" BlurRadius="24" ShadowDepth="6" Direction="270" Opacity="0.18"/></Border.Effect>
+                                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" KeyboardNavigation.TabNavigation="Cycle"/>
+                                        </Border>
+                                    </Border>
+                                </Popup>
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="Role" Value="SubmenuHeader"><Setter TargetName="chevron" Property="Visibility" Value="Visible"/></Trigger>
+                            <Trigger Property="Role" Value="TopLevelHeader"><Setter TargetName="chevron" Property="Visibility" Value="Visible"/></Trigger>
                             <Trigger Property="IsHighlighted" Value="True">
                                 <Setter TargetName="bg" Property="Background" Value="{StaticResource Hover}"/>
                                 <Setter Property="Foreground" Value="{StaticResource SelectedText}"/>

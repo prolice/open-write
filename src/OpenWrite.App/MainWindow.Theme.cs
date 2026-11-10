@@ -61,6 +61,7 @@ public partial class MainWindow
             menu.Items.Add(mi);
         }
         menu.IsOpen = true;
+        LastMenu = menu;
     }
 
     static UIElement Swatches(string[] colors)

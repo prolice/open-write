@@ -439,6 +439,18 @@ public partial class MainWindow
 
     // ================================================================ menu contextuel de la page
 
+    /// <summary>Ouvre le menu contextuel de la page au point d'insertion, comme un clic droit (auto-test de l'interface).</summary>
+    internal System.Windows.Controls.ContextMenu? OpenContextMenuForTest()
+    {
+        if (_pagesView is null) return null;
+        var menu = BuildContextMenu();
+        _pagesView.ContextMenu = menu;
+        menu.PlacementTarget = _pagesView;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
+        return menu;
+    }
+
     System.Windows.Controls.ContextMenu BuildContextMenu()
     {
         var menu = new System.Windows.Controls.ContextMenu();

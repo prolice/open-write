@@ -577,3 +577,33 @@ Restent hors du résolveur : mise en forme conditionnelle des styles de tableau 
 - **Clé de signature** OpenWrite créée (`%APPDATA%\OpenWrite\update-signing-key.pem`) ; clé publique, flux, rapports d'erreur et aide renseignés dans `OpenWrite.App.csproj`.
 - Reste : secrets GitHub `UPDATE_SIGNING_KEY` et `AZURE_STATIC_WEB_APPS_API_TOKEN`, réglage `GITHUB_TOKEN` du relais d'erreurs, puis première release `v0.2.0` par la pipeline.
 
+### 10.7 Lot 2 — prototype de performance et premier moteur de pagination (2026-11-10)
+
+**Moteur (`OpenWrite.Layout`)**, conçu pour Word et non repris tel quel d'OpenPub (son moteur dépend du modèle de Publisher : zones chaînées, réduction automatique) :
+- `Fonts.cs` : `FontFace` (avances et métriques en em), `IFontProvider`, `FontVerticalMetrics` (tables `head`/`hhea`/`OS/2`, collections `.ttc`). **Hauteur de ligne simple de Word = formule GDI** : (usWinAscent + usWinDescent + tmExternalLeading) / unitsPerEm, avec tmExternalLeading = max(0, lineGap hhea − ((winAscent + winDescent) − (ascender − descender))). Times New Roman 12 pt → 13,8 pt, Calibri → 1,2207 em, **Aptos → 1,2847 em même si la police demande les métriques typo** (USE_TYPO_METRICS) : vérifié sur le PV (16,6 pt = 12 × 1,2847 × 1,079).
+- `ParagraphLayout.cs` : texte affiché mis à plat (codes de champs masqués, résultats affichés, texte masqué et suppressions omis, objets en ligne à leur taille `wp:extent`, sauts de ligne / page / colonne), coupure aux espaces (espaces de fin suspendus), mot trop long coupé au caractère, taquets (`w:tabs` puis taquets par défaut `w:defaultTabStop`), puce ou numéro (retrait suspendu = taquet implicite ; compteurs au lot 4), interligne simple / multiple / au moins / exact, la marque de paragraphe compte dans la hauteur de la dernière ligne, alignements.
+- `Paginator.cs` (`DocumentLayout`) : sections (format de page, page suivante / continue), saut de page avant, **veuves et orphelines**, **lignes solidaires**, **paragraphes solidaires** (chaîne jusqu'aux premières lignes du suivant), espacement contextuel, espace avant supprimé en haut d'une page commencée par le flux, **bordures de paragraphe groupées** (largeur + `w:space` en haut et en bas du groupe), **en-tête et pied qui repoussent le corps** (défaut, première page si `w:titlePg`), tableaux par rangées entières (grille, `w:gridSpan`, `w:vMerge`, `w:trHeight`).
+- `App/Layout/WpfFontProvider.cs` : avances lues dans `GlyphTypeface` (sans crénage, comme Word par défaut ; tableau d'accès direct pour les 1 280 premiers caractères), polices **cloud d'Office** chargées depuis `%LOCALAPPDATA%\Microsoft\FontCache\4\CloudFonts` (Aptos…), noms à graisse (« Calibri Light ») et noms PostScript (« Calibri-Bold »), substitution compatible (Carlito, Caladea, Liberation) sinon Arial, remplacements relevés.
+
+**Structure des caches (décision du prototype)** : mise en page des paragraphes en cache par **référence** de paragraphe (`ConditionalWeakTable`) et largeur ; le journal d'annulation remplace les blocs par des clones (nouvelle référence = recalcul naturel), une modification en place passe par `Update(blocs)`. Les pages mémorisent leur **point de départ** (élément de flux, ligne). Reprise : depuis la page qui précède la modification ; **convergence** dès qu'une nouvelle page commence au même endroit qu'une ancienne, après la dernière modification ; les pages suivantes sont réutilisées. Chemin rapide de la frappe (modification en place, pas de bloc ajouté ni retiré) : aucune reconstruction du flux, recherche dichotomique des pages.
+
+**Mesures** (banc `OpenWrite --layout`, version Release, ce poste) :
+
+| Document | Pages | Mise en page complète | Frappe (moyenne / pire) | Pages recalculées par frappe |
+|---|---|---|---|---|
+| Syllabus × 9 | 333 | 0,80 s | 0,4 ms / 3,0 ms | 2,3 |
+| Syllabus × 20 | 740 | 0,79 s | 0,2 ms / 2,9 ms | 2,0 |
+| Annexe × 28 | 281 | 0,69 s | 0,3 ms / 3,1 ms | 2,0 |
+
+**Objectif atteint : < 16 ms par frappe**, indépendant de la longueur du document ; la mise en page complète (< 1 s pour 700 pages) se fera en arrière-plan à l'ouverture, premières pages d'abord. Le banc vérifie aussi que la reprise donne exactement les pages d'une mise en page complète (20 frappes par document, tout le corpus).
+
+**Fidélité, premier relevé.** `tools/word-pages.ps1` (Word par COM, lecture seule) relève le début de chaque page et la page et la position verticale de chaque paragraphe ; `--word-pages` compare.
+- Premier moteur, avant les calibrations : **nombre de pages identique à Word sur 21/22 documents**, **37/77 pages qui commencent au même endroit**.
+- Avec les bordures de paragraphe, les en-têtes et pieds, et Aptos : 18/22 et 34/80. Ces règles sont justes une à une (Annexe : écart de 1,5 pt par groupe bordé résorbé ; Syllabus : corps de la première page à 99,7 pt contre 97,8 pt dans Word). Le recul vient de leur interaction avec ce qui n'est pas encore calibré :
+  - pieds de page du Syllabus dont l'espacement fait remonter le bas du corps (hypothèse en cours : l'espacement après du dernier paragraphe d'un en-tête ou d'un pied ne compte pas) ;
+  - PV et convocations en Aptos, plus bas que dans Word de +14 à +46 pt, à chercher dans la coupure des lignes ;
+  - page de garde du Syllabus qui déborde d'une ligne ;
+  - Horaires (colonnes, zones de texte, objets flottants).
+
+**Suite du lot 2** : calibrer ces écarts un par un avec `--word-pages --detail` (et `OPENWRITE_BENCH_DUMP=<page>`) jusqu'à retrouver puis dépasser 21/22 et 37/77 ; colonnes ; lignes de tableau fractionnables et bordures de cellules ; puis la vue des pages virtualisée (`DocumentView`) dans l'application, la barre d'état (page x sur y) et le rendu PNG des pages comparé aux PDF de Word.
+

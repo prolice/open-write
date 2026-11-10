@@ -91,6 +91,11 @@ public partial class App : Application
                 Shutdown(r.Manifest is null ? 1 : 0);
                 return;
             }
+            if (args.Length >= 2 && args[0] == "--layout")
+            {
+                Shutdown(Layout.LayoutBench.Run(args));
+                return;
+            }
             if (args.Length >= 1 && args[0] == "--help-topics")
             {
                 foreach (var t in Help.HelpService.AllTopics) Console.WriteLine(t);

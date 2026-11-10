@@ -115,6 +115,16 @@ public sealed class DocxPackage
     const string RelNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     const string StrictRelNs = "http://purl.oclc.org/ooxml/officeDocument/relationships";
 
+    /// <summary>Histoire d'une partie liée à la partie principale (en-tête, pied de page) par son identifiant de relation (r:id).</summary>
+    public OpenWrite.Core.Model.Story? RelatedStory(string relId)
+    {
+        if (Main is null) return null;
+        _mainRels ??= Relationships(Main.PartName);
+        return _mainRels.TryGetValue(relId, out var rel) && !rel.External && Stories.TryGetValue(rel.Target, out var part) ? part.Stories().FirstOrDefault() : null;
+    }
+
+    IReadOnlyDictionary<string, Relationship>? _mainRels;
+
     /// <summary>Adresse d'un lien hypertexte (w:hyperlink r:id) d'une partie ; null pour un lien interne (w:anchor seul).</summary>
     public string? HyperlinkTarget(StoryPart part, OpenWrite.Core.Model.InlineContainer link)
     {

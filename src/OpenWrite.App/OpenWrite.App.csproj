@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenWrite.Core\OpenWrite.Core.csproj" />
+    <ProjectReference Include="..\OpenWrite.Docx\OpenWrite.Docx.csproj" />
+    <ProjectReference Include="..\OpenWrite.Layout\OpenWrite.Layout.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>OpenWrite</AssemblyName>
+    <RootNamespace>OpenWrite.App</RootNamespace>
+    <ApplicationIcon>Assets\openwrite.ico</ApplicationIcon>
+    <Version>0.2.0</Version>
+    <Product>OpenWrite</Product>
+    <Description>Traitement de texte (remplacement de Microsoft Word, format .docx)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\openwrite.ico" />
+    <Resource Include="Assets\openwrite-*.png" />
+    <!-- Polices de la charte (OFL) : DM Sans et Plus Jakarta Sans, graisses fixes -->
+    <Resource Include="Fonts\*.ttf" />
+    <None Include="Fonts\OFL-*.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Mises a jour automatiques, rapports d'erreur et aide en ligne : adresses du portail (Azure Static Web Apps).
+       Vides tant que le portail n'existe pas : l'application l'indique (« non configurées »).
+       La cle privee de signature est dans %APPDATA%\OpenWrite\update-signing-key.pem (hors du depot). -->
+  <ItemGroup>
+    <AssemblyMetadata Include="UpdateFeed" Value="" />
+    <AssemblyMetadata Include="CrashReportUrl" Value="" />
+    <AssemblyMetadata Include="HelpBase" Value="" />
+    <AssemblyMetadata Include="UpdatePublicKey" Value="" />
+  </ItemGroup>
+
+</Project>

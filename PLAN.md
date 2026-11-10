@@ -1,0 +1,568 @@
+# OpenWrite — plan d'implémentation
+
+Traitement de texte de bureau (Windows), écrit en C# / .NET, de la famille d'OpenPub, qui remplace Microsoft Word pour un usage hors ligne et **ouvre et enregistre directement les `.docx`**.
+
+*Rédigé le 2026-11-05, à partir de l'inventaire des fonctions de Word (`INVENTAIRE-WORD.md`), du code d'OpenPub 2.1.3 (`/mnt/c/dev/open-pub`) et de la charte graphique `assets/OpenWrite-package-complet`.*
+
+---
+
+## 1. Point de départ
+
+### Ce qu'apporte OpenPub
+OpenPub (≈ 20 000 lignes de C#, 2.1.3 publiée) a résolu tout ce qui entoure un éditeur de documents ; OpenWrite le reprend au lieu de le réécrire :
+
+| Domaine d'OpenPub | Fichiers | Reprise dans OpenWrite |
+|---|---|---|
+| Mises à jour automatiques signées (manifeste, vérification, bandeau) | `Core/Update/*` | ✔ telle quelle (nouvelle clé de signature, nouveau flux) |
+| Signalement des plantages vers les issues GitHub | `Core/Diagnostics/CrashReport.cs`, `App/Diagnostics/CrashReporter.cs`, `tools/site-api` | ✔ |
+| Copie de secours, récupération, enregistrement sûr, fichier modifié ailleurs | `Core/Io/RecoveryStore.cs`, `MainWindow.Recovery.cs` | ✔ |
+| Installeur MSI par utilisateur (WiX 5), exécutable autonome | `installer/`, `tools/build-installer.ps1` | ✔ (nouveaux GUID, association `.docx` facultative) |
+| Pipelines GitHub Actions (version, portail), portail Azure Static Web Apps, aide en ligne, page Fonctionnalités | `.github/workflows/*`, `tools/build-site.py`, `tools/build-docs.py`, `fonctionnalites.json` | ✔ avec la charte OpenWrite (`assets/OpenWrite-package-complet/index.html` + `style.css` servent de maquette) |
+| Système de design WPF (ruban, onglets contextuels, styles, polices embarquées, info-bulles, menus) | `App.xaml`, `MainWindow.xaml` | ◐ mêmes styles, couleurs OpenWrite |
+| Fenêtre « À propos », documents récents, aide contextuelle F1 | `AboutWindow.cs`, `Help/HelpService.cs` | ✔ |
+| Moteur de lignes : coupure, justification, tabulations, puces, lettrine, exposants, césure, mesure abstraite (`ITextMeasurer`) | `Layout/TextLayoutEngine.cs`, `Hyphenator.cs` | ◐ base du moteur de paragraphe (§3.3) ; motifs NL/EN/DE à ajouter |
+| Habillage autour des obstacles | `Layout/PageLayouter.cs` | ◐ réutilisé pour les objets flottants |
+| Orthographe (ISpellChecker de Windows), rechercher / remplacer, typographie française, symboles | `Editing/SpellService.cs`, `Core/Editing/TextSearch.cs`, `FrenchTypography` | ✔ |
+| Formes (50, poignées de réglage), modifier les points, WordArt, effets, retouche d'images | `Core/Geometry/*`, `Rendering/DecorRenderer.cs`, `ImageEditorWindow.cs` | ◐ correspondance avec les formes prédéfinies DrawingML |
+| Tableaux (cellules mises en page comme zones de texte) | `Core/Editing/TableOps.cs`, `MainWindow.Tables.cs` | ◐ les opérations ; la mise en page est à refaire (tableaux en flux) |
+| Export PDF (PDFsharp : tout ce qui est dessiné à l'écran va dans le PDF), polices incorporées, liens, impression, livret | `Output/DrawingToPdf.cs`, `PdfExporter.cs`, `PrintService.cs`, `FontEmbedder.cs` | ✔ |
+| Publipostage CSV, modèles, blocs de construction | `MergeOps`, `Templates` | ◐ |
+| Auto-test de bout en bout (`--selftest`), modes en ligne de commande (`--render`, `--pdf`, `--screenshot`) | `SelfTest.cs`, `App.xaml.cs` | ◐ même principe |
+
+**Ce qui ne se reprend pas** : le modèle de document (`Page → Shape`, pages fixes), le format `.opub`, l'annulation par photo complète du document (`UndoStack`), la mise en page par page (`PageLayouter.LayoutPage` avec cache par page).
+
+### Ce qui change par rapport à OpenPub
+1. **Texte en flux** : le document est une suite de blocs (paragraphes, tableaux) que l'application **pagine** elle-même. C'est le nouveau cœur à écrire (§3.3).
+2. **Format natif `.docx`** : pas de format maison. Les documents arrivent de Word (collègues, administration, écoles) et y repartent. Exigence n° 1 : **ouvrir, modifier et réenregistrer un `.docx` sans rien perdre** de ce qu'OpenWrite ne sait pas modifier.
+3. **Documents longs** (jusqu'à ≈ 500 pages) : mise en page incrémentale et annulation par opérations.
+4. **Pas de document unique de référence** : OpenPub visait une newsletter ; OpenWrite vise des documents variés. Il faut donc un **corpus de test** (§5.2).
+
+### Hypothèses (confirmées le 2026-11-05)
+| # | Hypothèse | État |
+|---|---|---|
+| H1 | Usage bureautique courant, en **français, néerlandais et anglais** | ✔ confirmée |
+| H2 | Un corpus de `.docx` réels | ✔ `samples/` (§1 bis) — **hors dépôt** (données personnelles) |
+| H3 | Un poste avec **Word sous licence** pour les PDF de référence | ✔ ce poste ; script `tools/export-reference-pdf.ps1` (Word COM, lecture seule) |
+| H4 | Dépôt GitHub **public**, comme OpenPub, portail sur Azure Static Web Apps | ✔ confirmée |
+| H5 | Interface en français uniquement, comme OpenPub | ✔ (comme OpenPub) |
+
+## 1 bis. Corpus (`samples/`, analysé le 2026-11-05)
+
+25 `.docx` : **9 documents réels** et 16 petits fichiers de test unitaire (un cas par fichier : commentaires, notes, note avec lien, liste simple, tableau, zone de texte, image, image externe, souligné, barré, format strict, BOM UTF-8, document vide, fichier produit par LibreOffice). Un raccourci `.LNK` est sans objet.
+
+| Document réel | Pages | Langue | Ce qu'il exerce |
+|---|---|---|---|
+| `Annexe-20-Recours` | 11 | fr | **Formulaire hérité** (7 cases `FORMCHECKBOX`), champ `USERADDRESS`, 2 tableaux, image, en-têtes, signets, liens |
+| `FrameView SDK License` | 6 | en | Contrat : listes numérotées à plusieurs niveaux (26 paragraphes), en-têtes, 13 signets |
+| `Syllabus TPs … histologie` | 36 | en (US, GB, CA) | **Notes de bas de page** (6), 4 tableaux, **191 paragraphes de liste**, puces Wingdings, en-têtes |
+| `Horaires 2025-2026 WVG` | 2 | — | **6 sections**, **colonnes**, zones de texte et images flottantes ; mode de compatibilité Word 2010 (14) avec **anciennes options `w:compat`** |
+| `convocation kazakhstan` (×2) | 1 | nl | Mise en page par **zones de texte flottantes** (6) et images ancrées |
+| `pv réunion 8 août 2025` | 2 | fr | Compte rendu : listes (23 paragraphes) |
+| `Proposition évènements Club` | 1 | fr | Liste courte |
+
+Modes de compatibilité (relevés par Word) : 15 (Word 2013+) pour les documents récents, 14 (Word 2010) pour `Horaires` et les fichiers de test, 12 (Word 2007) pour deux fichiers de test.
+
+**PDF de référence** (`tools/export-reference-pdf.ps1` → `work/reference/`, journal `references.csv` : pages, mots, mode) : 22 sur 25 produits par Word, ≈ 7 s par document. **Word refuse d'ouvrir 3 fichiers de test** qu'il juge endommagés (`endnotes`, `external-picture` — produit par LibreOffice —, `tiny-picture-target-base-relative`) : OpenWrite devra, lui, les ouvrir (lecture tolérante) — ils serviront de tests de robustesse sans référence visuelle.
+
+**Conséquences sur le plan** :
+- Les **formulaires hérités** (`FORMCHECKBOX`) passent de P3 à **P1** (lot 10) ; la case doit au minimum s'afficher, se cocher et se conserver.
+- Les **zones de texte et objets flottants** (lot 7) sont centraux pour 3 documents sur 9 : à garder dans la 1.0.
+- Les **listes** (lot 4) sont massives : la numérotation doit être juste dès la 0.5.
+- Les **anciennes options de compatibilité** (`w:compat`) existent dans la réalité : une partie du lot 13 (options qui changent la mise en page) est à avancer pendant le lot 2.
+- **Manques du corpus**, à combler par des documents fabriqués avec Word sur ce poste : suivi des modifications, table des matières, document long (≥ 300 pages, le plus long fait 36 pages), en-têtes « première page différente », contrôles de contenu, équations, graphiques, SmartArt.
+- **Confidentialité** : les documents réels contiennent des noms (dont celui d'un enfant) ; `samples/` et `work/` sont exclus du dépôt public. Les 16 fichiers de test pourront rejoindre `tests/` après vérification de leur origine et de leur licence.
+
+---
+
+## 2. Choix techniques
+
+| Sujet | Choix | Raison |
+|---|---|---|
+| Runtime, interface | **.NET 10 / WPF**, comme OpenPub | Même chaîne d'outils, même installeur, code d'OpenPub réutilisable ; rendu typographique et impression matures |
+| Ruban | Ruban maison d'OpenPub (styles `RBig/RSmall/RGroup/RibbonTab`) | Déjà au point (défilement sur petits écrans, onglets contextuels) ; pas de dépendance |
+| Lecture / écriture `.docx` | **DocumentFormat.OpenXml 3.x** (Open XML SDK, licence MIT) pour le package et les parties ; **mappage maison** vers le modèle d'OpenWrite | SDK officiel, typé, maintenu ; le modèle d'édition reste léger et indépendant du XML |
+| Préservation de l'inconnu | Chaque nœud du modèle garde les **éléments et attributs XML qu'il ne comprend pas** (îlots opaques) ; les parties non modifiées du package sont recopiées octet pour octet | Aller-retour sans perte : SmartArt, graphiques, équations, macros, `customXml`, extensions `w14/w15/w16*` |
+| Modèle de document | Calqué sur la sémantique WordprocessingML (sections, paragraphes, segments, propriétés à héritage) mais **sans dépendre du SDK** | Correspondance 1-pour-1 à l'import/export ; moteur et éditeur testables seuls |
+| Annuler / rétablir | **Journal d'opérations inversibles** (insérer, supprimer, modifier des propriétés, opérations structurelles) | La photo complète d'OpenPub coûte trop cher sur 300 pages ; les mêmes opérations servent au suivi des modifications et au rendu incrémental |
+| Moteur de texte | Moteur maison : moteur de lignes d'OpenPub + **paginateur** nouveau | Aucune bibliothèque .NET ne pagine un document Word fidèlement |
+| Polices | Polices du système + substitution métriquement compatible embarquée : **Carlito** (Calibri), **Caladea** (Cambria), **Liberation** (Arial, Times, Courier) — licence OFL / SIL ; police par défaut des nouveaux documents : **Inter** (OFL, celle de la maquette) | Aptos (police par défaut de Word depuis 2024) est une police cloud Microsoft non redistribuable : on l'utilise si Office l'a déposée sur le poste, sinon substitution signalée |
+| Césure | `Hyphenator` d'OpenPub + motifs LibreOffice **fr, nl, en-US, en-GB, de** (LGPL/MPL, via pyphen) | Belgique : français et néerlandais indispensables |
+| Orthographe | `ISpellChecker` de Windows (repris d'OpenPub) | Dictionnaires des langues installées dans Windows, rien à embarquer |
+| Grammaire (lot 8, facultatif) | **LanguageTool** en serveur **local** (LGPL, Java) détecté s'il est installé ; jamais l'API en ligne par défaut | Pas d'API de grammaire dans Windows ; le texte ne doit pas quitter le poste sans accord |
+| Synonymes | Thésaurus LibreOffice (fr : LGPL, nl : OpenTaal, en : WordNet) | Libres, hors ligne |
+| Chiffrement `.docx` | [MS-OFFCRYPTO] chiffrement Agile (AES, `System.Security.Cryptography`) + conteneur OLE **OpenMcdf** (MPL 2.0) | Spécification publique |
+| RTF | Lecteur / écrivain maison (spécification RTF 1.9.1 publique) | Indispensable pour le presse-papiers avec Word et Outlook |
+| ODT | Mappage maison (ODF 1.3, spécification OASIS) | Échange avec LibreOffice |
+| `.doc` binaire | **LibreOffice en mode `--headless --convert-to docx`** s'il est installé ; sinon message explicite | [MS-DOC] est publique mais énorme ; usage résiduel |
+| Export PDF | PDFsharp 6 (MIT), chaîne d'OpenPub (`DrawingToPdf`) + signets, PDF balisé, PDF/A-2b | Le PDF reste identique à l'écran |
+| Synthèse vocale (lot 14) | `Windows.Media.SpeechSynthesis` (voix installées) | Hors ligne |
+| Tests | xUnit + **aller-retour `.docx`** (XML normalisé avant / après) + **fidélité visuelle** (pages rendues comparées aux PDF de Word) + `--selftest` sur la vraie fenêtre | Mesurer objectivement l'absence de perte et la fidélité |
+
+**Code commun avec OpenPub** : on **copie** au départ les fichiers d'infrastructure (en-tête « repris d'OpenPub 2.1.3 ») plutôt que de créer tout de suite une bibliothèque partagée : les deux applications gardent des cycles de version indépendants. Si une troisième application de la famille voit le jour, on extrait un paquet NuGet `OpenFamily.Common` (mises à jour, plantages, récupération, PDF, aide).
+
+---
+
+## 3. Architecture
+
+```
+OpenWrite.sln
+├─ src/
+│  ├─ OpenWrite.Core        Modèle de flux, opérations + annuler/rétablir, résolution des styles,
+│  │                        listes, champs, révisions, commentaires ; mises à jour, plantages, récupération (repris)
+│  ├─ OpenWrite.Docx        Import / export WordprocessingML (Open XML SDK), préservation de l'inconnu,
+│  │                        thème, numérotation, styles, DrawingML (formes, images), chiffrement
+│  ├─ OpenWrite.Formats     RTF, ODT, HTML, TXT, Markdown ; .doc via LibreOffice ; presse-papiers (HTML Format, RTF)
+│  ├─ OpenWrite.Layout      Moteur de paragraphe (repris d'OpenPub), paginateur, tableaux, notes, objets flottants,
+│  │                        mise en page incrémentale ; mesure abstraite (ITextMeasurer)
+│  └─ OpenWrite.App         WPF : ruban, vue des pages virtualisée, édition, volets (navigation, styles,
+│                           commentaires, mise en forme), dialogues, PDF, impression, auto-test
+├─ tests/
+│  ├─ OpenWrite.Tests          Unitaires (Core, Docx, Layout avec mesureur monospace)
+│  └─ OpenWrite.Fidelity       Corpus .docx → aller-retour sans perte + écart visuel avec les PDF de Word
+├─ tools/                   Portail, aide, installeur, publication (repris d'OpenPub), comparaison de PDF
+└─ installer/               WiX 5 (MSI par utilisateur)
+```
+
+### 3.1 Modèle de document (`OpenWrite.Core`)
+Unités internes : **twips** (1/20 de point) pour les longueurs, comme WordprocessingML, afin que l'aller-retour ne crée aucun arrondi ; le moteur calcule en points (`double`).
+
+```
+Document   { Sections[], Styles, Numbering, Theme, Settings (compat, langue, onglets par défaut…),
+             Footnotes[], Endnotes[], Comments[], Properties, Package (parties conservées) }
+Section    { PageSize, Margins, Orientation, Columns, HeaderFooters (défaut / première / paire),
+             PageNumbering, LineNumbering, Borders, Type (page suivante, continu, paire, impaire), Blocks[] }
+Block      = Paragraph | Table | ContentControl(Block[]) | Opaque(xml)
+Paragraph  { StyleId, Props (alignement, retraits, espacements, enchaînements, bordures, trame, tabulations,
+             NumId/Level), MarkProps, Inlines[], Revision? }
+Inline     = Run { Text, StyleId, Props (police, taille, gras… ), Revision? }
+           | Break (ligne, page, colonne) | Tab | Field { Code, Result Inline[] }
+           | Drawing { Inline | Anchor (position, habillage, z), Shape | Picture | TextBox(Block[]) | Opaque }
+           | NoteRef | CommentRange(start/end) | Bookmark(start/end) | Hyperlink(Inline[])
+           | ContentControl(Inline[]) | Math(Opaque + rendu) | Opaque(xml)
+Table      { StyleId, Props (largeur, mise en page fixe/auto, retrait, bordures, habillage), Grid[], Rows[] { Props, Cells[] { Props (fusion, largeur, trame, alignement), Blocks[] } } }
+Revision   { Kind (ins, del, moveFrom, moveTo, format), Author, Date, Id }
+```
+
+Points clés :
+- **Propriétés à héritage**, résolues par `StyleResolver` dans l'ordre de Word : valeurs par défaut du document → style de tableau (mise en forme conditionnelle) → numérotation → style de paragraphe (chaîne `basedOn`) → style de caractère → mise en forme directe. Le résultat est mis en cache par paragraphe et invalidé par les opérations.
+- **Position dans le document** : `DocPos(chemin du bloc, index du segment, décalage)` ; les opérations s'expriment avec ces positions, ce qui rend le journal d'annulation, le suivi des modifications et la recherche indépendants de l'affichage.
+- **Les révisions sont des données du modèle**, pas un mode d'affichage : une suppression suivie reste dans le texte, marquée `del`. Le moteur l'affiche barrée (toutes les marques) ou la saute (marques simples, original).
+- **Opaque** : tout élément non compris est conservé tel quel, déplacé avec son paragraphe, réécrit à l'enregistrement. Il s'affiche, quand c'est possible, via son **dessin de repli** (`mc:Fallback`, dessin SmartArt, aperçu d'objet OLE).
+
+### 3.2 Format `.docx`
+- **Import** : package OPC → parties `document`, `styles`, `numbering`, `settings`, `theme`, `fontTable`, `footnotes`, `endnotes`, `comments` (+ `commentsExtended/Ids` pour les fils et l'état « résolu »), en-têtes / pieds, images, `docProps`. `mc:AlternateContent` : on choisit la branche comprise (`wps`, `wpg`, `w14`…) et on garde l'ensemble pour l'écriture.
+- **Export** : on régénère les parties modifiées ; les autres sont recopiées. Les identifiants (`w14:paraId`, `rsid`) sont conservés ; les nouveaux sont créés comme Word le ferait.
+- **Contrôle** : à chaque enregistrement en développement, validation par `OpenXmlValidator` du SDK ; dans les tests, ouverture du résultat par le SDK et comparaison XML normalisée avec l'original.
+- **Mode de compatibilité** : `w:compat` / `compatSetting` (version 11, 12, 14, 15) est lu ; les options qui changent la mise en page (espacement en haut de page, largeur des tableaux, interligne des polices asiatiques…) sont prises en charge au fil des lots 2, 6 et 13.
+
+### 3.3 Moteur de mise en page (`OpenWrite.Layout`)
+Trois étages :
+1. **Paragraphe → lignes** : `TextLayoutEngine` d'OpenPub, étendu (largeur variable par ligne autour des flottants, segments de révision, champs, notes, ancres d'objets, caractères masqués). Résultat mis en cache par paragraphe, clé = (version du paragraphe, largeur disponible, exclusions).
+2. **Paginateur** : place les lignes des blocs dans les colonnes et les pages de chaque section ; gère sauts, veuves et orphelines, paragraphes et lignes solidaires, espacement en haut de page, **notes de bas de page** (réservation de place au pied, continuation sur la page suivante), **tableaux** (lignes fractionnables, répétition de l'en-tête), **objets flottants** (positionnement relatif au paragraphe / à la marge / à la page, exclusions via `PageLayouter` d'OpenPub, itération jusqu'à stabilité), en-têtes / pieds (place du corps ajustée si un en-tête est haut), colonnes équilibrées en fin de section continue.
+3. **Mise en page incrémentale** : une modification invalide le paragraphe touché ; le paginateur repart de la page qui le contient et s'arrête dès qu'une page retrouve **le même point de départ** qu'avant (convergence). Les numéros de page et `NUMPAGES` sont mis à jour à part. Objectif : < 16 ms par frappe sur un document de 300 pages, mise en page complète en arrière-plan à l'ouverture (premières pages affichées tout de suite).
+
+La vue (`App/Controls/DocumentView`) est **virtualisée** : seules les pages visibles sont dessinées (`PageRenderer` d'OpenPub adapté), ce qui garde aussi le PDF identique à l'écran.
+
+---
+
+## 4. Interface
+
+D'après la maquette `assets/OpenWrite-package-complet/concept-openwrite-reference.webp` :
+- **Ruban** aux onglets de Word, mêmes noms et même ordre (Fichier, Accueil, Insertion, Création, Mise en page, Références, Publipostage, Révision, Affichage) ; onglets contextuels Tableau, Image, Forme, En-tête et pied de page ; **raccourcis clavier de Word** à l'identique — le réapprentissage doit être nul.
+- **Volet gauche** : miniatures des pages (comme dans la maquette) et, dans un second onglet, plan des titres (volet de navigation de Word).
+- **Volet droit « Mise en forme »** (propre à OpenWrite, présent dans la maquette) : style, police, paragraphe, espacement de la sélection ; il accueille aussi les volets Styles, Commentaires, Vérifications.
+- **Barre d'état** : page x sur y, nombre de mots, langue, suivi des modifications, modes d'affichage, zoom.
+
+---
+
+## 5. Qualité et mesure de la fidélité
+
+### 5.1 Critères de réussite
+- **Aller-retour sans perte** : ouvrir puis enregistrer un document du corpus sans le modifier ne change aucun élément XML significatif (comparaison normalisée : ordre des attributs, `rsid`, espaces de noms) ; après une modification locale, seul le paragraphe touché diffère.
+- **Fidélité de pagination** : sur le corpus, **≥ 95 % des pages** ont les mêmes premiers et derniers mots que dans le PDF produit par Word, et l'écart en pixels par page est **< 3 %**.
+- **Réactivité** : frappe < 16 ms et ouverture affichant la 1re page en < 1 s sur un document de 300 pages.
+- Un `.docx` enregistré par OpenWrite s'ouvre **sans message de réparation** dans Word.
+
+### 5.2 Corpus
+`tests/OpenWrite.Fidelity/corpus` (hors dépôt pour les documents réels, comme `converted/` dans OpenPub ; des documents synthétiques versionnés couvrent les mêmes cas) : lettres, rapport avec table des matières et notes, document à sections et en-têtes différents, tableaux longs, documents avec révisions et commentaires, publipostage, formulaire à contrôles de contenu, document de 300 pages, documents NL et EN. Pour chacun : le PDF exporté par Word (hypothèse H3).
+
+### 5.3 Règles communes à chaque lot (comme OpenPub)
+- Une version par lot, publiée par la pipeline (étiquette `vX.Y.Z`).
+- Tests unitaires de la logique pure (Core, Docx, Layout), vérifications ajoutées à `--selftest`, cas ajoutés au corpus de fidélité.
+- Sections d'aide dans `tools/build-docs.py` (constantes `HelpService`), éléments `"depuis": "X.Y.Z"` dans `fonctionnalites.json`, section de ce journal.
+- **Tant qu'un élément n'est pas éditable, il est conservé** : on n'enregistre jamais un `.docx` qui a perdu quelque chose sans l'avoir dit à l'utilisateur.
+
+---
+
+## 6. Risques
+
+| Risque | Impact | Parade |
+|---|---|---|
+| **Algorithmes de mise en page de Word non documentés** (interligne exact des polices, largeur automatique des tableaux, espacement en haut de page, options de compatibilité) | Pages qui ne coupent pas aux mêmes endroits que Word | Banc de fidélité dès le lot 2 ; calibrations mesurées et consignées dans ce journal (comme `FontLineFactors` d'OpenPub) ; s'inspirer du comportement documenté par LibreOffice (code MPL, lecture seulement) |
+| **Perte de données à l'enregistrement** | Document abîmé chez un collègue sous Word : perte de confiance immédiate | Préservation de l'inconnu dès le lot 1 ; test d'aller-retour sur tout le corpus à chaque version ; validation `OpenXmlValidator` ; enregistrement sûr + `.bak` (repris) |
+| **Performances sur les documents longs** | Frappe saccadée | Mise en page incrémentale et vue virtualisée conçues au lot 2 et mesurées (document de 300 pages dans le corpus) ; prototype de 2 jours avant d'engager le lot |
+| **Notes de bas de page et tableaux sur plusieurs pages** | Pagination fausse dans les rapports et mémoires | Prototypes dédiés dans les lots 6 et 9 ; cas simples d'abord (note qui tient sur sa page, tableau sans fusion verticale) |
+| **Polices absentes** (Aptos, Calibri sans Office) | Texte qui ne passe plus aux mêmes endroits | Substitution métriquement compatible embarquée (Carlito, Caladea, Liberation) ; liste des substitutions affichée (Fichier ▸ Info) |
+| **Presse-papiers avec Word / Outlook** | Collage qui perd la mise en forme : irritant quotidien | RTF et `HTML Format` en entrée et en sortie dès le lot 3 ; tests sur des extraits copiés depuis Word |
+| **Périmètre de Word immense** | Projet sans fin | Priorités P0 → P3 de l'inventaire ; jalon 1.0 limité aux lots 0 à 7 ; lot 15 à confirmer fonction par fonction |
+| Dépôt public et documents réels | Fuite de données personnelles | Corpus réel hors dépôt (`.gitignore`), captures du portail faites sur des documents de démonstration |
+
+---
+
+## 7. Phases
+
+| Phase | Lots | Contenu | Livrable |
+|---|---|---|---|
+| **A — Socle** | 0 à 2 | Infrastructure reprise, modèle de flux, `.docx` sans perte, pagination | Visionneuse fidèle de `.docx`, enregistrement sans perte (0.1 → 0.3) |
+| **B — Traitement de texte** | 3 à 7 | Édition, mise en forme, styles, listes, sections, en-têtes, tableaux, images | **OpenWrite 1.0** : lettres, rapports et comptes rendus de bout en bout |
+| **C — Travail à plusieurs et documents longs** | 8 à 10 | Révision, références, champs | 1.1 → 1.3 |
+| **D — Production** | 11 à 14 | Publipostage, sorties et formats, compatibilité, affichage et confort | 1.4 → 1.7 |
+| **E — Fonctions rares** | 15 | À confirmer une par une | — |
+
+---
+
+## 8. Lots
+
+Estimations en jours de développement pour une personne, tests et aide compris, comme dans OpenPub.
+
+### 8.1 Lot 0 — Socle repris d'OpenPub (version 0.1)
+
+| Tâche | Détail | Jours |
+|---|---|---|
+| Solution et projets | `OpenWrite.sln` (Core, Docx, Formats, Layout, App, Tests, Fidelity) ; `nuget.config` ; `CLAUDE.md` | 0,5 |
+| Infrastructure reprise | Mises à jour signées (nouvelle clé), plantages, récupération, documents récents, « À propos », aide F1, modes en ligne de commande | 2 |
+| Charte et fenêtre | `App.xaml` aux couleurs OpenWrite, icône `openwrite.ico`, ruban vide aux onglets de Word, volets gauche/droit, barre d'état | 1,5 |
+| Publication | Installeur WiX (nouveaux GUID), pipelines GitHub Actions, portail à partir de `assets/OpenWrite-package-complet` (bouton « Installeur bientôt disponible » remplacé à la première version) | 2 |
+
+### 8.2 Lot 1 — Modèle de flux et `.docx` sans perte (version 0.2) — critique
+
+| Tâche | Détail | Jours |
+|---|---|---|
+| Prototype d'aller-retour | Sur 10 documents du corpus : import → export, comparaison XML ; valide la stratégie de préservation avant tout le reste | 2 |
+| Modèle | Sections, blocs, segments, propriétés, `DocPos`, éléments opaques | 4 |
+| Résolution des styles | `StyleResolver` : valeurs par défaut, `basedOn`, styles liés, styles de caractère, mise en forme directe, couleurs et polices du thème | 3 |
+| Import `.docx` | `document`, `styles`, `numbering`, `settings`, `theme`, `fontTable`, images, `docProps`, `mc:AlternateContent` | 4 |
+| Export `.docx` | Régénération des parties modifiées, copie des autres, identifiants, validation | 3 |
+| Opérations et annulation | Insérer / supprimer / modifier des propriétés / scinder / fusionner des paragraphes ; journal inversible, regroupement de la frappe continue | 3 |
+| Banc d'aller-retour | `OpenWrite.Fidelity` : normalisation XML, rapport des différences | 1,5 |
+
+### 8.3 Lot 2 — Pagination et affichage (version 0.3) — critique
+
+| Tâche | Détail | Jours |
+|---|---|---|
+| Prototype de performance | Document de 300 pages : mise en page complète, incrémentale, défilement ; décide de la structure des caches | 2 |
+| Moteur de paragraphe | Reprise de `TextLayoutEngine` : propriétés résolues, interligne Word (simple = hauteur de ligne de la police, multiple, au moins, exactement), espacements avant/après avec « contextual spacing », tabulations par défaut | 4 |
+| Paginateur | Sections, sauts de page/colonne/section, veuves et orphelines, paragraphes et lignes solidaires, saut de page avant, espacement en haut de page | 6 |
+| Mise en page incrémentale | Invalidation, convergence, mise en page en arrière-plan | 3 |
+| Vue des pages | `DocumentView` virtualisée, zoom (repris), miniatures, barre d'état (page x sur y, mots) | 3 |
+| Polices | Substitution métriquement compatible, polices cloud d'Office si présentes, avertissement | 1,5 |
+| Césure | Motifs nl, en, de ; options de coupure de Word (zone, coupures consécutives, majuscules) | 1 |
+| Banc de fidélité visuelle | Rendu PNG des pages (`--render`) comparé aux PDF de Word (pdftoppm ou PDFium), score par page, premiers/derniers mots | 2 |
+
+### 8.4 Lot 3 — Édition et mise en forme directe (version 0.4)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Point d'insertion et sélection | Reprise et extension de `InPlaceTextEditor` : navigation clavier de Word, souris (mot, paragraphe, marge), sélection en colonne, sélection multiple, glisser-déposer | 5 |
+| Saisie | Frappe, Entrée (nouveau paragraphe, style suivant), Maj+Entrée, Ctrl+Entrée, Suppr/Retour arrière aux limites de paragraphe et de liste, IME Windows | 2 |
+| Onglet Accueil | Police, taille, gras… soulignements, casse, couleur, surlignage, effacer la mise en forme ; alignement, interligne, retraits, trame, bordures ; boîtes Police et Paragraphe (reprises de `ParagraphWindow`) | 4 |
+| Règle | Retraits, tabulations, marges (repris de `.Rulers.cs`) | 1,5 |
+| Presse-papiers | Interne (fragment de modèle), **RTF** et **HTML Format** en entrée et en sortie, texte ; options de collage ; images | 4 |
+| Marques de mise en forme, caractères spéciaux, symboles | ¶, espaces, tabulations ; espaces insécables, tirets ; fenêtre Symboles reprise | 1,5 |
+| Liens hypertextes | Insérer, modifier, Ctrl+clic | 1 |
+| Rechercher / remplacer (base), statistiques, reproduire la mise en forme, mini barre | Repris d'OpenPub, adaptés au flux | 2 |
+
+### 8.5 Lot 4 — Styles, listes et thèmes (version 0.5)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Galerie et volet Styles | Styles rapides avec aperçu, appliquer, nouveau à partir de la sélection, modifier (met à jour le document), inspecteur de styles, gérer les styles | 5 |
+| Puces et numérotation | `abstractNum` / `num` / remplacements de niveau ; compteurs le long du document ; recommencer / continuer ; Tab / Maj+Tab ; marque de liste dessinée (repris d'OpenPub) | 5 |
+| Listes à plusieurs niveaux | Liaison aux styles de titre, formats « 1.1.2 », définir une nouvelle liste | 2 |
+| Thèmes, jeux de styles, définir par défaut | `theme1.xml`, couleurs et polices du thème dans les sélecteurs, modèle Normal de l'utilisateur | 2 |
+
+### 8.6 Lot 5 — Mise en page, sections, en-têtes et pieds (version 0.6)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Onglet Mise en page | Marges, orientation, taille, par section ; boîte « Mise en page » ; insérer des sauts de section | 2 |
+| En-têtes et pieds de page | Édition en place (corps grisé), première page / paires-impaires différentes, lier au précédent, position, navigation ; onglet contextuel | 5 |
+| Numéros de page | Champ `PAGE`/`NUMPAGES`/`SECTIONPAGES`, format, début par section, galeries | 1,5 |
+| Colonnes | Colonnes de section, largeurs, séparateur, équilibrage | 2,5 |
+| Filigrane, couleur et bordures de page | Filigrane texte/image (forme dans l'en-tête, comme Word), bordures (BorderArt repris) | 2 |
+| Numéros de ligne | | 1 |
+
+### 8.7 Lot 6 — Tableaux (version 0.7) — critique
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Prototype de largeur automatique | Algorithme d'ajustement de Word (largeur préférée, contenu minimal/maximal, `tblLayout` fixe/auto) mesuré sur le corpus | 2 |
+| Mise en page des tableaux en flux | Cellules = suites de blocs, hauteur des lignes, fusion horizontale et verticale, **fractionnement sur plusieurs pages**, répétition de l'en-tête, tableaux imbriqués | 6 |
+| Édition | Insérer (grille, boîte), saisie, Tab, sélection de cellules / lignes / colonnes, insérer / supprimer, fusionner / fractionner, redimensionner à la souris et à la règle (repris de `TableOps`) | 5 |
+| Mise en forme | Bordures, trame, marges de cellule, alignement, orientation du texte ; **styles de tableau** avec mise en forme conditionnelle | 4 |
+| Divers | Convertir texte ↔ tableau, trier, formule simple, tableau flottant, coller depuis Excel | 3 |
+
+### 8.8 Lot 7 — Images, formes et zones de texte (version 1.0)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Images alignées sur le texte | Dans la ligne (hauteur de ligne), redimensionnement, rotation | 2 |
+| Objets flottants | Ancrage au paragraphe, position relative (marge, page, colonne, paragraphe, caractère), habillages carré / rapproché / au travers / haut et bas / derrière / devant via `PageLayouter`, « déplacer avec le texte », icône d'ancre | 6 |
+| Formes DrawingML | Correspondance des ~170 formes prédéfinies avec `ShapeLibrary` (50 reprises, les autres ajoutées), remplissages, contours, effets, groupes, modifier les points (repris) | 4 |
+| Zones de texte | Contenu en blocs, mise en page par le moteur de paragraphe, zones liées | 2,5 |
+| Format de l'image | Rogner, corrections, styles, compresser, texte de remplacement (repris de l'éditeur d'images) | 2 |
+| Affichage des dessins de repli | SmartArt (dessin `dsp`), objets OLE (aperçu EMF/WMF), WordArt (repris), zone de dessin | 1,5 |
+
+**Jalon OpenWrite 1.0** (lots 0 à 7 : ≈ 136 jours) : un document Word courant s'ouvre fidèlement, se modifie avec les mêmes gestes et se réenregistre sans perte ; export PDF et impression repris d'OpenPub (adaptés au flux dans le lot 2, sans signets ni balises).
+
+### 8.9 Lot 8 — Révision et travail à plusieurs (version 1.1)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Orthographe | `SpellService` repris : vérification en arrière-plan par paragraphe, langue par segment, F7, dictionnaire personnel, options | 2 |
+| Commentaires | Plages ancrées, fils de réponses, résolu (`commentsExtended`), bulles dans une marge de révision ajoutée à droite de la page, volet Commentaires, navigation | 5 |
+| Suivi des modifications | Opérations enregistrées comme révisions (insertions, suppressions, mise en forme, marque de paragraphe, lignes de tableau, déplacements) ; couleurs par auteur ; affichages Simple / Toutes / Aucune / Original ; accepter / refuser (une, toutes, par auteur) ; volet Vérifications | 9 |
+| Comparer / combiner | Différence par paragraphes puis par mots (Myers) → révisions | 4 |
+| Protection | Restreindre la modification (`documentProtection`, hachage SHA-512 avec itérations), plages d'exception ; chiffrement par mot de passe ([MS-OFFCRYPTO]) ; marquer comme final | 3 |
+| Rechercher / remplacer avancé | Caractères génériques, mises en forme, caractères spéciaux (^p, ^t…) | 2 |
+| Grammaire et synonymes (facultatifs) | LanguageTool local s'il est présent ; thésaurus LibreOffice | 3 |
+
+### 8.10 Lot 9 — Références et documents longs (version 1.2)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Notes de bas de page et de fin | Insertion, numérotation (formats, recommencer), séparateurs, **réservation de place au pied de la page et continuation**, conversion ; prototype de 1 jour avant | 7 |
+| Table des matières | Champ `TOC` (niveaux, styles, `TC`), galeries, mise à jour, liens, « ajouter du texte » | 3 |
+| Signets, renvois, légendes, table des illustrations | Champs `REF`, `PAGEREF`, `SEQ`, `TOC \c` | 4 |
+| Index | `XE`, `INDEX`, concordance | 2 |
+| Citations et bibliographie | `sources.xml`, styles APA / ISO 690, champs `CITATION`, `BIBLIOGRAPHY` (P3 : à confirmer) | 4 |
+
+### 8.11 Lot 10 — Champs, blocs de construction et contrôles de contenu (version 1.3)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Moteur de champs | Analyse des codes, commutateurs de format (`\@`, `\#`, `\*`), mise à jour (F9, avant impression), afficher les codes (Alt+F9), verrouiller ; DATE, AUTHOR, FILENAME, DOCPROPERTY, IF, =formule, STYLEREF… | 4 |
+| Propriétés du document | Fichier ▸ Info, propriétés personnalisées, contrôles liés | 1,5 |
+| QuickPart, blocs de construction, pages de garde | `glossaryDocument` et bibliothèque de l'utilisateur (repris de `Templates`) | 2,5 |
+| Contrôles de contenu | Texte, case à cocher, listes, sélecteur de date, image, section répétitive ; espaces réservés, verrouillage, mode Création | 4 |
+
+### 8.12 Lot 11 — Publipostage (version 1.4)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Sources de données | CSV (repris de `MergeOps`), **Excel `.xlsx`** (Open XML SDK), saisie d'une nouvelle liste ; modifier la liste (cocher, trier, filtrer) | 3 |
+| Champs et règles | MERGEFIELD, bloc d'adresse, formule d'appel, Si…Alors…Sinon, Ignorer, Numéro de fusion, Enregistrement suivant | 2,5 |
+| Aperçu et fin | Navigation, vérification, nouveau document, impression, PDF (un ou un par enregistrement) | 2 |
+| Enveloppes et étiquettes | Formats standard, planches Avery / Herma | 2 |
+
+### 8.13 Lot 12 — Sorties et formats d'échange (version 1.5)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| PDF complet | Signets depuis les titres, liens internes (renvois, table des matières), propriétés, **PDF balisé** (structure, texte de remplacement), PDF/A-2b | 4 |
+| Impression | Reprise de `PrintService` : plages, pages par feuille, recto verso manuel, livret ; aperçu dans Fichier ▸ Imprimer | 1,5 |
+| RTF | Lecture / écriture complètes (au-delà du presse-papiers du lot 3) | 2,5 |
+| ODT | Lecture / écriture (texte, styles, listes, tableaux, images, en-têtes) | 4 |
+| HTML, TXT, Markdown | Import / export | 2 |
+
+### 8.14 Lot 13 — Compatibilité et fidélité (version 1.6)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Options de compatibilité | Prise en charge des options `w:compat` qui changent la mise en page, mode de compatibilité affiché dans le titre, « Convertir » | 4 |
+| Calibrations | Passage sur tout le corpus, corrections du paginateur et des tableaux, consignées dans ce journal | 5 |
+| Formats hérités | `.doc` via LibreOffice, `.docm` (macros conservées + avertissement), Flat OPC, ISO strict en lecture, insérer le texte d'un fichier | 3 |
+| Mode protégé, vérifier la compatibilité | Fichiers venus d'Internet ouverts en lecture seule | 1 |
+
+### 8.15 Lot 14 — Affichage, navigation et confort (version 1.7)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Volet de navigation | Titres (glisser pour réorganiser, réduire), pages, résultats de recherche ; Atteindre (Ctrl+G) | 3 |
+| Modes d'affichage | Web, Plan, Brouillon, Lecture ; déplacement côte à côte ; fractionner la fenêtre, plusieurs documents | 4 |
+| Correction et mise en forme automatiques | Liste de remplacements FR/NL/EN, typographie française (reprise), listes automatiques, liens, ordinaux | 2,5 |
+| Modèles | Nouveau à partir d'un modèle `.dotx`, modèles fournis, modèle Normal | 1,5 |
+| Options, barre d'accès rapide, recherche de commandes, touches Alt | | 2,5 |
+| Lire à voix haute, inspecteur de document, vérificateur d'accessibilité, thème sombre de l'interface | | 3 |
+
+### 8.16 Lot 15 — Fonctions rares (à confirmer avant de les engager)
+
+| Fonction Word | Mise en œuvre | Jours |
+|---|---|---|
+| Équations | Affichage OMML (moteur de mise en page mathématique, police Latin Modern Math / STIX Two, OFL) : 6 ; édition (structures, saisie linéaire) : 6 | 12 |
+| Graphiques | Affichage depuis les valeurs en cache (barres, courbes, secteurs) : 4 ; édition des données : 4 | 8 |
+| SmartArt éditable | | 6 |
+| Encre | Affichage et dessin (crayon d'OpenPub) | 2 |
+| Dictée | Reconnaissance vocale Windows | 2 |
+| Signatures numériques | XML-DSig du package, vérification | 3 |
+| Écriture de droite à gauche | Bidi dans le moteur de lignes | 6 |
+| Divers | Supprimer l'arrière-plan d'une image, capture d'écran, icônes libres, combiner des documents, volet Presse-papiers | 4 |
+
+### 8.17 Synthèse
+
+| Lot | Version | Contenu | Jours |
+|---|---|---|---|
+| 0 | 0.1 | Socle repris d'OpenPub | 6 |
+| 1 | 0.2 | Modèle de flux, `.docx` sans perte, annulation par opérations | 20,5 |
+| 2 | 0.3 | Pagination incrémentale, affichage, polices, banc de fidélité | 22,5 |
+| 3 | 0.4 | Édition, mise en forme directe, presse-papiers RTF/HTML | 21 |
+| 4 | 0.5 | Styles, listes, thèmes | 14 |
+| 5 | 0.6 | Mise en page, sections, en-têtes et pieds | 14 |
+| 6 | 0.7 | Tableaux | 20 |
+| 7 | **1.0** | Images, formes, zones de texte, objets flottants | 18 |
+| 8 | 1.1 | Orthographe, commentaires, suivi des modifications, comparer, protection | 28 |
+| 9 | 1.2 | Notes, table des matières, renvois, légendes, index, bibliographie | 20 |
+| 10 | 1.3 | Champs, blocs de construction, contrôles de contenu | 12 |
+| 11 | 1.4 | Publipostage | 9,5 |
+| 12 | 1.5 | PDF complet, impression, RTF, ODT, HTML, Markdown | 14 |
+| 13 | 1.6 | Compatibilité et calibrations | 13 |
+| 14 | 1.7 | Navigation, modes d'affichage, correction automatique, modèles, options | 16,5 |
+| 15 | — | Fonctions rares (à confirmer) | 43 |
+| | | **Total** | **≈ 292 jours** (≈ 249 sans le lot 15) |
+
+**Jalons** : après les lots 0 à 2 (≈ 49 jours), OpenWrite est une **visionneuse fidèle** qui réenregistre sans perte — c'est le moment de vérifier, sur le corpus, que l'approche tient. Après le lot 7 (≈ 136 jours), **OpenWrite 1.0** couvre l'usage bureautique courant. Les lots 8 à 10 (≈ 60 jours) ouvrent le travail à plusieurs et les documents longs ; les lots 11 à 14 complètent la production.
+
+**Ordre ajustable** : si l'usage réel l'exige, le suivi des modifications et les commentaires (lot 8) peuvent passer avant les formes (lot 7) — ils ne dépendent que des lots 1 à 3.
+
+**Comparaison avec OpenPub** : ≈ 160 jours pour la parité avec Publisher, sur un moteur plus simple (pages fixes) et sans contrainte d'aller-retour sur le format. Le surcoût d'OpenWrite vient du paginateur, des tableaux en flux et de l'exigence « `.docx` sans perte ».
+
+---
+
+## 9. Prochaines étapes proposées
+
+1. Confirmer les hypothèses H1 à H5 (§1), en particulier **réunir le corpus** et un accès à Word pour les PDF de référence.
+2. Lot 0 : créer le dépôt, reprendre l'infrastructure d'OpenPub, publier une 0.1 « visionneuse vide » par la pipeline pour valider la chaîne de bout en bout.
+3. Prototype d'aller-retour `.docx` (lot 1, 2 jours) **avant** d'écrire le modèle définitif : c'est le risque n° 1.
+4. Prototype de performance du paginateur (lot 2, 2 jours) sur le document de 300 pages.
+
+---
+
+## 10. Journal
+
+### 10.1 Lot 0, première partie (2026-11-06) — version 0.1 en cours
+
+**Fait**
+- Solution `OpenWrite.sln` : `OpenWrite.Core`, `OpenWrite.Docx` (DocumentFormat.OpenXml 3.3.0), `OpenWrite.Layout`, `OpenWrite.App` (WPF), `tests/OpenWrite.Tests` ; `nuget.config`, `.gitattributes`, `.gitignore`, `CLAUDE.md`, `README.md`. Les projets `OpenWrite.Formats` et `OpenWrite.Fidelity` seront créés avec leurs lots (3 et 1), pour ne pas versionner de projets vides.
+- Infrastructure reprise d'OpenPub 2.1.3 (en-tête « Repris d'OpenPub » dans chaque fichier) : manifeste de mise à jour signé (charge utile `openwrite-update/1`, distincte d'OpenPub : un manifeste d'OpenPub ne peut pas être accepté par OpenWrite), service de mise à jour et bandeau, rapports d'erreur anonymisés (signature sur les méthodes `OpenWrite.*`, noms de `.docx/.dotx/.docm/.rtf/.odt` masqués), réglages et documents récents (`%APPDATA%\OpenWrite`), fenêtre « À propos », aide contextuelle, césure française.
+- `RecoveryStore` généralisé : l'appelant écrit la copie (rappel), le magasin ne dépend plus du format ; nouveau `SafeFile.Write` (fichier temporaire + `File.Replace`, `.bak` facultatif), base de l'enregistrement du lot 1.
+- Charte OpenWrite dans `App.xaml` : styles d'OpenPub recolorés (encre `#111A47`, bleu `#087CFF`, cyan `#00C9D5`, orange `#FF8712`, dégradé bleu → orange des boutons principaux, pastille de version orange comme le portail) ; icônes 64/128/256 tirées de `openwrite-1024.png`.
+- Fenêtre d'après la maquette : ruban aux 8 onglets de Word (mêmes noms, même ordre) dont **chaque groupe affiche la version qui l'activera** (table `Roadmap` de `MainWindow.Ribbon.cs`, issue du §8) ; zoom et volets déjà actifs (onglet Affichage) ; volet gauche Pages / Titres ; volet droit « Mise en forme » (inactif jusqu'à la 0.4) ; barre d'état (pages selon Word, mots, langue, zoom) ; glisser-déposer d'un fichier.
+- **Ouverture en lecture seule** : `DocxInfo` (Docx) lit un résumé tolérant — comptes (paragraphes, tableaux, sections, images, zones de texte, notes, commentaires, révisions, signets, liens, contrôles de contenu, champs de formulaire hérités, équations), mode de compatibilité et anciennes options `w:compat`, titres (niveau de plan des styles, chaîne `basedOn`), langues, polices, liste des parties, texte brut des 60 premiers paragraphes. Affiché en « page » d'aperçu, dans le volet de droite et Fichier ▸ Informations. Titre de fenêtre « [Mode de compatibilité] » comme Word.
+- Modes en ligne de commande : `--info`, `--screenshot` (scènes : onglets, `file-menu`, `about`), `--help-topics`, clés et manifestes de mise à jour.
+- 28 tests unitaires (mises à jour, rapports d'erreur, copies de secours, enregistrement sûr, césure, `DocxInfo` sur des `.docx` fabriqués par le SDK dans les tests : rien du corpus personnel).
+
+**Mesures sur le corpus** (`--info` sur les 25 fichiers de `samples/`)
+- **Les 25 fichiers s'ouvrent**, y compris les 3 que Word juge endommagés (`endnotes`, `external-picture`, `tiny-picture-target-base-relative`).
+- **Mode de compatibilité identique à Word sur les 22 références** (`references.csv`). Calibration : un fichier sans `compatibilityMode` est en mode **12** (Word 2007), pas 11 (`empty`, `utf8-bom`).
+- Mots : écart de 0 à 2 % sur les documents réels (Annexe 3 119 / Word 3 113 ; Syllabus 8 699 / 8 803 ; FrameView 2 693 / 2 714), plus fort sur les petits fichiers de test parce que Word ne compte ni les notes ni les zones de texte (`footnotes` 8 / 2, `text-box` 4 / 0) et sur les convocations (101 / 91 : zones de texte). À aligner sur `ComputeStatistics` de Word avec la fonction Statistiques (lot 3) ; la barre d'état affichera alors le même nombre que Word.
+- Les `pages`/`words` de `docProps/app.xml` sont absents ou périmés dans plusieurs fichiers (Syllabus enregistré par Word pour le web, Horaires) : la barre d'état n'en dépendra plus dès la pagination (lot 2).
+
+**Reste pour terminer le lot 0**
+- Publication : clé de signature OpenWrite (`--gen-update-key %APPDATA%\OpenWrite\update-signing-key.pem`), installeur WiX (nouveaux GUID, association `.docx` facultative), pipelines GitHub Actions, portail Azure Static Web Apps à partir de `assets/OpenWrite-package-complet`, aide (`tools/build-docs.py`) ; puis renseigner `UpdateFeed`, `CrashReportUrl`, `HelpBase`, `UpdatePublicKey` dans `OpenWrite.App.csproj`.
+- Dépôt GitHub public (H4) et premier commit.
+- Ensuite, conformément au §9 : **prototype d'aller-retour `.docx`** (lot 1, 2 jours) avant le modèle définitif.
+
+### 10.2 Lot 1 — prototype d'aller-retour `.docx` (2026-11-06) : stratégie validée
+
+**Construit**
+- `Core/Model/Flow.cs` : modèle en flux prototype — `Story` → blocs (`Paragraph`, `Table`/`TableRow`/`TableCell`, `BlockContentControl`, `OpaqueBlock`) → éléments de ligne (`Run`, `InlineContainer` pour lien, révisions `ins/del/moveFrom/moveTo`, `smartTag`, `customXml`, `fldSimple` ; `InlineContentControl` ; `OpaqueInline`) → contenu de segment (`TextContent`, `TabContent`, `BreakContent`, `OpaqueRunContent`). Chaque nœud garde **tous les attributs d'origine** (rsid, `w14:paraId`…).
+- `PropertyBag` : les propriétés (pPr, rPr, tblPr, trPr, tcPr, sectPr) **conservent l'élément XML d'origine** ; lecture typée, modification insérée dans l'ordre du schéma (ECMA-376), extensions inconnues gardées, historique (`*PrChange`) toujours dernier.
+- `Docx/DocxPackage` : lecture directe du ZIP (tolérante), parties de texte (document, en-têtes, pieds, notes, commentaires) dans le modèle, **toutes les autres entrées gardées octet pour octet** ; à l'enregistrement, seules les parties modifiées sont régénérées ; ordre, noms et dates des entrées conservés. `StoryMapping` (XML ↔ modèle), `XmlCompare` (différence normalisée, étendue d'une modification).
+- `FlowEdits` : insérer du texte, scinder un paragraphe (nouveaux `w14:paraId/textId` uniques, saut de section laissé sur le dernier morceau comme Word).
+- `tests/OpenWrite.Fidelity` : banc sur le corpus local (rapport `work/roundtrip/rapport.md`), mode `--stress`. 8 tests unitaires sur des documents écrits à la main (36 tests au total).
+
+**Résultats sur les 25 fichiers du corpus**
+| Critère (§5.1) | Résultat |
+|---|---|
+| Aller-retour, **toutes** les parties de texte régénérées depuis le modèle | **25/25 identiques** (comparaison XML normalisée) |
+| Autres parties du package | 100 % identiques octet pour octet |
+| Texte atteint par le modèle | 100 % sauf zones de texte (dans les dessins, opaques) : convocations 90 %, Horaires 97,8 %, `text-box` 0 % → lot 7 |
+| Modifications (texte, gras, scission) | **toujours locales** : 1 bloc modifié (2 pour la scission), le reste du corps identique |
+| Validateur Open XML SDK | aucune erreur nouvelle sur les 100 fichiers produits |
+| **Ouverture par Word** (COM, `export-reference-pdf.ps1` sur les sorties) | **50/50 ouverts** (aller-retour et scission) ; aller-retour : **mêmes pages et mêmes mots que l'original pour les 22 références** |
+| Bonus | les 3 fichiers que Word refusait (`endnotes`, `external-picture`, `tiny-picture-target-base-relative`) **s'ouvrent dans Word après un aller-retour par OpenWrite** (archive ZIP réécrite proprement) |
+| Performances (Debug) | Syllabus ×10 (≈ 360 pages, 6 090 paragraphes) : lecture ≈ 0,2 s, écriture ≈ 0,2 s |
+
+Après scission, Word compte un mot de plus (le mot coupé en deux : attendu) ; 3 documents serrés passent à une page de plus (convocations : page 2 vide, la marque de fin repoussée sous les zones flottantes) — réaction de mise en page de Word à un paragraphe ajouté, pas un défaut du fichier.
+
+**Calibrations et pièges relevés (à garder dans le modèle définitif)**
+1. **Retours à la ligne dans les attributs** (texte de remplacement des images, `o:gfxdata` VML) : écrire avec `NewLineHandling.Entitize` (`&#xA;`), sinon la normalisation XML les change en espaces.
+2. **`xml:space`** : Word 2010 écrit `<w:t> </w:t>` sans `xml:space` ; un texte non modifié est réécrit tel quel (`TextContent.LoadedValue`), `preserve` n'est ajouté qu'au texte modifié, et seulement pour les blancs XML (l'espace insécable n'en est pas un : «  :… » en tête de texte dans Annexe).
+3. **Enregistrement** : `File.Replace` a échoué une fois (« Impossible de supprimer le fichier à remplacer », fichier juste écrit verrouillé par l'antivirus ou l'indexation) → `SafeFile` réessaie 5 fois.
+4. Format strict ISO 29500 : même modèle, espace de noms lu sur la racine.
+
+**Îlots opaques restants** (par fréquence) : `w:proofErr` (370, à jeter ou garder — Word les régénère), signets (37+37), champs complexes `fldChar`/`instrText` (32/11), VML `w:pict` (27), séparateurs de notes, `w:drawing` (10), références de notes, `w:lastRenderedPageBreak`, `mc:AlternateContent`, ancres de commentaires, `w:softHyphen`. Ordre de modélisation proposé pour le lot 1 : champs (FORMCHECKBOX du formulaire Annexe, PAGE, TOC) et signets ; références de notes/commentaires ; puis dessins et zones de texte (lot 7, contenu des `txbxContent` comme `Story`).
+
+**Décision** : la stratégie « attributs d'origine + propriétés conservées en XML + îlots opaques + recopie des parties non modifiées » est **retenue** pour le modèle définitif. Prochaines étapes du lot 1 : `DocPos`, journal d'opérations inversibles (annuler/rétablir) au-dessus de `FlowEdits`, `StyleResolver`, modélisation des champs et signets, enregistrement depuis l'application (version 0.2).
+
+### 10.3 Lot 1 — champs et signets (2026-11-06)
+
+**Décision de modèle (révise le §3.1)** : un champ n'est **pas** un nœud `Field { Code, Result }` qui contiendrait ses segments. Comme dans Word, il reste une suite de **marqueurs dans le texte** — `FieldChar` (début / séparateur / fin, avec `w:ffData` conservé en XML), `FieldCode` (`w:instrText`) — et sa structure est **calculée** par `FieldIndex`. Raisons : un champ peut couvrir plusieurs paragraphes (table des matières), s'imbriquer dans le code ou le résultat d'un autre (IF { MERGEFIELD }, TOC + PAGEREF), et chaque marqueur porte la mise en forme de son segment ; restructurer les segments casserait l'aller-retour exact du §10.2. Les signets suivent le même principe : `BookmarkStart`/`BookmarkEnd` typés (dans le paragraphe, entre blocs via `InlineMarkerBlock`, entre lignes ou cellules de tableau) et `BookmarkIndex`.
+
+**Construit**
+- `Core/Model` : `Markers.cs` (marqueurs typés), `FlowWalker` (parcours dans l'ordre du document : paragraphes, cellules, contrôles de contenu, liens, révisions), `FieldIndex` (code avec les champs imbriqués entre accolades comme Alt+F9, résultat avec « \r » entre paragraphes, parent/enfants, segments du résultat, anomalies), `FormCheckBox` (état = `w:checked` sinon `w:default` ; revenir à l'état par défaut retire `w:checked`, le XML redevient l'original), `FieldInstruction` (type, arguments, commutateurs ; `\*`, `\@`, `\#` prennent toujours un argument, les autres seulement s'il est entre guillemets), `BookmarkIndex` (appariement par `w:id`, texte couvert, signets masqués `_…`, doublons), `MarkerOps` (remplacer le résultat d'un champ en gardant la mise en forme du premier segment, ajouter / renommer / supprimer un signet, règles de nom de Word, identifiant libre).
+- `Docx` : lecture et écriture des marqueurs dans `StoryMapping` ; `DocxPackage.Relationships` et `HyperlinkTarget` (cible d'un lien, servira au Ctrl+clic du lot 3).
+- Banc : modifications « case » (inverser la première case de formulaire) et « signet » (ajouter un signet), export de la vue d'OpenWrite (`modele/*.json`) ; `tools/word-inspect.ps1` relève la vue de Word par COM (lecture seule, une instance par fichier) ; `OpenWrite.Fidelity --compare-word`.
+- 18 tests unitaires sur un document fabriqué qui réunit les cas absents du corpus : TOC sur trois paragraphes avec liens et PAGEREF imbriqués, IF avec MERGEFIELD dans son code, champ simple DATE, case à cocher, signet entre blocs et signet sur deux paragraphes, champs et signets mal formés (54 tests au total).
+
+**Résultats sur le corpus**
+| Critère | Résultat |
+|---|---|
+| Aller-retour | toujours **25/25 identiques** ; champs et signets ne sont plus des îlots opaques |
+| Modifications « case » et « signet » | locales (un seul bloc), validateur SDK sans erreur nouvelle, **50/50 ouverts par Word** |
+| Vue d'OpenWrite = vue de Word (champs, résultats, cases, liens, signets) | **22/22 documents** (les 3 fichiers que Word refuse n'ont pas de relevé) |
+| Case cochée par OpenWrite | Word la voit cochée (Annexe : `[F,F,F,F,F,F,F]` → `[V,F,F,F,F,F,F]`) |
+| Signet ajouté par OpenWrite | vu par Word dans les 19 documents concernés (les 6 autres n'ont pas de paragraphe de texte) |
+
+**Calibrations — conventions du modèle objet de Word, absentes du fichier**
+1. Word présente chaque `w:hyperlink` comme un champ `HYPERLINK "cible"` ; il ajoute `\h` quand `w:history` n'est pas activé (Horaires), `\l "ancre"` pour un lien interne.
+2. Dans un document en mode de compatibilité 2010, chaque forme flottante apparaît comme un champ `SHAPE \* MERGEFORMAT` (Horaires : 6).
+3. Le signet masqué `_GoBack` (dernière position d'édition) est retiré par Word à l'ouverture et recréé à l'enregistrement ; OpenWrite le conserve.
+4. Le résultat de PAGE / NUMPAGES lu par Word dans un en-tête est recalculé hors contexte de page (0) ; le fichier garde la dernière valeur affichée (Syllabus : 2 et 24). Ce résultat est dynamique : la mise en page (lot 2) le calculera par page, sans le réécrire dans le fichier.
+
+**Reste du lot 1** : `DocPos` et journal d'opérations inversibles (annuler / rétablir) au-dessus de `FlowEdits` et `MarkerOps` ; `StyleResolver` ; zones de texte (`w:txbxContent` comme `Story`, aujourd'hui dans les îlots `w:drawing`/`w:pict`) avancées si le lot 7 doit en dépendre ; enregistrement depuis l'application (version 0.2), avec affichage des cases ☐/☒ et des résultats de champs dans l'aperçu.
+
+### 10.4 Lot 1 — positions et annuler / rétablir (2026-11-07)
+
+**Positions (`DocPos`)** : chemin du paragraphe depuis la racine (un tableau consomme 3 index : bloc, ligne, cellule ; un contrôle de contenu 1) + décalage en caractères. Longueurs (`ParagraphAtoms`) : texte (supprimé compris) et code de champ = leur longueur ; tabulation, retour, caractère de champ, objet (dessin, appel de note, équation) = 1 ; repères (signets, commentaires, `proofErr`, `lastRenderedPageBreak`) = 0. Les positions ne référencent aucun objet : elles survivent aux annulations qui remplacent des blocs par leurs copies. Ordre du document = ordre lexicographique.
+
+**Opérations (`Core/Editing/TextOps`)**
+- `Insert` : le texte prend la mise en forme du caractère qui précède ; au début du paragraphe, celle du suivant ; dans un paragraphe vide, celle de la marque de paragraphe sans sa révision ; jamais dans une suppression suivie.
+- `Delete` : dans un paragraphe ou sur plusieurs (même conteneur) ; blocs intermédiaires retirés (tableaux compris) ; segments, liens et révisions vidés retirés ; repères gardés. Le paragraphe fusionné **garde les propriétés du premier** et reçoit le saut de section du dernier — choix à confronter à Word (COM) au lot 3, avec la saisie (Word classique donne les propriétés du second paragraphe quand on supprime une marque de paragraphe).
+- `Split` (Entrée) : nouveaux `w14:paraId/textId`, saut de section sur le second, un lien coupé est dupliqué ; repère au point de coupe à gauche. Remplace `FlowEdits.SplitParagraph` (gardé pour le banc).
+- Suppression d'une cellule à une autre : refusée pour l'instant (sélection de cellules au lot 6).
+
+**Annuler / rétablir (`UndoJournal`) — décision** : chaque entrée garde une **copie des seuls blocs touchés, avant et après**, désignés par leur chemin (pas d'objet). Plutôt que des opérations inverses écrites à la main : exact par construction (les copies gardent attributs, XML conservé, valeurs lues), coût local (un paragraphe par frappe ; OpenPub sérialisait tout le document), toute fonction d'édition devient annulable (`journal.Begin(...)` / `Commit`), et une édition qui échoue est défaite (transaction sans `Commit`). Frappe regroupée par mot (l'espace termine le mot, comme Word) ; état enregistré suivi (`MarkSaved`, `IsModified`, y compris quand l'état enregistré devient inatteignable) ; `Changed(racine)` pour marquer la partie à régénérer. Le suivi des modifications (lot 8) s'appuiera sur les mêmes positions, pas sur ces copies.
+
+**Résultats**
+| Critère | Résultat |
+|---|---|
+| Tests unitaires | 9 nouveaux (63 au total) : chemins dans tableaux et contrôles, héritage de mise en forme, suppression sur 7 blocs, scission dans un lien, tout annuler / tout rétablir, regroupement de la frappe, échec d'une opération, état enregistré |
+| Corpus : 3 à 6 opérations par le journal (frappe, scission, suppression traversant des blocs, frappe en cellule, case à cocher) puis **tout annuler** | **19/19 documents identiques à l'original** (6 sans paragraphe de texte : sans objet) |
+| **Tout rétablir** | 19/19 identiques à l'état modifié ; validateur SDK sans erreur nouvelle ; **25/25 ouverts par Word** |
+| Performances (≈ 360 pages, Debug) | frappe journal compris **0,03 ms par caractère** (objectif §5.1 : 16 ms) ; annuler 1 000 frappes : 1 ms |
+
+**Reste du lot 1** : `StyleResolver` (propriétés résolues : défauts du document, styles `basedOn`, styles de caractère, mise en forme directe, thème) ; enregistrement depuis l'application (0.2 : Fichier ▸ Enregistrer via `DocxPackage` + `SafeFile`, `.bak`, journal → partie `Dirty`) ; zones de texte si le lot 7 doit en dépendre.
+
+### 10.5 Lot 1 — résolution des styles et version 0.2 (2026-11-07) : lot 1 terminé
+
+**`StyleResolver` (`Core/Styles`)** : `StyleSheet` (styles, numérotation, thème, paramètres ; `DocxPackage.StyleSheet()`) et résolution vers `ParagraphFormat` (alignement, retraits, espacements, interligne, enchaînements, plan, liste ; twips) et `RunFormat` (polices des 4 emplacements, tailles, gras, italique, soulignement, barré, majuscules, masqué, couleur, surlignage, exposant, espacement, langue ; points), plus `ParagraphMark` et `ListMarker`. Fusion par propriété, par attribut pour `rFonts`/`ind`/`spacing`/`lang` (`firstLine`/`hanging` exclusifs, police explicite ⇄ police de thème par emplacement, `w:line` sans `w:lineRule` = auto), par côté pour les bordures, taquets cumulés avec `clear`. Propriétés bascule en OU exclusif entre niveaux de styles, la mise en forme directe impose. Polices et couleurs du thème (`clrSchemeMapping`, teinte et ombre en luminance TSL). Boucles `basedOn` coupées, style inconnu → Normal.
+
+**Vérification contre Word** (`tools/word-format.ps1` par COM ↔ `OpenWrite.Fidelity --formats` / `--compare-formats`, 1 235 paragraphes appariés sur 22 documents) : **99,3 à 100 % d'accord par propriété** ; hors paragraphes vides (appariement ambigu entre paragraphes vides et cellules) **99,7 à 100 %** — alignement, retraits, première ligne, espace avant, police, italique, souligné : 100 %. **Couleurs de thème : 36/36 identiques** à la valeur calculée que Word enregistre dans `w:val`.
+
+**Calibrations Word (contraires ou absentes de la norme)**
+1. **Le niveau de liste s'applique après le style de paragraphe** (ECMA-376 §17.7.2 le place avant) : Annexe, « Paragraphe de liste » `firstLine=709` + liste directe `hanging=360` → Word −18 pt.
+2. **Liste du style retirée par le paragraphe (`w:numId="0"`)** : ni le retrait de la liste ni celui du style ne s'appliquent (FrameView « Legal2_L1 » `firstLine=720` → 0 ; Syllabus « coupe », liste niveau 2 `left=1788` → 0). Une première hypothèse (« le retrait de la liste du style s'applique quand même ») corrigeait FrameView mais dégradait 66 paragraphes du Syllabus : le banc l'a montré, la règle a été corrigée.
+3. **Format strict : mesures avec unité** (`w:after="8pt"`, `w:line="12.95pt"`, `in`, `cm`, `mm`, `pc`).
+4. Relevé COM : une couleur de thème renvoyée par `Font.Color`/`TextColor.RGB` n'est pas fiable (`FFFF00` pour du noir) → vérifiée par `w:val` ; les marques de fin de ligne de tableau (`Information(31)`) sont écartées ; `ConvertTo-Json` de PowerShell 5.1 sur une liste .NET échoue (« types des arguments ») sans `-InputObject $list.ToArray()`.
+5. Document sans valeurs par défaut ni style Normal (`empty.docx`) : Word applique celles de son modèle Normal.dotm, propres au poste — non reproductible, hors comparaison.
+
+Restent hors du résolveur : mise en forme conditionnelle des styles de tableau (lot 6), styles de numérotation liés au-delà d'un niveau, `*Chars` (retraits en caractères), compteurs de liste (lot 4).
+
+**Version 0.2 (application)**
+- Le document ouvert est chargé dans le modèle (`DocxPackage`) ; l'aperçu est **construit sur le modèle et mis en forme par le résolveur** (page à la largeur et aux marges de la section, tableaux en grille, résultats de champs affichés et codes masqués, puces indicatives) — sans pagination (0.3). Le volet de droite décrit la mise en forme du paragraphe survolé.
+- **Cases à cocher des formulaires** cliquables, **Annuler / Rétablir** (Ctrl+Z / Ctrl+Y, boutons d'accès rapide), **Enregistrer / Enregistrer sous** (Ctrl+S, Ctrl+Maj+S, F12 ; même famille de format : un `.docm` reste un `.docm`), version précédente en `.bak`, « • » et « modifié » dans les titres, question à la fermeture, avertissement si le fichier a changé sur le disque, **copies de secours** toutes les 5 minutes et récupération au démarrage (repris d'OpenPub, copies `.docx`).
+- `DocxPackage.Save(chemin)` adopte le contenu enregistré (les parties régénérées deviennent la référence) : un second enregistrement cumule les modifications ; sans modification, il recopie le fichier à l'identique.
+- **Auto-test de bout en bout** `--selftest <dossier>` (vraie fenêtre hors écran, document fabriqué) : 13 vérifications — ouverture, clic sur la case, titre modifié, Ctrl+Z ramène à l'état enregistré, Ctrl+Y, Ctrl+S, relecture (seule la case a changé), `.bak`.
+
+**Bilan du lot 1** (estimé 20,5 jours) : prototype d'aller-retour, modèle en flux, champs et signets, positions, annuler/rétablir, résolution des styles, enregistrement depuis l'application. 73 tests unitaires, 13 vérifications de bout en bout, banc sur 25 documents (aller-retour, 6 modifications, annuler/rétablir), vues de Word et d'OpenWrite comparées pour les champs, signets et la mise en forme. Prochain lot : **lot 2 — pagination et affichage (0.3)**, en commençant par le prototype de performance sur un document de 300 pages (§8.3).

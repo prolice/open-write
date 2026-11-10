@@ -1,0 +1,16 @@
+# Normalisation des fins de ligne (depot partage entre Windows et WSL)
+* text=auto
+# scripts executes sous WSL / Linux : toujours LF
+*.sh text eol=lf
+*.py text eol=lf
+# fichiers Windows
+*.ps1 text eol=crlf
+*.sln text eol=crlf
+# binaires
+*.png binary
+*.jpg binary
+*.ico binary
+*.ttf binary
+*.woff2 binary
+*.webp binary
+*.msi binary

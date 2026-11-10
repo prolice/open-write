@@ -1,0 +1,30 @@
+# --- Documents réels (données personnelles) : jamais dans le dépôt public ---
+samples/
+*.LNK
+
+# --- Travail, PDF de référence, sorties ---
+work/
+dist/
+__pycache__/
+*.pyc
+
+# --- .NET / Visual Studio ---
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+
+# --- Secrets (la clé de signature des mises à jour vit dans %APPDATA%\OpenWrite, jamais ici) ---
+*.pem
+*.pfx
+*.key
+.env
+
+# --- Système ---
+Thumbs.db
+desktop.ini
+.DS_Store
+.claude/worktrees/
+.claude/settings.local.json

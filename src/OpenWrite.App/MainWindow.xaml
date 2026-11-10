@@ -1,0 +1,176 @@
+<Window x:Class="OpenWrite.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OpenWrite" Height="900" Width="1480" MinWidth="760" MinHeight="480" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Chrome}" Foreground="{StaticResource Ink}" FontFamily="{StaticResource UiFont}" FontSize="13" Icon="Assets/openwrite.ico"
+        TextOptions.TextFormattingMode="Display" AllowDrop="True" Drop="Window_Drop" DragOver="Window_DragOver">
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Open" Executed="Open_Executed"/>
+        <CommandBinding Command="ApplicationCommands.Close" Executed="CloseDoc_Executed" CanExecute="HasDoc_CanExecute"/>
+        <CommandBinding Command="ApplicationCommands.Help" Executed="Help_Executed"/>
+    </Window.CommandBindings>
+    <Window.InputBindings>
+        <KeyBinding Key="F4" Modifiers="Ctrl" Command="ApplicationCommands.Close"/>
+        <KeyBinding Key="W" Modifiers="Ctrl" Command="ApplicationCommands.Close"/>
+    </Window.InputBindings>
+
+    <DockPanel>
+        <!-- ===================== RUBAN ===================== -->
+        <Border DockPanel.Dock="Top" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
+            <StackPanel>
+                <!-- ligne des onglets -->
+                <DockPanel Margin="6,6,6,0">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="4,0,14,0" VerticalAlignment="Center">
+                        <Image Source="Assets/openwrite-64.png" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <TextBlock Text="OpenWrite" FontFamily="{StaticResource TitleFont}" FontWeight="ExtraBold" FontSize="19" Margin="7,0,0,1" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button x:Name="FileButton" DockPanel.Dock="Left" Style="{StaticResource PillButton}" Content="Fichier" Click="FileButton_Click" Margin="0,0,10,0" Padding="18,6"/>
+                    <!-- accès rapide -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
+                        <TextBlock x:Name="DocTitle" VerticalAlignment="Center" MaxWidth="260" TextTrimming="CharacterEllipsis" Foreground="{StaticResource Muted}" Margin="0,0,12,0"/>
+                        <Button Style="{StaticResource RSmall}" Tag="&#xE897;" Command="ApplicationCommands.Help" ToolTip="Aide (F1)"/>
+                        <Button Style="{StaticResource RSmall}" Tag="&#xE74E;" Command="ApplicationCommands.Save" ToolTip="Enregistrer (Ctrl+S)"/>
+                        <Button Style="{StaticResource RSmall}" Tag="&#xE7A7;" Command="ApplicationCommands.Undo" ToolTip="Annuler (Ctrl+Z)"/>
+                        <Button Style="{StaticResource RSmall}" Tag="&#xE7A6;" Command="ApplicationCommands.Redo" ToolTip="Rétablir (Ctrl+Y)"/>
+                    </StackPanel>
+                    <!-- onglets de Word, mêmes noms et même ordre : défilement horizontal si la fenêtre est étroite -->
+                    <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" Focusable="False" PreviewMouseWheel="RibbonScroller_PreviewMouseWheel">
+                        <StackPanel x:Name="TabStrip" Orientation="Horizontal">
+                            <RadioButton x:Name="TabHome" Style="{StaticResource RibbonTab}" Content="Accueil" IsChecked="True" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabInsert" Style="{StaticResource RibbonTab}" Content="Insertion" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabDesign" Style="{StaticResource RibbonTab}" Content="Création" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabLayout" Style="{StaticResource RibbonTab}" Content="Mise en page" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabReferences" Style="{StaticResource RibbonTab}" Content="Références" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabMailings" Style="{StaticResource RibbonTab}" Content="Publipostage" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabReview" Style="{StaticResource RibbonTab}" Content="Révision" Checked="Tab_Checked"/>
+                            <RadioButton x:Name="TabView" Style="{StaticResource RibbonTab}" Content="Affichage" Checked="Tab_Checked"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+
+                <!-- contenu des onglets : sur un petit écran, le ruban défile horizontalement -->
+                <Grid Height="100" Margin="6,4,6,4">
+                    <ScrollViewer x:Name="RibbonScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" Focusable="False"
+                                  PreviewMouseWheel="RibbonScroller_PreviewMouseWheel" ScrollChanged="RibbonScroller_ScrollChanged">
+                        <!-- panneaux remplis par MainWindow.Ribbon.cs (un par onglet) -->
+                        <Grid x:Name="RibbonPanels"/>
+                    </ScrollViewer>
+                    <RepeatButton x:Name="RibbonLeft" Style="{StaticResource RibbonArrow}" HorizontalAlignment="Left" Content="&#xE76B;"
+                                  Click="RibbonLeft_Click" Visibility="Collapsed" ToolTip="Faire défiler le ruban vers la gauche"/>
+                    <RepeatButton x:Name="RibbonRight" Style="{StaticResource RibbonArrow}" HorizontalAlignment="Right" Content="&#xE76C;"
+                                  Click="RibbonRight_Click" Visibility="Collapsed" ToolTip="Faire défiler le ruban vers la droite"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Bandeau de mise à jour -->
+        <Border x:Name="UpdateBanner" DockPanel.Dock="Top" Background="{StaticResource SoftBadge}" BorderBrush="{StaticResource SelectedBorder}" BorderThickness="0,0,0,1" Padding="14,7" Visibility="Collapsed">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <ProgressBar x:Name="UpdateProgress" Width="160" Height="10" Margin="0,0,10,0" Visibility="Collapsed" Maximum="1"/>
+                    <Button x:Name="UpdateNowButton" Style="{StaticResource PillButton}" Content="Mettre à jour maintenant" Padding="16,5" Margin="0,0,8,0" Click="UpdateNow_Click"/>
+                    <Button x:Name="UpdateLaterButton" Content="Plus tard" Padding="12,4" Margin="0,0,6,0" Click="UpdateLater_Click"/>
+                    <Button x:Name="UpdateSkipButton" Content="Ignorer cette version" Padding="12,4" Click="UpdateSkip_Click"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE896;" FontFamily="{StaticResource Icons}" FontSize="16" Foreground="{StaticResource IconBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="UpdateText" VerticalAlignment="Center" FontWeight="Bold" Foreground="{StaticResource SelectedText}"/>
+                    <TextBlock x:Name="UpdateNotes" VerticalAlignment="Center" Margin="10,0,0,0" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" MaxWidth="600"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Barre d'état : page x sur y, mots, langue, mode de compatibilité, zoom -->
+        <Border DockPanel.Dock="Bottom" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="12,3">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="ZoomStatus" Text="100 %" Width="46" TextAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,0,8,0"/>
+                    <Button Style="{StaticResource RSmall}" Tag="&#xE738;" Click="ZoomOut_Click" ToolTip="Zoom arrière"/>
+                    <Slider x:Name="ZoomSlider" Width="130" Minimum="50" Maximum="200" Value="100" VerticalAlignment="Center" ValueChanged="ZoomSlider_ValueChanged" IsMoveToPointEnabled="True" ToolTip="Zoom"/>
+                    <Button Style="{StaticResource RSmall}" Tag="&#xE710;" Click="ZoomIn_Click" ToolTip="Zoom avant"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="PageStatus" FontWeight="SemiBold" Margin="0,0,18,0"/>
+                    <TextBlock x:Name="WordStatus" Foreground="{StaticResource Muted}" Margin="0,0,18,0"/>
+                    <TextBlock x:Name="LangStatus" Foreground="{StaticResource Muted}" Margin="0,0,18,0"/>
+                    <TextBlock x:Name="StatusText" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="176"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="FormatColumn" Width="268"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Volet gauche : miniatures des pages / plan des titres -->
+            <Border Grid.Column="0" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="10,10,10,6">
+                        <RadioButton x:Name="PaneThumbs" Style="{StaticResource PaneTab}" Content="Pages" IsChecked="True" Checked="Pane_Checked"/>
+                        <RadioButton x:Name="PaneOutline" Style="{StaticResource PaneTab}" Content="Titres" Checked="Pane_Checked"/>
+                    </StackPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="12,6,12,12">
+                            <StackPanel x:Name="ThumbsPanel"/>
+                            <StackPanel x:Name="OutlinePanel" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- Zone de travail -->
+            <ScrollViewer Grid.Column="1" x:Name="Scroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                          Background="{StaticResource WorkspaceBrush}" Focusable="False" PreviewMouseWheel="Scroller_PreviewMouseWheel">
+                <Grid x:Name="Workspace" Margin="24,24,24,40" HorizontalAlignment="Center"/>
+            </ScrollViewer>
+
+            <!-- Volet droit « Mise en forme » (maquette) : actif avec l'édition, version 0.4 -->
+            <Border Grid.Column="2" x:Name="FormatPane" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,6,16,16">
+                        <DockPanel Margin="0,8,0,0">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource RSmall}" Tag="&#xE711;" Click="CloseFormatPane_Click" ToolTip="Fermer le volet (Affichage ▸ Mise en forme pour le rouvrir)" Padding="4,2"/>
+                            <TextBlock Text="Mise en forme" FontFamily="{StaticResource TitleFont}" FontSize="16" FontWeight="ExtraBold" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <Border Style="{StaticResource SoonBadge}" HorizontalAlignment="Left" Margin="0,8,0,4">
+                            <TextBlock Text="Modifiable à partir de la version 0.4" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource VersionText}"/>
+                        </Border>
+                        <TextBlock x:Name="PaneSelection" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
+                                   Text="Survolez un paragraphe de l'aperçu pour voir sa mise en forme."/>
+                        <StackPanel IsEnabled="False">
+                            <TextBlock Style="{StaticResource PanelTitle}" Text="STYLE"/>
+                            <ComboBox x:Name="PaneStyle" IsEditable="True" Text="Normal"/>
+                            <TextBlock Style="{StaticResource PanelTitle}" Text="POLICE"/>
+                            <DockPanel>
+                                <ComboBox DockPanel.Dock="Right" x:Name="PaneSize" IsEditable="True" Text="11" Width="58" Margin="6,0,0,0"/>
+                                <ComboBox x:Name="PaneFont" IsEditable="True" Text="Inter"/>
+                            </DockPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <Button Style="{StaticResource RSmall}"><TextBlock Text="G" FontWeight="Bold" FontSize="14" Width="14" TextAlignment="Center"/></Button>
+                                <Button Style="{StaticResource RSmall}"><TextBlock Text="I" FontStyle="Italic" FontSize="14" Width="14" TextAlignment="Center" FontFamily="Georgia"/></Button>
+                                <Button Style="{StaticResource RSmall}"><TextBlock Text="S" TextDecorations="Underline" FontSize="14" Width="14" TextAlignment="Center"/></Button>
+                                <Button Style="{StaticResource RSmall}"><TextBlock Text="abc" TextDecorations="Strikethrough" FontSize="12.5"/></Button>
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource PanelTitle}" Text="PARAGRAPHE"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource RSmall}" Tag="&#xE8E4;"/>
+                                <Button Style="{StaticResource RSmall}" Tag="&#xE8E3;"/>
+                                <Button Style="{StaticResource RSmall}" Tag="&#xE8E2;"/>
+                                <Button Style="{StaticResource RSmall}"><TextBlock Text="☰" FontSize="14"/></Button>
+                                <Button Style="{StaticResource RSmall}" Tag="&#xE8FD;"/>
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource PanelTitle}" Text="ESPACEMENT"/>
+                            <ComboBox IsEditable="True" Text="1,15"/>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource PanelTitle}" Text="CE DOCUMENT"/>
+                        <TextBlock x:Name="PaneDocInfo" Foreground="{StaticResource Muted}" TextWrapping="Wrap" FontSize="12" LineHeight="18"
+                                   Text="Aucun document ouvert."/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

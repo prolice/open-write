@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenWrite.Core\OpenWrite.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Motifs de cesure (LibreOffice, via pyphen) : francais ; nl, en, de au lot 2 -->
+    <EmbeddedResource Include="Resources\hyph_*.dic" />
+  </ItemGroup>
+
+</Project>

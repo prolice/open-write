@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using OpenWrite.Core.Drawing;
 using OpenWrite.Core.Model;
 using OpenWrite.Core.Styles;
 
@@ -18,6 +19,10 @@ public sealed class TextStyle
     public double Size { get; init; }
     /// <summary>Espacement ajouté après chaque caractère (points).</summary>
     public double Tracking { get; init; }
+    /// <summary>Échelle horizontale des caractères (w:w ; 1 = 100 %).</summary>
+    public double Scale { get; init; } = 1;
+    /// <summary>Avance d'un caractère (points) : chasse de la police à la taille, échelle, espacement.</summary>
+    public double Width(char ch) => Face.Advance(ch) * Size * Scale + Tracking;
 }
 
 /// <summary>Caractères spéciaux du texte mis à plat.</summary>
@@ -44,6 +49,10 @@ public sealed class ParagraphContent
     public required TextStyle Mark { get; init; }
     /// <summary>XML des objets en ligne (w:drawing…), par position, pour l'affichage.</summary>
     public Dictionary<int, XElement> ObjectXml { get; init; } = new();
+    /// <summary>Dessins en ligne lus (DrawingReader), par position dans le texte.</summary>
+    public Dictionary<int, DrawingObject> Drawings { get; init; } = new();
+    /// <summary>Objets ancrés au paragraphe (flottants), avec la position du texte où ils sont ancrés.</summary>
+    public List<(int Pos, DrawingObject Object)> Anchors { get; init; } = new();
     /// <summary>Cases à cocher de formulaire : position du glyphe ☐/☒ → caractère de début du champ.</summary>
     public Dictionary<int, FieldChar> CheckBoxes { get; init; } = new();
     /// <summary>Appels de note de bas de page : position dans le texte → w:id de la note.</summary>
@@ -87,7 +96,25 @@ public sealed class LineBox
     public List<string>? Footnotes { get; set; }
     /// <summary>Fin du texte de la ligne avant alignement (retrait gauche compris, sans les espaces de fin), points.</summary>
     public double Ink { get; init; }
+    /// <summary>Espace sauté au-dessus de la ligne pour passer sous un objet flottant (habillage), points.</summary>
+    public double Gap { get; init; }
+    /// <summary>
+    /// Suite de la ligne précédente à la même hauteur, de l'autre côté d'un objet flottant (habillage des deux côtés) :
+    /// sa hauteur est comptée par la première ligne de la rangée.
+    /// </summary>
+    public bool SameRow { get; init; }
+    /// <summary>Hauteur de la rangée (première ligne d'une rangée de part et d'autre d'un objet), sinon <see cref="Height"/>.</summary>
+    public double RowHeight { get; internal set; }
+    /// <summary>Place verticale prise par la ligne dans le paragraphe : saut au-dessus et hauteur de sa rangée (0 pour une suite de rangée).</summary>
+    public double Advance => SameRow ? 0 : Gap + Math.Max(Height, RowHeight);
 }
+
+/// <summary>
+/// Place disponible pour une ligne d'un paragraphe habillé autour d'objets flottants : segments libres (abscisses
+/// depuis le bord gauche de la colonne, de gauche à droite) pour une ligne qui commence à <c>y</c> (depuis le haut de la
+/// première ligne du paragraphe) et haute de <c>height</c> ; aucun segment : la ligne descend de <c>Down</c> points.
+/// </summary>
+public delegate (IReadOnlyList<(double Left, double Right)> Segments, double Down) LineSpace(double y, double height);
 
 /// <summary>Paragraphe découpé en lignes pour une largeur donnée.</summary>
 public sealed class ParagraphLayout
@@ -103,7 +130,9 @@ public sealed class ParagraphLayout
     public (string Text, TextStyle Style, double X)? Marker { get; init; }
     public double SpaceBefore => Format.SpacingBefore / 20.0;
     public double SpaceAfter => Format.SpacingAfter / 20.0;
-    public double Height => Lines.Sum(l => l.Height);
+    public double Height => Lines.Sum(l => l.Advance);
+    /// <summary>Mise en page habillée autour d'objets flottants (propre à une page, hors cache).</summary>
+    public bool Wrapped { get; init; }
 }
 
 /// <summary>Découpe des paragraphes en lignes (comportement de Word : coupure aux espaces, espaces de fin suspendus).</summary>
@@ -166,7 +195,7 @@ public sealed class ParagraphLayouter
         double size = Math.Max(1, rf.Size);
         if (rf.VerticalAlign is "superscript" or "subscript") size *= 2.0 / 3;
         if (small) size *= SmallCapsScale;
-        s = new TextStyle { Format = rf, Face = _fonts.Face(rf.FontAscii ?? rf.FontHAnsi, rf.Bold, rf.Italic), Size = size, Tracking = rf.CharacterSpacing / 20.0 };
+        s = new TextStyle { Format = rf, Face = _fonts.Face(rf.FontAscii ?? rf.FontHAnsi, rf.Bold, rf.Italic), Size = size, Tracking = rf.CharacterSpacing / 20.0, Scale = rf.Scale / 100.0 };
         cache[rf] = s;
         return s;
     }
@@ -182,6 +211,8 @@ public sealed class ParagraphLayouter
         var objects = new Dictionary<int, (double, double)>();
         var notes = new Dictionary<int, string>();
         var objectXml = new Dictionary<int, XElement>();
+        var drawings = new Dictionary<int, DrawingObject>();
+        var anchors = new List<(int, DrawingObject)>();
         var boxes = new Dictionary<int, FieldChar>();
         // champs en cours : code (w:instrText) masqué ; résultat affiché, ou remplacé par FieldValue (PAGE, NUMPAGES)
         var fields = new Stack<FieldState>();
@@ -290,9 +321,12 @@ public sealed class ParagraphLayouter
                                     if (o.Xml.Name.LocalName == "footnoteReference") notes[sb.Length] = id;
                                     Add(id, st);
                                     break;
-                                case OpaqueRunContent o when !hidden && InlineObjectSize(o.Xml) is { } size:
-                                    objects[sb.Length] = size;
+                                case DrawingContent o when !hidden:
+                                    if (DrawingOf(o) is not { Hidden: false, Watermark: false } obj) break;
+                                    if (!obj.Inline) { anchors.Add((sb.Length, obj)); break; }
+                                    objects[sb.Length] = InlineSize(obj);
                                     objectXml[sb.Length] = o.Xml;
+                                    drawings[sb.Length] = obj;
                                     Add("￼", st);
                                     break;
                             }
@@ -316,7 +350,7 @@ public sealed class ParagraphLayouter
         return new ParagraphContent
         {
             Text = sb.ToString(), StyleOf = styleOf.ToArray(), Styles = styles, Objects = objects, Mark = mark, Footnotes = notes,
-            ObjectXml = objectXml, CheckBoxes = boxes,
+            ObjectXml = objectXml, CheckBoxes = boxes, Drawings = drawings, Anchors = anchors,
             Hidden = !anyVisible && mark.Format.Hidden,
             ModelStart = modelStart.ToArray(), ModelEnd = modelEnd.ToArray(),
         };
@@ -347,31 +381,38 @@ public sealed class ParagraphLayouter
         return chk is not null ? On(chk, W) : checkBox.Element(W + "default")?.Attribute(W + "val")?.Value is "1" or "true" or "on";
     }
 
-    /// <summary>Taille (points) d'un dessin en ligne (wp:inline/wp:extent, EMU) ; null pour un objet flottant (lot 7).</summary>
-    static (double, double)? InlineObjectSize(XElement xml)
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<XElement, DrawingObject?> _drawingCache = new();
+
+    /// <summary>Dessin lu (mis en cache par élément XML : une modification remplace l'élément).</summary>
+    public DrawingObject? DrawingOf(DrawingContent d)
     {
-        XElement? inline = xml.Name.LocalName switch
-        {
-            "drawing" => xml.Elements().FirstOrDefault(e => e.Name.LocalName == "inline"),
-            "AlternateContent" => xml.Descendants().FirstOrDefault(e => e.Name.LocalName == "inline"),
-            _ => null,
-        };
-        var ext = inline?.Elements().FirstOrDefault(e => e.Name.LocalName == "extent");
-        if (ext is null) return null;
-        static double Emu(XAttribute? a) => a is not null && long.TryParse(a.Value, out var v) ? v / 12700.0 : 0;
-        // marges d'effet (ombre, reflet) : comptées dans la place de l'objet (Annexe : image de 105,9 pt + 0,6 pt en bas)
-        var eff = inline!.Elements().FirstOrDefault(e => e.Name.LocalName == "effectExtent");
-        return (Emu(ext.Attribute("cx")) + Emu(eff?.Attribute("l")) + Emu(eff?.Attribute("r")),
-                Emu(ext.Attribute("cy")) + Emu(eff?.Attribute("t")) + Emu(eff?.Attribute("b")));
+        if (_drawingCache.TryGetValue(d.Xml, out var o) && (o is null || ReferenceEquals(o.Source, d))) return o;
+        o = DrawingReader.Read(d, _styles.Sheet);
+        _drawingCache.AddOrUpdate(d.Xml, o);
+        return o;
     }
+
+    /// <summary>
+    /// Place d'un dessin en ligne (points) : cadre et marges d'effet (ombre, reflet ; Annexe : image de 105,9 pt +
+    /// 0,6 pt en bas) ; filet horizontal VML (o:hr) : la largeur demandée, ou la colonne (mise en page).
+    /// </summary>
+    static (double, double) InlineSize(DrawingObject o) => (o.Width + o.Effect.L + o.Effect.R, o.Height + o.Effect.T + o.Effect.B);
 
     // ------------------------------------------------------------------ lignes
 
     /// <summary>Découpe le paragraphe en lignes pour une colonne de largeur <paramref name="width"/> (points).</summary>
-    public ParagraphLayout Layout(Paragraph p, double width, CellStyle tableStyle = default)
+    /// <param name="space">
+    /// Habillage autour d'objets flottants : place de chaque ligne selon sa hauteur sur la page (null : toute la largeur).
+    /// </param>
+    /// <param name="resume">
+    /// Suite d'une mise en page : les lignes 0..<paramref name="resumeLine"/>-1 de <paramref name="resume"/> sont reprises
+    /// telles quelles et la coupure repart de la ligne <paramref name="resumeLine"/> (paragraphe coupé entre deux pages,
+    /// la suite habillée sur la nouvelle page ; y = 0 au haut de cette ligne).
+    /// </param>
+    public ParagraphLayout Layout(Paragraph p, double width, CellStyle tableStyle = default, LineSpace? space = null, ParagraphLayout? resume = null, int resumeLine = 0)
     {
-        var pf = _styles.Paragraph(p, tableStyle);
-        var content = Content(p, tableStyle);
+        var pf = resume?.Format ?? _styles.Paragraph(p, tableStyle);
+        var content = resume?.Content ?? Content(p, tableStyle);
         double left = pf.IndentLeft / 20.0, right = pf.IndentRight / 20.0, first = pf.IndentFirstLine / 20.0;
         double limit = width - right;
 
@@ -399,15 +440,31 @@ public sealed class ParagraphLayouter
             };
         }
 
-        var layout = new ParagraphLayout { Paragraph = p, Format = pf, Content = content, Width = width, Marker = marker, Cell = tableStyle };
+        var layout = new ParagraphLayout { Paragraph = p, Format = pf, Content = content, Width = width, Marker = marker, Cell = tableStyle, Wrapped = space is not null };
         if (content.Hidden) return layout;
         var text = content.Text;
         int n = text.Length;
         int pos = 0;
         bool firstLine = true;
+        if (resume is not null && resumeLine > 0 && resumeLine < resume.Lines.Count)
+        {
+            layout.Lines.AddRange(resume.Lines.Take(resumeLine));
+            pos = resume.Lines[resumeLine].Start;
+            firstLine = false;
+        }
+        double y = 0;
+        int guard = 0;
         while (true)
         {
             double x0 = firstLine ? firstX : left;
+            if (space is not null)
+            {
+                // habillage : une rangée de lignes dans les segments libres, ou descendre sous l'objet
+                var (rowEnd, rowKind, done) = WrapRow(layout, content, pf, space, ref pos, ref y, x0, limit, n, ref guard);
+                firstLine = false;
+                if (done) break;
+                continue;
+            }
             var (end, kind) = FillLine(content, pf, pos, x0, limit);
             layout.Lines.Add(MakeLine(content, pf, pos, end, kind, x0, limit, last: end >= n));
             firstLine = false;
@@ -439,6 +496,88 @@ public sealed class ParagraphLayouter
         return layout;
     }
 
+    /// <summary>Largeur minimale d'un segment libre à côté d'un objet flottant pour y mettre du texte (points).</summary>
+    public static double MinWrapSegment { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_WRAP_MIN"), NumberStyles.Float, CultureInfo.InvariantCulture, out var mw) ? mw : 0;
+
+    /// <summary>
+    /// Une rangée de lignes habillées : segments libres à la hauteur <paramref name="y"/> (ligne haute comme la précédente,
+    /// puis vérifiée avec sa vraie hauteur) remplis de gauche à droite ; sans segment, la ligne descend sous l'objet.
+    /// Renvoie la fin de la dernière ligne, son type, et si le paragraphe est fini.
+    /// </summary>
+    (int End, LineEnd Kind, bool Done) WrapRow(ParagraphLayout layout, ParagraphContent content, ParagraphFormat pf, LineSpace space,
+        ref int pos, ref double y, double x0, double limit, int n, ref int guard)
+    {
+        double left = pf.IndentLeft / 20.0;
+        double guess = layout.Lines.LastOrDefault(l => !l.SameRow) is { } prev ? prev.Height : MarkHeight(content, pf);
+        double gap = 0;
+        for (int attempt = 0; ; attempt++)
+        {
+            var (segments, down) = space(y + gap, guess);
+            var usable = segments.Select(s => (L: Math.Max(x0, s.Left), R: Math.Min(limit, s.Right)))
+                .Where(s => s.R - s.L > Math.Max(MinWrapSegment, 0.5)).ToList();
+            if (usable.Count == 0 && ++guard < 400)
+            {
+                gap += down > 0.01 ? down : Math.Max(1, guess);
+                continue;
+            }
+            if (usable.Count == 0) usable.Add((x0, limit));             // garde-fou : toute la largeur
+            var row = new List<LineBox>();
+            int p0 = pos, end = pos;
+            LineEnd kind = LineEnd.Wrap;
+            bool done = false;
+            for (int k = 0; k < usable.Count; k++)
+            {
+                var (sl, sr) = usable[k];
+                double lx = sl;
+                var (e, kd) = FillLine(content, pf, p0, lx, sr);
+                // mot coupé faute de place dans un segment étroit : on passe au segment suivant (s'il y en a)
+                if (kd == LineEnd.Wrap && e < n && e > p0 && content.Text[e - 1] is not (' ' or Atom.Tab) && k + 1 < usable.Count)
+                    continue;
+                var line = MakeLine(content, pf, p0, e, kd, lx, sr, last: e >= n, gap: row.Count == 0 ? gap : 0, sameRow: row.Count > 0);
+                row.Add(line);
+                end = e;
+                kind = kd;
+                p0 = kd is LineEnd.LineBreak or LineEnd.PageBreak or LineEnd.ColumnBreak ? e + 1 : e;
+                if (p0 >= n || kd is not LineEnd.Wrap) break;
+            }
+            if (row.Count == 0)
+            {
+                gap += down > 0.01 ? down : Math.Max(1, guess);
+                if (++guard < 400) continue;
+                var (e2, kd2) = FillLine(content, pf, pos, x0, limit);
+                row.Add(MakeLine(content, pf, pos, e2, kd2, x0, limit, last: e2 >= n, gap: gap));
+                (end, kind) = (e2, kd2);
+                p0 = kd2 is LineEnd.LineBreak or LineEnd.PageBreak or LineEnd.ColumnBreak ? e2 + 1 : e2;
+            }
+            double rowH = row.Max(l => l.Height);
+            // ligne plus haute que prévu : la place est revue avec sa vraie hauteur (une fois)
+            if (attempt == 0 && rowH > guess + 0.01)
+            {
+                var (check, _) = space(y + gap, rowH);
+                if (!SameSegments(check, segments)) { guess = rowH; continue; }
+            }
+            row[0].RowHeight = rowH;
+            layout.Lines.AddRange(row);
+            y += gap + rowH;
+            pos = p0;
+            if (pos >= n && kind is LineEnd.Paragraph or LineEnd.Wrap) done = true;
+            else if (pos >= n && kind is LineEnd.PageBreak or LineEnd.ColumnBreak) done = true;
+            else if (pos >= n && kind is LineEnd.LineBreak)
+            {
+                layout.Lines.Add(MakeLine(content, pf, n, n, LineEnd.Paragraph, left, limit, last: true));
+                done = true;
+            }
+            return (end, kind, done);
+        }
+    }
+
+    static bool SameSegments(IReadOnlyList<(double Left, double Right)> a, IReadOnlyList<(double Left, double Right)> b) =>
+        a.Count == b.Count && a.Zip(b).All(t => Math.Abs(t.First.Left - t.Second.Left) < 0.01 && Math.Abs(t.First.Right - t.Second.Right) < 0.01);
+
+    /// <summary>Hauteur d'une ligne vide du paragraphe (marque de paragraphe), première estimation d'une ligne habillée.</summary>
+    double MarkHeight(ParagraphContent c, ParagraphFormat pf) => MakeLine(c, pf, 0, 0, LineEnd.Paragraph, 0, 1e5, last: true).Height;
+
     /// <summary>
     /// Largeurs de contenu d'un paragraphe (ajustement automatique des tableaux) : minimale = le plus long mot (suite de
     /// caractères sans espace ni tabulation) avec les retraits, maximale = la plus longue ligne sans coupure automatique.
@@ -469,15 +608,18 @@ public sealed class ParagraphLayouter
         var st = c.Styles[c.StyleOf[i]];
         var ch = c.Text[i];
         if (ch == Atom.Object) return c.Objects.TryGetValue(i, out var o) ? o.W : 0;
-        return st.Face.Advance(ch) * st.Size + st.Tracking;
+        return st.Width(ch);
     }
 
     double NextTab(ParagraphFormat pf, double x)
     {
-        // taquets du paragraphe (w:tabs), puis taquets par défaut mesurés depuis le bord de la colonne
+        // taquets du paragraphe (w:tabs), puis taquets par défaut mesurés depuis le bord de la colonne ; avec un retrait
+        // négatif de première ligne, le retrait gauche sert de taquet sur la première ligne (Word ; Horaires, « samedi »)
+        double left = pf.IndentLeft / 20.0;
+        double hanging = pf.IndentFirstLine < 0 && left > x + 0.01 ? left : double.MaxValue;
         foreach (var t in Tabs(pf))
-            if (t > x + 0.01) return t;
-        return (Math.Floor(x / DefaultTabStop + 1e-6) + 1) * DefaultTabStop;
+            if (t > x + 0.01) return Math.Min(t, hanging);
+        return Math.Min(hanging, (Math.Floor(x / DefaultTabStop + 1e-6) + 1) * DefaultTabStop);
     }
 
     readonly Dictionary<XElement, double[]> _tabCache = new();
@@ -539,7 +681,7 @@ public sealed class ParagraphLayouter
         return (n, LineEnd.Paragraph);
     }
 
-    LineBox MakeLine(ParagraphContent c, ParagraphFormat pf, int start, int end, LineEnd kind, double x0, double limit, bool last)
+    LineBox MakeLine(ParagraphContent c, ParagraphFormat pf, int start, int end, LineEnd kind, double x0, double limit, bool last, double gap = 0, bool sameRow = false)
     {
         // hauteur naturelle : plus grand ascent + plus grand descent des polices de la ligne (marque de paragraphe
         // comprise sur la dernière ligne, comme Word), objets en ligne posés sur la ligne de base
@@ -610,7 +752,7 @@ public sealed class ParagraphLayouter
         List<string>? lineNotes = null;
         foreach (var (pos, id) in c.Footnotes)
             if (pos >= start && pos < end) (lineNotes ??= new()).Add(id);
-        return new LineBox { Start = start, End = end, Height = h, FitHeight = fit, Baseline = baseline, EndKind = kind, ExtraPerSpace = extra, Footnotes = lineNotes, Ink = ink }.WithPieces(line.Pieces);
+        return new LineBox { Start = start, End = end, Height = h, FitHeight = fit, Baseline = baseline, EndKind = kind, ExtraPerSpace = extra, Footnotes = lineNotes, Ink = ink, Gap = gap, SameRow = sameRow, RowHeight = h }.WithPieces(line.Pieces);
     }
 }
 

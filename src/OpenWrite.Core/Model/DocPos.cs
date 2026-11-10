@@ -143,6 +143,7 @@ public static class ParagraphAtoms
         TextContent t => t.Value.Length,
         FieldCode f => f.Value.Length,
         OpaqueRunContent o when ZeroWidth.Contains(o.Xml.Name.LocalName) => 0,
+        DrawingContent => 1,
         _ => 1,
     };
 

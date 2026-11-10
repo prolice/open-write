@@ -55,12 +55,12 @@ public partial class MainWindow
                 tx.TrackStory(story);
                 foreach (var p in story.Paragraphs())
                     foreach (var r in p.Runs())
-                        r.Content.RemoveAll(x => x is OpaqueRunContent o && o.Xml.Descendants().Any(e => e.Name.LocalName == "textpath"));
+                        r.Content.RemoveAll(x => x is DrawingContent o && o.Xml.Descendants().Any(e => e.Name.LocalName == "textpath"));
                 foreach (var p in story.Paragraphs()) p.Inlines.RemoveAll(i => i is Run { Content.Count: 0 } r && r.Props.Element?.Element(w + "noProof") is not null);
                 if (text is null) continue;
                 if (story.Blocks.FirstOrDefault() is not Paragraph first) { first = new Paragraph { Props = new PropertyBag("pPr", w) }; story.Blocks.Insert(0, first); }
                 var run = new Run { Props = new PropertyBag("rPr", w, new XElement(w + "rPr", new XElement(w + "noProof"))) };
-                run.Content.Add(new OpaqueRunContent(WatermarkXml(w, text)));
+                run.Content.Add(new DrawingContent(WatermarkXml(w, text)));
                 first.Inlines.Insert(0, run);
                 EnsureVmlNamespaces(story);
             }

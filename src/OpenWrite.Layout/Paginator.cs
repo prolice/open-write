@@ -169,6 +169,10 @@ public sealed class Page
     public int SectionPageCount { get; set; }
     /// <summary>Traits entre colonnes (abscisse, haut, bas ; points), pour l'affichage.</summary>
     public List<(double X, double Top, double Bottom)> ColumnRules { get; } = new();
+    /// <summary>En-tête et pied placés pour l'affichage : lignes [First, First + Count[ de chaque partie (r:id).</summary>
+    public List<(int First, int Count, string PartId)> Parts { get; } = new();
+    /// <summary>Objets flottants de la page (ancrés dans le corps, puis ceux des en-têtes et pieds), avec leurs zones de texte.</summary>
+    public List<FloatBox> Floats { get; } = new();
     public FlowPosition End { get; set; }
 }
 
@@ -426,8 +430,18 @@ public sealed partial class DocumentLayout
         };
         try
         {
-            if (Find("header") is { } header) PlaceStory(header, g.HeaderDistance, g, result, cache: false);
-            if (Find("footer") is { } footer) PlaceStory(footer, g.PageHeight - g.FooterDistance - StoryHeight(footer, g.ColumnWidth), g, result, cache: false);
+            if (Find("header") is { } header)
+            {
+                int n0 = result.Lines.Count;
+                PlaceStory(header, g.HeaderDistance, g, result, cache: false);
+                result.Parts.Add((n0, result.Lines.Count - n0, HeaderId(page, "header")!));
+            }
+            if (Find("footer") is { } footer)
+            {
+                int n0 = result.Lines.Count;
+                PlaceStory(footer, g.PageHeight - g.FooterDistance - StoryHeight(footer, g.ColumnWidth), g, result, cache: false);
+                result.Parts.Add((n0, result.Lines.Count - n0, HeaderId(page, "footer")!));
+            }
         }
         finally { _lines.FieldValue = null; }
         return result;
@@ -457,37 +471,68 @@ public sealed partial class DocumentLayout
     }
 
     /// <summary>Empile les paragraphes et tableaux d'une histoire à partir de <paramref name="top"/> ; renvoie le bas.</summary>
-    double PlaceStory(Story story, double top, SectionGeometry g, Page into, bool cache)
+    double PlaceStory(Story story, double top, SectionGeometry g, Page into, bool cache, double? left = null, double? width = null)
     {
         double y = top;
+        double x = left ?? g.Left, colW = width ?? g.ColumnWidth;
         foreach (var b in story.Blocks)
         {
             switch (b)
             {
                 case Paragraph p:
-                    var pl = cache ? LayoutOf(p, g.ColumnWidth) : _lines.Layout(p, g.ColumnWidth);
+                    var pl = cache ? LayoutOf(p, colW) : _lines.Layout(p, colW);
                     if (pl.Content.Hidden) break;
                     y += pl.SpaceBefore + BorderOf(pl, "top");
                     for (int l = 0; l < pl.Lines.Count; l++)
                     {
-                        into.Lines.Add(new PlacedLine(pl, l, g.Left, y));
+                        into.Lines.Add(new PlacedLine(pl, l, x, y));
                         y += pl.Lines[l].Height;
                     }
                     y += BorderOf(pl, "bottom") + pl.SpaceAfter;
                     break;
                 case Table t:
-                    foreach (var row in MeasureTable(t, g.Left, g.ColumnWidth).Rows)
+                    foreach (var row in MeasureTable(t, x, colW).Rows)
                     {
                         PlaceRowAt(row, y, into);
                         y += row.Height;
                     }
                     break;
                 case BlockContentControl sdt:
-                    y = PlaceStory(sdt.Content, y, g, into, cache);
+                    y = PlaceStory(sdt.Content, y, g, into, cache, x, colW);
                     break;
             }
         }
         return y;
+    }
+
+    /// <summary>
+    /// Objets flottants des en-têtes et pieds de la page : placés une fois par page, ils écartent aussi le texte du
+    /// corps (logo d'en-tête posé dans la marge du texte, traits du pied d'Horaires).
+    /// </summary>
+    void AddHeaderFloats(Page page)
+    {
+        if (_related is null) return;
+        var g = page.Geometry;
+        foreach (var kind in new[] { "header", "footer" })
+        {
+            if (HeaderId(page, kind) is not { } id || _related(id) is not { } story) continue;
+            double y = kind == "header" ? g.HeaderDistance : g.PageHeight - g.FooterDistance - StoryHeight(story, g.ColumnWidth);
+            foreach (var b in story.Blocks)
+            {
+                if (b is not Paragraph p) { y += b is Table t ? MeasureTable(t, g.Left, g.ColumnWidth).Rows.Sum(r => r.Height) : 0; continue; }
+                var pl = LayoutOf(p, g.ColumnWidth);
+                if (pl.Content.Hidden) continue;
+                y += pl.SpaceBefore;
+                foreach (var (_, o) in pl.Content.Anchors)
+                {
+                    var (fx, fy, fw, fh) = Position(o, page, g, g.Left, g.ColumnWidth, y, y, g.Left);
+                    var box = new FloatBox { Object = o, Anchor = null, PartId = id, X = fx, Y = fy, W = fw, H = fh };
+                    PlaceTextBoxes(box, g);
+                    page.Floats.Add(box);
+                }
+                y += pl.Height + pl.SpaceAfter;
+            }
+        }
     }
 
     /// <summary>Hauteur d'une histoire (en-tête, pied) : paragraphes et rangées de tableau empilés.</summary>
@@ -620,7 +665,7 @@ public sealed partial class DocumentLayout
         if (_related is null || HeaderId(page, "header") is not { } id || _related(id) is not { } story) return null;
         foreach (var p in story.Paragraphs())
             foreach (var r in p.Runs())
-                foreach (var c in r.Content.OfType<OpaqueRunContent>())
+                foreach (var c in r.Content.OfType<DrawingContent>())
                 {
                     var shape = c.Xml.Descendants().FirstOrDefault(e => e.Name.LocalName == "shape" && e.Elements().Any(x => x.Name.LocalName == "textpath"));
                     if (shape is null) continue;
@@ -814,6 +859,7 @@ public sealed partial class DocumentLayout
         var copy = new Page { Geometry = p.Geometry, Start = Fix(p.Start), End = Fix(p.End) };
         copy.Lines.AddRange(p.Lines);
         copy.ColumnRules.AddRange(p.ColumnRules);
+        copy.Floats.AddRange(p.Floats);
         copy.Cells.AddRange(p.Cells);
         copy.NoteIds.AddRange(p.NoteIds);
         copy.ReservedBottom = p.ReservedBottom;
@@ -837,7 +883,18 @@ public sealed partial class DocumentLayout
         public int RegionLines, RegionCells;
         public double ColX => Geo.Left + Geo.Col(Col).X;
         public double ColW => Geo.Col(Col).W;
+        /// <summary>Un objet flottant ancré plus bas recouvre du texte déjà placé : la page est à refaire.</summary>
+        public bool Restart;
+        /// <summary>Pages refaites pour la page en cours (borné).</summary>
+        public int Restarts;
+        /// <summary>État au début de la page (pour la refaire) : position de départ et curseur.</summary>
+        public (FlowPosition Start, SectionGeometry Geo, double Y, bool Empty, bool TopFromBreak, ParagraphLayout? Prev, int Col, double ColTop, bool First) Saved;
+
+        public void Save(FlowPosition start) => Saved = (start, Geo, Y, Empty, TopFromBreak, Prev, Col, ColTop, Page.FirstOfSection);
     }
+
+    /// <summary>Pages refaites au plus pour une même page (objets flottants qui se déplacent l'un l'autre).</summary>
+    const int MaxRestarts = 3;
 
     /// <summary>
     /// Pagine depuis <paramref name="from"/> en ajoutant les pages à <paramref name="pages"/>. Si <paramref name="converge"/>
@@ -857,6 +914,8 @@ public sealed partial class DocumentLayout
         var page0 = new Page { Geometry = geo0, Start = from, FirstOfSection = first0 };
         var c = new Cursor { Geo = geo0, Page = page0, Y = page0.ContentTop, TopFromBreak = pageTopFromBreak, ColTop = page0.ContentTop };
         // reprise au milieu d'une section continue : sa zone de colonnes commence en haut de page (approximation)
+        AddHeaderFloats(page0);
+        c.Save(from);
 
         // colonne suivante (débordement, saut de colonne) ou page suivante ; renvoie l'indice de l'ancienne page si la
         // mise en page converge
@@ -872,6 +931,7 @@ public sealed partial class DocumentLayout
                 return null;
             }
             CloseRegion(c);
+            DropOrphanFloats(c.Page);
             var pos = new FlowPosition(_items[item], item, line, offset);
             c.Page.End = pos;
             pages.Add(c.Page);
@@ -887,11 +947,33 @@ public sealed partial class DocumentLayout
             c.Col = 0;
             c.ColTop = c.Y;
             c.RegionLines = c.RegionCells = 0;
+            AddHeaderFloats(c.Page);
+            c.Restarts = 0;
+            c.Save(pos);
             return null;
         }
 
-        for (int startLine = from.Line; i < _items.Count; i++, startLine = 0)
+        int startLine = from.Line;
+        double startOffset = from.Offset;
+        for (; i < _items.Count; i++, startLine = 0, startOffset = 0)
         {
+            if (c.Restart)
+            {
+                // un objet ancré plus bas recouvre du texte déjà placé : la page est refaite, l'objet connu dès le départ
+                c.Restart = false;
+                c.Restarts++;
+                var known = c.Page.Floats.Where(f => f.Anchor is not null).ToList();
+                var s = c.Saved;
+                c.Page = new Page { Geometry = s.Geo, Start = s.Start, FirstOfSection = s.First };
+                AddHeaderFloats(c.Page);
+                c.Page.Floats.AddRange(known);
+                (c.Geo, c.Y, c.Empty, c.TopFromBreak, c.Prev, c.Col, c.ColTop) = (s.Geo, s.Y, s.Empty, s.TopFromBreak, s.Prev, s.Col, s.ColTop);
+                c.RegionLines = c.RegionCells = 0;
+                if (Trace) Console.WriteLine($"    page refaite ({c.Restarts}) : objet flottant ancré plus bas");
+                i = s.Start.Index;
+                startLine = s.Start.Line;
+                startOffset = s.Start.Offset;
+            }
             var item = _items[i];
             // changement de section : nouvelle page, sauf section continue de même format
             if (startLine == 0 && i > 0 && _items[i - 1].Section != item.Section)
@@ -915,13 +997,15 @@ public sealed partial class DocumentLayout
             }
             int? conv = item.Block switch
             {
-                Table t => PlaceTable(t, i, startLine, i == from.Index ? from.Offset : 0, c, NewPage),
+                Table t => PlaceTable(t, i, startLine, startOffset, c, NewPage),
                 Paragraph p => PlaceParagraph(p, i, startLine, c, NewPage),
                 _ => null,
             };
             if (conv is not null) return conv;
+            if (c.Restart) i--;                 // la boucle repart du début de la page
         }
         CloseRegion(c);
+        DropOrphanFloats(c.Page);
         c.Page.End = new FlowPosition(null, _items.Count, 0);
         pages.Add(c.Page);
         return null;
@@ -961,6 +1045,21 @@ public sealed partial class DocumentLayout
         var lines = c.Page.Lines;
         int start = c.RegionLines, count = lines.Count - start;
         if (count < 2) return;
+        // saut de colonne explicite : la répartition voulue est gardée (Horaires, page 2)
+        for (int k = start; k < lines.Count; k++)
+            if (lines[k].Paragraph.Lines[lines[k].Line].EndKind == LineEnd.ColumnBreak)
+            {
+                // la section suivante commence sous la plus longue des colonnes
+                // (une ligne qui ne porte que le saut de colonne ne compte pas : Horaires, section suivante à 365 pt)
+                for (int j = start; j < lines.Count; j++)
+                {
+                    var lb = lines[j].Paragraph.Lines[lines[j].Line];
+                    if (lb.EndKind == LineEnd.ColumnBreak && lb.End == lb.Start) continue;
+                    c.Y = Math.Max(c.Y, lines[j].Y + lb.Height);
+                }
+                c.Col = 0;
+                return;
+            }
         // suite d'unités : écart au-dessus (dans la même colonne) et hauteur de chaque ligne
         var units = new List<(double Gap, double H)>();
         double prevBottom = c.ColTop, prevX = double.NaN;
@@ -1025,7 +1124,15 @@ public sealed partial class DocumentLayout
         var pl = LayoutOf(p, c.ColW);
         if (pl.Content.Hidden) return null;
         var pf = pl.Format;
-        int n = pl.Lines.Count;
+        // paragraphe vide qui ne porte qu'un saut de section continu : Word le pose au bout de la ligne précédente, sans
+        // hauteur (Horaires, mesuré par COM : marque à la hauteur de la dernière ligne, x = 658 pt)
+        if (startLine == 0 && pl.Content.Text.Length == 0 && pl.Content.Anchors.Count == 0 && _items[i].EndsSection && !c.Empty
+            && _items[i].Section + 1 < Sections.Count && Sections[_items[i].Section + 1].Type == "continuous"
+            && c.Page.Lines.Count > 0 && c.Page.Lines[^1] is var last)
+        {
+            c.Page.Lines.Add(new PlacedLine(pl, 0, last.X, last.Y));
+            return null;
+        }
         double SpaceAtTop() => SuppressSpaceBeforeAtPageTop ? 0 : pl.SpaceBefore;
         if (startLine == 0 && pf.PageBreakBefore && !c.Empty)
             if (newPage(i, 0, fromBreak: true, toColumn: false) is { } k) return k;
@@ -1055,23 +1162,43 @@ public sealed partial class DocumentLayout
         // son espacement (w:space, points) s'ajoutent au-dessus de la première ligne ; en fin de groupe, en dessous
         var (borderTop, borderBottom) = BorderExtents(pl, i);
         c.Y += before + (startLine == 0 ? borderTop : 0);
+        // objets ancrés au paragraphe : placés avant ses lignes (le paragraphe s'habille autour d'eux) ; s'ils recouvrent
+        // du texte déjà placé sur la page, la page est refaite
+        if (startLine == 0 && pl.Content.Anchors.Count > 0
+            && PlaceAnchors(pl, c.Page, c.Geo, c.ColX, c.ColW, c.Y, c.Page.Lines.Count) && c.Restarts < MaxRestarts)
+        {
+            c.Restart = true;
+            return null;
+        }
+        pl = Rewrap(p, pl, c, startLine);
+        int n = pl.Lines.Count;
         int line = startLine;
+        double rowY = c.Y;
         while (line < n)
         {
             var lb = pl.Lines[line];
+            if (lb.SameRow)
+            {
+                // suite de la rangée, de l'autre côté de l'objet
+                c.Page.Lines.Add(new PlacedLine(pl, line, c.ColX, rowY));
+                line++;
+                continue;
+            }
             // une ligne qui ne contient que le saut de page reste en bas de la page : elle ne crée pas de page blanche
             // (Syllabus : titre « Introduction » précédé d'un saut, gardé en page 1 par Word)
-            bool breakOnly = lb.EndKind is LineEnd.PageBreak && lb.End == lb.Start;
+            // (de même un saut de colonne seul : Horaires, « août 2025 » commence par un saut de colonne en bas de page 1)
+            bool breakOnly = lb.EndKind is LineEnd.PageBreak or LineEnd.ColumnBreak && lb.End == lb.Start;
             double notes = NotesHeight(lb, c.Page, c.Geo.ColumnWidth);
-            if (c.Y + lb.FitHeight > c.Page.ContentBottom - notes + BottomTolerance && !c.Empty && !breakOnly)
+            if (c.Y + lb.Gap + lb.FitHeight > c.Page.ContentBottom - notes + BottomTolerance && !c.Empty && !breakOnly)
             {
-                if (Trace) Console.WriteLine($"    coupure : élément {i} ligne {line}/{n}, y {c.Y:0.0} + {lb.FitHeight:0.0} (ligne {lb.Height:0.0}, avant {before:0.0}) > bas {c.Page.ContentBottom:0.0}");
+                if (Trace) Console.WriteLine($"    coupure : élément {i} « {new string(pl.Content.Text.Take(20).Select(ch => ch < ' ' ? '·' : ch).ToArray())} » ligne {line}/{n} ({lb.EndKind}), y {c.Y:0.0} + {lb.FitHeight:0.0} (ligne {lb.Height:0.0}, avant {before:0.0}) > bas {c.Page.ContentBottom:0.0}");
                 int here = line - startLine;           // lignes du paragraphe déjà sur cette page
                 int cut = line;
                 if (pf.WidowControl && n > 1 && here > 0)
                 {
                     if (n - cut == 1) cut--;                                   // veuve : une ligne de plus descend
                     if (cut - startLine == 1 && startLine == 0) cut = 0;       // orpheline : tout descend
+                    while (cut > startLine && pl.Lines[cut].SameRow) cut--;    // une rangée ne se coupe pas
                 }
                 int remove = line - cut;
                 if (remove > 0)
@@ -1085,12 +1212,20 @@ public sealed partial class DocumentLayout
                     }
                     c.Page.Lines.RemoveRange(c.Page.Lines.Count - remove, remove);
                 }
+                // tout le paragraphe descend : ses objets ancrés descendent avec lui
+                bool moveAnchors = cut == 0 && pl.Content.Anchors.Count > 0;
+                if (moveAnchors) c.Page.Floats.RemoveAll(f => ReferenceEquals(f.Anchor, p));
                 if (newPage(i, cut, fromBreak: false) is { } k) return k;
                 if (cut == 0) c.Y += SpaceAtTop();
+                if (moveAnchors) PlaceAnchors(pl, c.Page, c.Geo, c.ColX, c.ColW, c.Y, c.Page.Lines.Count);
+                pl = Rewrap(p, pl, c, cut);
+                n = pl.Lines.Count;
                 line = cut;
                 startLine = cut;
                 continue;
             }
+            c.Y += lb.Gap;
+            rowY = c.Y;
             c.Page.Lines.Add(new PlacedLine(pl, line, c.ColX, c.Y) { Notes = notes });
             if (notes > 0)
             {
@@ -1098,7 +1233,7 @@ public sealed partial class DocumentLayout
                 c.Page.NotesCount += lb.Footnotes!.Count;
                 c.Page.NoteIds.AddRange(lb.Footnotes!);
             }
-            c.Y += lb.Height;
+            c.Y += Math.Max(lb.Height, lb.RowHeight);
             c.Empty = false;
             line++;
             // saut de page dans le paragraphe : la suite (au moins la marque de paragraphe) va à la page suivante
@@ -1106,6 +1241,8 @@ public sealed partial class DocumentLayout
             {
                 if (newPage(i, line, fromBreak: true, toColumn: lb.EndKind == LineEnd.ColumnBreak) is { } k) return k;
                 startLine = line;
+                pl = Rewrap(p, pl, c, line);
+                n = pl.Lines.Count;
             }
         }
         c.Y += borderBottom + pl.SpaceAfter;
@@ -1114,6 +1251,30 @@ public sealed partial class DocumentLayout
         if (n > 0 && pl.Lines[^1].EndKind is LineEnd.PageBreak or LineEnd.ColumnBreak && i + 1 < _items.Count)
             if (newPage(i + 1, 0, fromBreak: true, toColumn: pl.Lines[^1].EndKind == LineEnd.ColumnBreak) is { } k) return k;
         return null;
+    }
+
+    /// <summary>
+    /// Lignes du paragraphe à partir de <paramref name="fromLine"/> habillées autour des objets flottants de la page
+    /// (haut de la ligne au curseur) ; sans objet gênant, la mise en page ordinaire (en cache).
+    /// </summary>
+    ParagraphLayout Rewrap(Paragraph p, ParagraphLayout pl, Cursor c, int fromLine)
+    {
+        var space = c.Page.Floats.Count == 0 ? null : SpaceFor(c.Page, c.Y, c.ColX, c.ColW);
+        if (space is null)
+        {
+            if (!pl.Wrapped) return pl;
+            return fromLine == 0 ? LayoutOf(p, c.ColW) : _lines.Layout(p, c.ColW, default, null, pl, fromLine);
+        }
+        LastParagraphsLaidOut++;
+        return _lines.Layout(p, c.ColW, default, space, fromLine > 0 ? pl : null, fromLine);
+    }
+
+    /// <summary>Objets ancrés à un paragraphe qui n'a finalement aucune ligne sur la page (descendu après coup) : retirés.</summary>
+    static void DropOrphanFloats(Page page)
+    {
+        if (page.Floats.Count == 0) return;
+        var anchors = new HashSet<Paragraph>(page.Lines.Select(l => l.Paragraph.Paragraph), ReferenceEqualityComparer.Instance);
+        page.Floats.RemoveAll(f => f.Anchor is not null && !anchors.Contains(f.Anchor));
     }
 
     /// <summary>

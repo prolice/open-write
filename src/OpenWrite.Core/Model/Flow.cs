@@ -172,7 +172,21 @@ public sealed class BreakContent : RunContent
     public bool CarriageReturn { get; init; }
 }
 
-/// <summary>Contenu de segment non compris (dessin, champ, symbole, note…).</summary>
+/// <summary>
+/// Dessin dans un segment : w:drawing (DrawingML, en ligne ou ancré), w:pict (VML), w:object (OLE), ou
+/// mc:AlternateContent qui en contient un (lot 7). <see cref="Xml"/> est l'élément d'origine dont les contenus de zone
+/// de texte (w:txbxContent) sont vidés : leur texte est dans <see cref="TextBoxes"/>, dans l'ordre du document (zones
+/// imbriquées non comprises : elles sont dans les histoires), et réécrit à leur place à l'enregistrement. Une zone d'un
+/// mc:AlternateContent existe deux fois (Choice DrawingML, Fallback VML) : deux histoires, synchronisées par l'édition.
+/// </summary>
+public sealed class DrawingContent : RunContent
+{
+    public DrawingContent(XElement xml) => Xml = xml;
+    public XElement Xml { get; set; }
+    public List<Story> TextBoxes { get; } = new();
+}
+
+/// <summary>Contenu de segment non compris (champ, symbole, note…).</summary>
 public sealed class OpaqueRunContent : RunContent
 {
     public OpaqueRunContent(XElement xml) => Xml = xml;

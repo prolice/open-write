@@ -129,7 +129,7 @@ public static class CaretGeometry
     {
         if (c.Text[k] == Atom.Object && c.Objects.TryGetValue(k, out var o)) return o.W;
         var st = c.Styles[c.StyleOf[k]];
-        return st.Face.Advance(c.Text[k]) * st.Size + st.Tracking;
+        return st.Width(c.Text[k]);
     }
 
     // ------------------------------------------------------------------ mots

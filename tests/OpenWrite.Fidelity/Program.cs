@@ -21,6 +21,7 @@ using OpenWrite.Docx;
 //                                                                    (word-modele/*.json, tools/word-inspect.ps1)
 //   OpenWrite.Fidelity --table-styles <galerie.docx>                  styles de tableau de la galerie écrits par OpenWrite
 //                                                                    (TableStyleOps) comparés à ceux de Word dans ce fichier
+//   OpenWrite.Fidelity --drawings <dossier .docx>                    dessins lus (DrawingReader) : cadre, position, habillage
 //   OpenWrite.Fidelity --paste-html <doc.docx> <presse-papiers.html> <sortie.docx>
 //                                                                    colle un « HTML Format » (Excel…) à la fin du document,
 //                                                                    comme Coller dans l'application (HtmlTableReader)
@@ -33,6 +34,7 @@ if (args.Length >= 2 && args[0] == "--compare-word") return WordCompare.Run(args
 if (args.Length >= 3 && args[0] == "--formats") return FormatCompare.Export(args[1], args[2]);
 if (args.Length >= 3 && args[0] == "--compare-formats") return FormatCompare.Compare(args[1], args[2]);
 if (args.Length >= 2 && args[0] == "--table-styles") return TableStyleCheck.Run(args[1]);
+if (args.Length >= 2 && args[0] == "--drawings") return DrawingDump.Run(args[1]);
 if (args.Length >= 4 && args[0] == "--paste-html") return PasteHtml.Run(args[1], args[2], args[3]);
 if (args.Length < 2) { Console.Error.WriteLine("Usage : OpenWrite.Fidelity <dossier .docx> <dossier de sortie> | --stress <fichier.docx> <n>"); return 2; }
 return Bench.Run(args[0], args[1]);
@@ -297,6 +299,7 @@ static class Bench
                         foreach (var c in run.Content)
                             if (c is TextContent t) r.ModelChars += t.Value.Length;
                             else if (c is OpaqueRunContent o) Opaque(o.Xml);
+                            else if (c is DrawingContent d) foreach (var box in d.TextBoxes) Cover(box, r);
                         break;
                     case InlineContainer box: Inlines(box.Children); break;
                     case InlineContentControl s: Inlines(s.Content); break;
@@ -716,5 +719,53 @@ static class PasteHtml
         pkg.Save(output, regenerateAll: true);
         Console.WriteLine($"Collé : {fragment.Blocks.Count} bloc(s) → {output}");
         return 0;
+    }
+}
+
+/// <summary>Dessins lus par DrawingReader dans chaque document (mise au point du lot 7).</summary>
+static class DrawingDump
+{
+    public static int Run(string dir)
+    {
+        var files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.docx", SearchOption.AllDirectories) : new[] { dir };
+        int total = 0, unread = 0;
+        foreach (var file in files.OrderBy(f => f))
+        {
+            DocxPackage pkg;
+            try { pkg = DocxPackage.Open(file); } catch { continue; }
+            var sheet = pkg.StyleSheet();
+            foreach (var part in pkg.Stories.Values)
+                foreach (var story in part.Stories())
+                    foreach (var d in Drawings(story))
+                    {
+                        total++;
+                        var o = OpenWrite.Core.Drawing.DrawingReader.Read(d, sheet);
+                        if (o is null) { unread++; Console.WriteLine($"{Path.GetFileName(file)} [{part.Kind}] ILLISIBLE {d.Xml.Name.LocalName}"); continue; }
+                        string Vis(OpenWrite.Core.Drawing.Visual v) => v switch
+                        {
+                            OpenWrite.Core.Drawing.PictureVisual p => $"image {p.ImageId}",
+                            OpenWrite.Core.Drawing.ShapeVisual sh => $"forme {sh.Preset ?? (sh.Paths is not null ? "chemin" : "libre")}{(sh.TextBox >= 0 ? $" texte#{sh.TextBox}" : "")}{(sh.Fill is { } f ? $" fond {f.Kind} {f.Color}" : "")}{(sh.Line is { } l ? $" trait {l.Color} {l.Width:0.##}" : "")}{(sh.WordArt is { } wa ? $" wordart « {wa.Text} »" : "")}",
+                            OpenWrite.Core.Drawing.GroupVisual g => $"groupe [{string.Join(", ", g.Children.Select(c => $"{Vis(c)} @{c.X:0.#},{c.Y:0.#} {c.W:0.#}×{c.H:0.#}"))}]",
+                            OpenWrite.Core.Drawing.FallbackVisual fb => $"repli {fb.Kind}",
+                            _ => "?",
+                        };
+                        var pos = o.Inline ? "en ligne" : $"{o.Wrap} H {o.H.RelativeFrom}:{o.H.Align ?? o.H.Offset.ToString("0.#")} V {o.V.RelativeFrom}:{o.V.Align ?? o.V.Offset.ToString("0.#")}{(o.BehindText ? " derrière" : "")}";
+                        Console.WriteLine($"{Path.GetFileName(file)} [{part.Kind}] {(o.Vml ? "VML " : "")}{o.Width:0.#}×{o.Height:0.#} {pos} : {Vis(o.Root)}{(o.Watermark ? " (filigrane)" : "")}");
+                    }
+        }
+        Console.WriteLine($"{total} dessin(s), {unread} illisible(s)");
+        return unread == 0 ? 0 : 1;
+    }
+
+    static IEnumerable<DrawingContent> Drawings(Story story)
+    {
+        foreach (var p in story.Paragraphs())
+            foreach (var r in p.Runs())
+                foreach (var d in r.Content.OfType<DrawingContent>())
+                {
+                    yield return d;
+                    foreach (var box in d.TextBoxes)
+                        foreach (var inner in Drawings(box)) yield return inner;
+                }
     }
 }

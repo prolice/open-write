@@ -147,17 +147,25 @@ public partial class MainWindow
 
     internal DocumentLayout? CurrentLayout => _layout;
 
-    /// <summary>Image d'un objet en ligne : a:blip/@r:embed → partie image du paquet (corps du document).</summary>
-    ImageSource? ImageOf(System.Xml.Linq.XElement drawing)
+    /// <summary>
+    /// Image d'une relation r:embed (DrawingML) ou r:id (VML) : partie image du corps du document, ou de l'en-tête /
+    /// du pied <paramref name="partId"/> (r:id de la partie dans le document).
+    /// </summary>
+    ImageSource? ImageOf(string? partId, string rid)
     {
-        var blip = drawing.Descendants().FirstOrDefault(e => e.Name.LocalName == "blip");
-        var rid = blip?.Attributes().FirstOrDefault(a => a.Name.LocalName == "embed")?.Value;
-        if (rid is null || _pkg?.Main is not { } main) return null;
-        if (_images.TryGetValue(rid, out var cached)) return cached;
+        if (_pkg?.Main is not { } main) return null;
+        var partName = main.PartName;
+        if (partId is not null)
+        {
+            if (!_pkg.Relationships(main.PartName).TryGetValue(partId, out var hrel) || hrel.External) return null;
+            partName = hrel.Target;
+        }
+        var key = partName + "|" + rid;
+        if (_images.TryGetValue(key, out var cached)) return cached;
         ImageSource? img = null;
         try
         {
-            if (_pkg.Relationships(main.PartName).TryGetValue(rid, out var rel) && !rel.External && _pkg.Find(rel.Target) is { } entry)
+            if (_pkg.Relationships(partName).TryGetValue(rid, out var rel) && !rel.External && _pkg.Find(rel.Target) is { } entry)
             {
                 var bmp = new BitmapImage();
                 bmp.BeginInit();
@@ -169,7 +177,7 @@ public partial class MainWindow
             }
         }
         catch (Exception) { img = null; }      // format non pris en charge par WPF (EMF, WMF…) : cadre gris
-        _images[rid] = img;
+        _images[key] = img;
         return img;
     }
 

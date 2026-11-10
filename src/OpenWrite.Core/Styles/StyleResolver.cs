@@ -59,6 +59,8 @@ public sealed record RunFormat
     public string? VerticalAlign { get; init; }
     /// <summary>Espacement des caractères (w:spacing), en twips.</summary>
     public int CharacterSpacing { get; init; }
+    /// <summary>Échelle horizontale des caractères (w:w), en pour cent.</summary>
+    public int Scale { get; init; } = 100;
     public string? Language { get; init; }
     public required XElement Effective { get; init; }
 }
@@ -322,6 +324,7 @@ public sealed class StyleResolver
             Highlight = rPr.Element(W + "highlight")?.Attribute(W + "val")?.Value is { } hl and not "none" ? hl : null,
             VerticalAlign = rPr.Element(W + "vertAlign")?.Attribute(W + "val")?.Value is { } va and not "baseline" ? va : null,
             CharacterSpacing = Int(rPr.Element(W + "spacing"), "val") ?? 0,
+            Scale = Int(rPr.Element(W + "w"), "val") is { } sc and > 0 and <= 600 ? sc : 100,
             Language = rPr.Element(W + "lang")?.Attribute(W + "val")?.Value,
             Effective = rPr,
         };

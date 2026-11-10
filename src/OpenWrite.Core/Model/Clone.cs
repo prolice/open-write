@@ -136,9 +136,22 @@ public static class FlowClone
             TabContent => new TabContent(),
             BreakContent br => new BreakContent { CarriageReturn = br.CarriageReturn },
             OpaqueRunContent o => new OpaqueRunContent(new XElement(o.Xml)),
+            DrawingContent d => CloneDrawing(d),
             _ => throw new InvalidOperationException(rc.GetType().Name),
         };
         CopyAttrs(rc.Attributes, c.Attributes);
+        return c;
+    }
+
+    static DrawingContent CloneDrawing(DrawingContent d)
+    {
+        var c = new DrawingContent(new XElement(d.Xml));
+        foreach (var box in d.TextBoxes)
+        {
+            var s = new Story();
+            s.Blocks.AddRange(box.Blocks.Select(b => b.Clone()));
+            c.TextBoxes.Add(s);
+        }
         return c;
     }
 

@@ -264,7 +264,7 @@ public sealed class PagesView : FrameworkElement
                 {
                     var st = c.Styles[c.StyleOf[k]];
                     double adv = c.Text[k] == Atom.Object && c.Objects.TryGetValue(k, out var o) ? o.W
-                        : st.Face.Advance(c.Text[k]) * st.Size + st.Tracking + (c.Text[k] == ' ' ? box.ExtraPerSpace : 0);
+                        : st.Width(c.Text[k]) + (c.Text[k] == ' ' ? box.ExtraPerSpace : 0);
                     if (c.Text[k] == ' ') spaces++;
                     if (at.X >= cx && at.X < cx + adv) return (l, k);
                     cx += adv;

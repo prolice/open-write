@@ -126,16 +126,40 @@ public partial class MainWindow
     /// Contenu texte d'un format du presse-papiers : chaîne, ou flux / octets selon le programme qui l'a déposé ; juste
     /// après une copie, la donnée annoncée peut manquer ou être vide un instant (quelques essais).
     /// </summary>
-    static string? ReadString(string format, Encoding bytesEncoding)
+    /// <summary>Formats du presse-papiers ; vide après quelques essais s'il reste inaccessible.</summary>
+    static HashSet<string> Formats()
     {
         for (int attempt = 0; attempt < 6; attempt++)
         {
-            switch (Clipboard.GetData(format))
+            try
             {
-                case string { Length: > 0 } str: return str;
-                case System.IO.MemoryStream ms: return bytesEncoding.GetString(ms.ToArray()).TrimEnd('\0');
-                case byte[] bytes: return bytesEncoding.GetString(bytes).TrimEnd('\0');
+                if (Clipboard.GetDataObject()?.GetFormats() is { Length: > 0 } f) return new HashSet<string>(f, StringComparer.Ordinal);
             }
+            catch (System.Runtime.InteropServices.ExternalException) { }
+            Thread.Sleep(30);
+        }
+        return new HashSet<string>();
+    }
+
+    static string? ReadString(string format, Encoding bytesEncoding)
+    {
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            string? value = null;
+            try
+            {
+                value = Clipboard.GetData(format) switch
+                {
+                    string str => str,
+                    System.IO.MemoryStream ms => bytesEncoding.GetString(ms.ToArray()),
+                    byte[] bytes => bytesEncoding.GetString(bytes),
+                    _ => null,
+                };
+            }
+            catch (System.Runtime.InteropServices.ExternalException) { }
+            // juste après une écriture, le presse-papiers peut rendre un tampon de la bonne taille rempli de zéros
+            value = value?.TrimEnd('\0');
+            if (value is { Length: > 0 } && value[0] != '\0') return value;
             Thread.Sleep(30);
         }
         return null;
@@ -153,25 +177,28 @@ public partial class MainWindow
         string? text = null;
         string source = "texte";
         {
-            if (!textOnly && Clipboard.ContainsData(InternalFormat) && Clipboard.GetData(InternalFormat) is string token
+            // formats présents, lus une fois (le presse-papiers peut être momentanément occupé juste après une écriture)
+            var formats = Formats();
+            bool Has(string f) => formats.Contains(f);
+            if (!textOnly && Has(InternalFormat) && Clipboard.GetData(InternalFormat) is string token
                 && _internalClip is { } clip && clip.Token == token && ReferenceEquals(clip.Package, _pkg))
             {
                 fragment = clip.Fragment;
                 source = "OpenWrite";
             }
             // tableau HTML (Excel, page web, autre traitement de texte) : un vrai tableau, avant le RTF qui le met à plat
-            else if (!textOnly && Clipboard.ContainsData(DataFormats.Html) && ReadString(DataFormats.Html, Encoding.UTF8) is { Length: > 0 } tableHtml
+            else if (!textOnly && Has(DataFormats.Html) && ReadString(DataFormats.Html, Encoding.UTF8) is { Length: > 0 } tableHtml
                 && HtmlTable(FixHtmlEncoding(tableHtml)) is { } pasted)
             {
                 fragment = pasted;
                 source = "tableau HTML";
             }
-            else if (!textOnly && Clipboard.ContainsData(DataFormats.Rtf) && ReadString(DataFormats.Rtf, Encoding.Latin1) is { Length: > 0 } rtf)
+            else if (!textOnly && Has(DataFormats.Rtf) && ReadString(DataFormats.Rtf, Encoding.Latin1) is { Length: > 0 } rtf)
             {
                 var paras = RtfReader.Read(rtf, out var mark);
                 if (paras.Count > 0) { fragment = Fragments.Build(paras, mark, Body?.Paragraphs().FirstOrDefault()?.Props.Ns); source = "RTF"; }
             }
-            else if (!textOnly && Clipboard.ContainsData(DataFormats.Html) && ReadString(DataFormats.Html, Encoding.UTF8) is { Length: > 0 } html)
+            else if (!textOnly && Has(DataFormats.Html) && ReadString(DataFormats.Html, Encoding.UTF8) is { Length: > 0 } html)
             {
                 var paras = HtmlReader.Read(HtmlReader.Fragment(FixHtmlEncoding(html)), out var mark);
                 if (paras.Count > 0) { fragment = Fragments.Build(paras, mark, Body?.Paragraphs().FirstOrDefault()?.Props.Ns); source = "HTML"; }

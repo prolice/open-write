@@ -405,7 +405,7 @@ public static class SelfTest
               && FieldIndex.Build(hdrStory).All.Any(f => f.Code.Trim() == "PAGE"), "En-tête : texte et champ PAGE, retour au document");
         // filigrane (dans les en-têtes, un seul Ctrl+Z), couleur de page
         bool HasWatermark() => w.PackageForTest!.Stories.Values.Where(p => p.Kind == "header").SelectMany(p => p.Stories()).SelectMany(st => st.Paragraphs())
-            .SelectMany(p => p.Runs()).SelectMany(r => r.Content).OfType<OpaqueRunContent>().Any(o => o.Xml.Descendants().Any(e => e.Name.LocalName == "textpath"));
+            .SelectMany(p => p.Runs()).SelectMany(r => r.Content).OfType<DrawingContent>().Any(o => o.Xml.Descendants().Any(e => e.Name.LocalName == "textpath"));
         w.SetWatermark("BROUILLON");
         Check(HasWatermark(), "Filigrane posé dans l'en-tête");
         ApplicationCommands.Undo.Execute(null, w);

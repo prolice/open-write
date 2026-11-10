@@ -163,7 +163,7 @@ public static class StoryMapping
         {
             if (node == rPr) continue;
             if (node is not XElement x) { c.Drop(node); continue; }
-            RunContent item = x.Name.Namespace != c.W ? new OpaqueRunContent(new XElement(x)) : x.Name.LocalName switch
+            RunContent item = IsDrawing(x, c) ? ReadDrawing(x, c) : x.Name.Namespace != c.W ? new OpaqueRunContent(new XElement(x)) : x.Name.LocalName switch
             {
                 "t" => new TextContent { Value = x.Value, LoadedValue = x.Value },
                 "delText" => new TextContent { Value = x.Value, LoadedValue = x.Value, Deleted = true },
@@ -175,10 +175,59 @@ public static class StoryMapping
                 "cr" => new BreakContent { CarriageReturn = true },
                 _ => new OpaqueRunContent(new XElement(x)),
             };
-            if (item is not OpaqueRunContent and not FieldChar) item.Attributes.AddRange(Attrs(x));
+            if (item is not OpaqueRunContent and not FieldChar and not DrawingContent) item.Attributes.AddRange(Attrs(x));
             r.Content.Add(item);
         }
         return r;
+    }
+
+    static readonly XNamespace Mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+
+    /// <summary>Dessin dans un segment : w:drawing, w:pict, w:object, ou mc:AlternateContent qui en contient un.</summary>
+    static bool IsDrawing(XElement x, Ctx c) =>
+        x.Name.Namespace == c.W && x.Name.LocalName is "drawing" or "pict" or "object"
+        || x.Name == Mc + "AlternateContent" && x.Elements().SelectMany(e => e.Elements()).Any(e => e.Name.Namespace == c.W && e.Name.LocalName is "drawing" or "pict" or "object");
+
+    /// <summary>Contenus de zone de texte (w:txbxContent) qui ne sont pas dans une autre zone, dans l'ordre du document.</summary>
+    internal static List<XElement> TextBoxContents(XElement drawing, XNamespace w)
+    {
+        var res = new List<XElement>();
+        void Walk(XElement e)
+        {
+            foreach (var ch in e.Elements())
+            {
+                if (ch.Name == w + "txbxContent") res.Add(ch);
+                else Walk(ch);
+            }
+        }
+        Walk(drawing);
+        return res;
+    }
+
+    static DrawingContent ReadDrawing(XElement x, Ctx c)
+    {
+        var xml = new XElement(x);
+        var d = new DrawingContent(xml);
+        foreach (var box in TextBoxContents(xml, c.W))
+        {
+            var story = new Story();
+            ReadBlocks(box, story, c, isBody: false);
+            d.TextBoxes.Add(story);
+            box.RemoveNodes();
+        }
+        return d;
+    }
+
+    static XElement WriteDrawing(DrawingContent d, XNamespace w)
+    {
+        var xml = new XElement(d.Xml);
+        var boxes = TextBoxContents(xml, w);
+        for (int i = 0; i < boxes.Count && i < d.TextBoxes.Count; i++)
+        {
+            boxes[i].RemoveNodes();
+            boxes[i].Add(WriteBlocks(d.TextBoxes[i], w));
+        }
+        return xml;
     }
 
     static Table ReadTable(XElement e, Ctx c)
@@ -331,6 +380,7 @@ public static class StoryMapping
     static XElement WriteRunContent(RunContent c, XNamespace w)
     {
         if (c is OpaqueRunContent o) return new XElement(o.Xml);
+        if (c is DrawingContent d) return WriteDrawing(d, w);
         if (c is FieldChar fc) return new XElement(w + "fldChar", Copy(fc.Attributes), fc.Children.Select(ch => new XElement(ch)));
         var e = c switch
         {

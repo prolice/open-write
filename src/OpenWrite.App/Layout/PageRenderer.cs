@@ -14,11 +14,17 @@ namespace OpenWrite.App.Layout;
 /// </summary>
 public sealed class PageRenderer
 {
-    readonly Func<XElement, ImageSource?> _image;
+    readonly Func<string?, string, ImageSource?> _image;
     static readonly GlyphTypeface? Fallback = LoadFallback();
 
-    /// <param name="image">Image d'un objet en ligne (w:drawing), ou null (un cadre gris est dessiné).</param>
-    public PageRenderer(Func<XElement, ImageSource?> image) => _image = image;
+    /// <param name="image">
+    /// Image d'une relation (r:embed) d'une partie : null = corps du document, sinon r:id de l'en-tête ou du pied ; null
+    /// si elle manque ou n'est pas lisible (un cadre gris est dessiné).
+    /// </param>
+    public PageRenderer(Func<string?, string, ImageSource?> image) => _image = image;
+
+    /// <summary>Partie (en-tête, pied) des lignes en cours de dessin : ses images ; null = corps.</summary>
+    string? _part;
 
     /// <summary>Marques de mise en forme (Ctrl+Maj+8) : ¶, espaces, tabulations, retours à la ligne, sauts de page.</summary>
     public bool ShowMarks { get; set; }
@@ -39,11 +45,24 @@ public sealed class PageRenderer
         if (layout.Watermark(page) is { } wm) DrawWatermark(dc, page, wm);
         DrawPageBorders(dc, page);
         DrawLineNumbers(dc, page, layout);
-        if (layout.HeaderFooter(page, count) is { } hf) DrawContent(dc, hf, header: !HeaderMode);
+        // en-têtes et pieds sous le corps (objets derrière le texte, texte, autres objets), puis le corps de même
+        DrawFloats(dc, page, f => f.PartId is not null && f.Object.BehindText);
+        if (layout.HeaderFooter(page, count) is { } hf)
+        {
+            foreach (var (first, n, part) in hf.Parts)
+            {
+                _part = part;
+                DrawContent(dc, hf, header: !HeaderMode, first, n);
+            }
+            _part = null;
+        }
+        DrawFloats(dc, page, f => f.PartId is not null && !f.Object.BehindText);
         // édition d'un en-tête : le corps est grisé, les limites de l'en-tête et du pied sont tracées (comme Word)
         if (HeaderMode) dc.PushOpacity(0.4);
+        DrawFloats(dc, page, f => f.PartId is null && f.Object.BehindText);
         DrawContent(dc, page, header: false);
         if (layout.Notes(page) is { } notes) DrawContent(dc, notes, header: false);
+        DrawFloats(dc, page, f => f.PartId is null && !f.Object.BehindText);
         if (HeaderMode)
         {
             dc.Pop();
@@ -161,16 +180,45 @@ public sealed class PageRenderer
 
     static readonly Brush HeaderInk = Freeze(new SolidColorBrush(Color.FromArgb(0xFF, 0x60, 0x60, 0x60)));
 
-    void DrawContent(DrawingContext dc, Page page, bool header)
+    void DrawContent(DrawingContext dc, Page page, bool header, int first = 0, int count = -1)
     {
-        foreach (var cell in page.Cells) DrawCell(dc, cell);
-        // traits entre colonnes (w:cols w:sep)
-        foreach (var (x, top, bottom) in page.ColumnRules) dc.DrawLine(RulePen, new Point(x, top), new Point(x, bottom));
-        DrawParagraphBoxes(dc, page);
-        foreach (var line in page.Lines)
+        if (count < 0)
         {
+            foreach (var cell in page.Cells) DrawCell(dc, cell);
+            // traits entre colonnes (w:cols w:sep)
+            foreach (var (x, top, bottom) in page.ColumnRules) dc.DrawLine(RulePen, new Point(x, top), new Point(x, bottom));
+            DrawParagraphBoxes(dc, page);
+        }
+        else if (first == 0) foreach (var cell in page.Cells) DrawCell(dc, cell);
+        int end = count < 0 ? page.Lines.Count : Math.Min(page.Lines.Count, first + count);
+        for (int k = first; k < end; k++)
+        {
+            var line = page.Lines[k];
             DrawLine(dc, line, header ? HeaderInk : null);
             if (ShowMarks) DrawMarks(dc, line);
+        }
+    }
+
+    /// <summary>Objets flottants de la page choisis par <paramref name="which"/>, dans l'ordre d'empilement, avec le texte de leurs zones.</summary>
+    void DrawFloats(DrawingContext dc, Page page, Func<FloatBox, bool> which)
+    {
+        foreach (var f in page.Floats.Where(which).OrderBy(f => f.Object.Z))
+        {
+            var part = f.PartId;
+            bool cellsDrawn = false;
+            DrawingRenderer.Draw(dc, f.Object, f.X, f.Y, id => _image(part, id), box =>
+            {
+                if (!cellsDrawn) { foreach (var cell in f.TextCells) DrawCell(dc, cell); cellsDrawn = true; }
+                var saved = _part;
+                _part = part;
+                foreach (var (b, line) in f.TextLines)
+                    if (b == box)
+                    {
+                        DrawLine(dc, line, null);
+                        if (ShowMarks) DrawMarks(dc, line);
+                    }
+                _part = saved;
+            });
         }
     }
 
@@ -395,9 +443,14 @@ public sealed class PageRenderer
                     Flush();
                     if (c.Objects.TryGetValue(k, out var size))
                     {
-                        var rect = new Rect(cx, baseline - size.H, Math.Max(0.1, size.W), Math.Max(0.1, size.H));
-                        if (c.ObjectXml.TryGetValue(k, out var xml) && _image(xml) is { } img) dc.DrawImage(img, rect);
-                        else dc.DrawRectangle(Freeze(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xEE, 0xF1, 0xF6))), new Pen(Brushes.LightGray, 0.5), rect);
+                        if (c.Drawings.TryGetValue(k, out var obj))
+                        {
+                            // dessin en ligne posé sur la ligne de base ; marges d'effet autour du cadre
+                            var part = _part;
+                            DrawingRenderer.Draw(dc, obj, cx + obj.Effect.L, baseline - size.H + obj.Effect.T, id => _image(part, id));
+                        }
+                        else dc.DrawRectangle(Freeze(new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xEE, 0xF1, 0xF6))), new Pen(Brushes.LightGray, 0.5),
+                            new Rect(cx, baseline - size.H, Math.Max(0.1, size.W), Math.Max(0.1, size.H)));
                         cx += size.W;
                     }
                     continue;
@@ -411,7 +464,7 @@ public sealed class PageRenderer
             if (rf.Underline is not null and not "none")
             {
                 double uy = baseline + size0 * 0.12;
-                dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, uy), new Point(x + width - (text.EndsWith(" ") ? st.Face.Advance(' ') * st.Size + extra : 0), uy));
+                dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, uy), new Point(x + width - (text.EndsWith(" ") ? st.Width(' ') + extra : 0), uy));
                 if (rf.Underline == "double") dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, uy + size0 * 0.1), new Point(x + width, uy + size0 * 0.1));
             }
             if (rf.Strike || rf.DoubleStrike)
@@ -435,14 +488,20 @@ public sealed class PageRenderer
         void Flush()
         {
             if (glyphs.Count > 0 && face is not null)
+            {
+                // échelle horizontale (w:w) : glyphes étirés autour du début du morceau, avances ramenées d'autant
+                bool scaled = Math.Abs(st.Scale - 1) > 1e-6;
+                if (scaled) dc.PushTransform(new ScaleTransform(st.Scale, 1, runStart, 0));
                 dc.DrawGlyphRun(brush, new GlyphRun(face.Typeface, 0, false, st.Size, 1.0f, glyphs.ToArray(), new Point(runStart, baseline),
-                    advances.ToArray(), null, null, null, null, null, null));
+                    scaled ? advances.Select(a => a / st.Scale).ToArray() : advances.ToArray(), null, null, null, null, null, null));
+                if (scaled) dc.Pop();
+            }
             glyphs.Clear();
             advances.Clear();
         }
         foreach (var ch in text)
         {
-            double adv = st.Face.Advance(ch) * st.Size + st.Tracking + (ch == ' ' ? extraPerSpace : 0);
+            double adv = st.Width(ch) + (ch == ' ' ? extraPerSpace : 0);
             if (face?.Glyph(ch) is { } g)
             {
                 if (glyphs.Count == 0) runStart = x;

@@ -10,4 +10,9 @@
     <InternalsVisibleTo Include="OpenWrite.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- formes prédéfinies DrawingML (ECMA-376), lues par Drawing/ShapeGeometry -->
+    <EmbeddedResource Include="Drawing\presetShapeDefinitions.xml" />
+  </ItemGroup>
+
 </Project>

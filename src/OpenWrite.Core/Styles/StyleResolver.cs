@@ -76,7 +76,8 @@ public sealed record RunFormat
 ///   (OU exclusif : gras dans le style de paragraphe ET dans le style de caractère = pas gras) ; la mise en forme directe impose sa valeur.</item>
 /// <item>Polices et couleurs du thème résolues (w:clrSchemeMapping, w:themeTint / w:themeShade en luminance TSL).</item>
 /// </list>
-/// Les mises en forme conditionnelles des styles de tableau (première ligne, bandes…) viennent avec les tableaux (lot 6).
+/// Styles de tableau (lot 6) : le niveau « tableau » comprend les mises en forme conditionnelles (ligne d'en-tête, bandes…)
+/// des régions de la cellule (<see cref="CellStyle"/>, <see cref="TableLevel"/>).
 /// Le résolveur met en cache les fusions de styles ; il est à recréer quand les styles changent (lot 4).
 /// </summary>
 public sealed class StyleResolver
@@ -100,8 +101,11 @@ public sealed class StyleResolver
 
     // ================================================================ paragraphe
 
-    /// <summary>Propriétés de paragraphe résolues ; <paramref name="tableStyleId"/> = style du tableau qui contient le paragraphe.</summary>
-    public ParagraphFormat Paragraph(Paragraph p, string? tableStyleId = null)
+    /// <summary>
+    /// Propriétés de paragraphe résolues ; <paramref name="cell"/> = style du tableau qui contient le paragraphe et régions
+    /// de sa cellule (mise en forme conditionnelle ; une simple chaîne = identifiant du style, sans régions).
+    /// </summary>
+    public ParagraphFormat Paragraph(Paragraph p, CellStyle cell = default)
     {
         var styleId = ParagraphStyleId(p);
         var direct = p.Props.Element;
@@ -119,18 +123,18 @@ public sealed class StyleResolver
         //   (liste niveau 2, w:left=1788) → Word 0.
         var lvlPPr = numId > 0 ? _s.ListLevel(numId, ilvl)?.Element(W + "pPr") : null;
         bool dropStyleIndent = directNumId == 0 && styleNumId is > 0;
-        var acc = MergeParagraph(styleId, tableStyleId, direct, lvlPPr, dropStyleIndent);
+        var acc = MergeParagraph(styleId, cell, direct, lvlPPr, dropStyleIndent);
         return ToParagraphFormat(acc, styleId, numId, ilvl);
     }
 
     string? ParagraphStyleId(Paragraph p) =>
         p.Props.Val("pStyle") is { } id && _s.Style(id) is not null ? id : _s.DefaultStyle("paragraph")?.Attribute(W + "styleId")?.Value;
 
-    XElement MergeParagraph(string? styleId, string? tableStyleId, XElement? direct, XElement? numbering, bool dropStyleIndent = false)
+    XElement MergeParagraph(string? styleId, CellStyle cell, XElement? direct, XElement? numbering, bool dropStyleIndent = false)
     {
         var acc = new XElement(W + "pPr");
         Merge(acc, _s.DefaultParagraphProps);
-        Merge(acc, StyleProps(TableStyle(tableStyleId)).PPr);
+        Merge(acc, TableLevel(cell).PPr);
         var style = StyleProps(styleId).PPr;
         if (dropStyleIndent && style is not null)
         {
@@ -148,9 +152,57 @@ public sealed class StyleResolver
         return acc;
     }
 
-    string? TableStyle(string? tableStyleId) =>
+    /// <summary>Style de tableau effectif : celui demandé s'il existe, sinon le style de tableau par défaut (« Tableau Normal »).</summary>
+    public string? TableStyle(string? tableStyleId) =>
         tableStyleId is not null && _s.Style(tableStyleId) is not null ? tableStyleId
         : tableStyleId is null ? null : _s.DefaultStyle("table")?.Attribute(W + "styleId")?.Value;
+
+    readonly Dictionary<(string, TableRegion), (XElement? PPr, XElement? RPr, XElement? TcPr)> _tableCache = new();
+
+    /// <summary>
+    /// Niveau « style de tableau » d'un paragraphe de cellule : pPr / rPr / tcPr du style (chaîne basedOn), puis ceux de
+    /// ses mises en forme conditionnelles (w:tblStylePr) pour les régions de la cellule, dans l'ordre de
+    /// <see cref="TableStyles.Order"/> (la suivante l'emporte ; à l'intérieur du niveau, pas d'OU exclusif).
+    /// </summary>
+    public (XElement? PPr, XElement? RPr, XElement? TcPr) TableLevel(CellStyle cell)
+    {
+        var id = TableStyle(cell.TableStyleId);
+        if (id is null) return (null, null, null);
+        if (_tableCache.TryGetValue((id, cell.Regions), out var cached)) return cached;
+        var chain = _s.Chain(id);
+        XElement? pPr = null, rPr = null, tcPr = null;
+        void Layer(XElement? holder)
+        {
+            if (holder is null) return;
+            if (holder.Element(W + "pPr") is { } sp) Merge(pPr ??= new XElement(W + "pPr"), sp);
+            if (holder.Element(W + "rPr") is { } sr) MergeRun(rPr ??= new XElement(W + "rPr"), sr);
+            if (holder.Element(W + "tcPr") is { } tc) Merge(tcPr ??= new XElement(W + "tcPr"), tc);
+        }
+        foreach (var st in chain)
+        {
+            Layer(st);
+            Layer(st.Elements(W + "tblStylePr").FirstOrDefault(x => x.Attribute(W + "type")?.Value == "wholeTable"));
+        }
+        foreach (var (region, type) in TableStyles.Order)
+            if ((cell.Regions & region) != 0)
+                foreach (var st in chain)
+                    Layer(st.Elements(W + "tblStylePr").FirstOrDefault(x => x.Attribute(W + "type")?.Value == type));
+        return _tableCache[(id, cell.Regions)] = (pPr, rPr, tcPr);
+    }
+
+    /// <summary>
+    /// Propriétés de tableau (w:tblPr) du style et de sa chaîne basedOn, sans celles du tableau lui-même : bordures,
+    /// marges de cellule, retrait, alignement, taille des bandes.
+    /// </summary>
+    public XElement? TableStyleProps(string? tableStyleId)
+    {
+        var id = TableStyle(tableStyleId);
+        if (id is null) return null;
+        XElement? acc = null;
+        foreach (var st in _s.Chain(id))
+            if (st.Element(W + "tblPr") is { } tp) Merge(acc ??= new XElement(W + "tblPr"), tp);
+        return acc;
+    }
 
     ParagraphFormat ToParagraphFormat(XElement pPr, string? styleId, int numId, int ilvl)
     {
@@ -173,7 +225,9 @@ public sealed class StyleResolver
             KeepNext = Flag(pPr, "keepNext"),
             KeepLines = Flag(pPr, "keepLines"),
             PageBreakBefore = Flag(pPr, "pageBreakBefore"),
-            WidowControl = Flag(pPr, "widowControl"),
+            // absent : actif (Word ; ECMA-376 dit l'inverse) — vérifié par COM, ParagraphFormat.WidowControl vrai pour tous les
+            // paragraphes sans w:widowControl (Annexe 286/286, tableau long : une rangée coupée à une ligne passe à la page suivante)
+            WidowControl = pPr.Element(W + "widowControl") is not { } wc || IsOn(wc),
             ContextualSpacing = Flag(pPr, "contextualSpacing"),
             OutlineLevel = Int(pPr.Element(W + "outlineLvl"), "val") is { } ol and < 9 ? ol : null,
             NumId = numId,
@@ -185,32 +239,32 @@ public sealed class StyleResolver
     // ================================================================ caractère
 
     /// <summary>Propriétés d'un segment du paragraphe.</summary>
-    public RunFormat Run(Paragraph p, Run r, string? tableStyleId = null) => ResolveRun(p, r.Props.Element, r.Props.Val("rStyle"), tableStyleId);
+    public RunFormat Run(Paragraph p, Run r, CellStyle cell = default) => ResolveRun(p, r.Props.Element, r.Props.Val("rStyle"), cell);
 
     /// <summary>Propriétés de la marque de paragraphe (pPr/rPr) : taille de la ligne d'un paragraphe vide.</summary>
-    public RunFormat ParagraphMark(Paragraph p, string? tableStyleId = null)
+    public RunFormat ParagraphMark(Paragraph p, CellStyle cell = default)
     {
         var mark = p.Props.Get("rPr");
-        return ResolveRun(p, mark, mark?.Element(W + "rStyle")?.Attribute(W + "val")?.Value, tableStyleId);
+        return ResolveRun(p, mark, mark?.Element(W + "rStyle")?.Attribute(W + "val")?.Value, cell);
     }
 
     /// <summary>Propriétés du numéro ou de la puce d'un paragraphe de liste (w:lvl/w:rPr par-dessus la marque de paragraphe).</summary>
-    public RunFormat? ListMarker(Paragraph p, string? tableStyleId = null)
+    public RunFormat? ListMarker(Paragraph p, CellStyle cell = default)
     {
-        var pf = Paragraph(p, tableStyleId);
+        var pf = Paragraph(p, cell);
         var lvl = _s.ListLevel(pf.NumId, pf.ListLevel);
         if (lvl is null) return null;
-        var mark = ParagraphMark(p, tableStyleId).Effective;
+        var mark = ParagraphMark(p, cell).Effective;
         var acc = new XElement(mark);
         MergeRun(acc, lvl.Element(W + "rPr"));
         return ToRunFormat(acc, null);
     }
 
-    RunFormat ResolveRun(Paragraph p, XElement? direct, string? charStyleId, string? tableStyleId)
+    RunFormat ResolveRun(Paragraph p, XElement? direct, string? charStyleId, CellStyle cell)
     {
         var pStyle = ParagraphStyleId(p);
         if (charStyleId is not null && _s.Style(charStyleId) is null) charStyleId = null;
-        var tbl = StyleProps(TableStyle(tableStyleId)).RPr;
+        var tbl = TableLevel(cell).RPr;
         var para = StyleProps(pStyle).RPr;
         var chr = StyleProps(charStyleId).RPr;
 

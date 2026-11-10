@@ -4,8 +4,8 @@
 # - Les .docx sont ouverts en LECTURE SEULE et refermés sans enregistrer ; une instance de Word par document.
 # - Sortie : <nom>.json = liste { page, text } : les 60 premiers caractères du corps de chaque page (sans en-têtes,
 #   pieds ni zones de texte), d'après Range.GoTo(wdGoToPage) ;
-#   <nom>.paragraphes.json = liste { text, page, y } : page et position verticale (points depuis le haut de la page,
-#   haut de la première ligne) de chaque paragraphe du corps, cellules de tableau comprises.
+#   <nom>.paragraphes.json = liste { text, page, y, x } : page, position verticale (points depuis le haut de la page,
+#   haut de la première ligne) et horizontale (premier caractère) de chaque paragraphe du corps, cellules de tableau comprises.
 param(
     [Parameter(Mandatory)][string]$Source,
     [Parameter(Mandatory)][string]$Dest,
@@ -38,6 +38,7 @@ if ($One) {
                 text = [string]$r.Text.Substring(0, [Math]::Min(40, $r.Text.Length))
                 page = [int]$c.Information(3)                              # wdActiveEndPageNumber
                 y = [double]$c.Information(6)                              # wdVerticalPositionRelativeToPage
+                x = [double]$c.Information(5)                              # wdHorizontalPositionRelativeToPage
             })
         }
         $pjson = [string](ConvertTo-Json -InputObject $paras.ToArray() -Depth 3)

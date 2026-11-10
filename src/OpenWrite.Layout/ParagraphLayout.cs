@@ -85,6 +85,8 @@ public sealed class LineBox
     public double ExtraPerSpace { get; init; }
     /// <summary>Notes de bas de page appelées sur la ligne (w:id).</summary>
     public List<string>? Footnotes { get; set; }
+    /// <summary>Fin du texte de la ligne avant alignement (retrait gauche compris, sans les espaces de fin), points.</summary>
+    public double Ink { get; init; }
 }
 
 /// <summary>Paragraphe découpé en lignes pour une largeur donnée.</summary>
@@ -94,6 +96,8 @@ public sealed class ParagraphLayout
     public required ParagraphFormat Format { get; init; }
     public required ParagraphContent Content { get; init; }
     public required double Width { get; init; }
+    /// <summary>Style du tableau et régions de la cellule qui contient le paragraphe (default hors tableau).</summary>
+    public CellStyle Cell { get; init; }
     public List<LineBox> Lines { get; } = new();
     /// <summary>Puce ou numéro de liste, posé avant la première ligne.</summary>
     public (string Text, TextStyle Style, double X)? Marker { get; init; }
@@ -169,7 +173,7 @@ public sealed class ParagraphLayouter
 
     // ------------------------------------------------------------------ texte affiché
 
-    public ParagraphContent Content(Paragraph p, string? tableStyle)
+    public ParagraphContent Content(Paragraph p, CellStyle tableStyle)
     {
         var sb = new System.Text.StringBuilder();
         var styleOf = new List<int>();
@@ -364,7 +368,7 @@ public sealed class ParagraphLayouter
     // ------------------------------------------------------------------ lignes
 
     /// <summary>Découpe le paragraphe en lignes pour une colonne de largeur <paramref name="width"/> (points).</summary>
-    public ParagraphLayout Layout(Paragraph p, double width, string? tableStyle = null)
+    public ParagraphLayout Layout(Paragraph p, double width, CellStyle tableStyle = default)
     {
         var pf = _styles.Paragraph(p, tableStyle);
         var content = Content(p, tableStyle);
@@ -395,7 +399,7 @@ public sealed class ParagraphLayouter
             };
         }
 
-        var layout = new ParagraphLayout { Paragraph = p, Format = pf, Content = content, Width = width, Marker = marker };
+        var layout = new ParagraphLayout { Paragraph = p, Format = pf, Content = content, Width = width, Marker = marker, Cell = tableStyle };
         if (content.Hidden) return layout;
         var text = content.Text;
         int n = text.Length;
@@ -433,6 +437,28 @@ public sealed class ParagraphLayouter
                 Console.WriteLine($"      style : {st.Face.Name} {st.Size} pt{(st.Format.Bold ? " gras" : "")}{(st.Format.Italic ? " italique" : "")}{(st.Face.Substituted ? " (remplacée)" : "")}");
         }
         return layout;
+    }
+
+    /// <summary>
+    /// Largeurs de contenu d'un paragraphe (ajustement automatique des tableaux) : minimale = le plus long mot (suite de
+    /// caractères sans espace ni tabulation) avec les retraits, maximale = la plus longue ligne sans coupure automatique.
+    /// </summary>
+    public (double Min, double Max) ContentWidths(Paragraph p, CellStyle cell = default)
+    {
+        var wide = Layout(p, 1e5, cell);
+        if (wide.Content.Hidden) return (0, 0);
+        var pf = wide.Format;
+        double left = pf.IndentLeft / 20.0, right = pf.IndentRight / 20.0, first = pf.IndentFirstLine / 20.0;
+        double max = wide.Lines.Count == 0 ? 0 : wide.Lines.Max(l => l.Ink) + right;
+        var c = wide.Content;
+        double min = 0, word = 0;
+        for (int i = 0; i <= c.Text.Length; i++)
+        {
+            char ch = i < c.Text.Length ? c.Text[i] : ' ';
+            if (ch is ' ' or Atom.Tab or Atom.LineBreak or Atom.PageBreak or Atom.ColumnBreak) { min = Math.Max(min, word); word = 0; continue; }
+            word += Advance(c, i);
+        }
+        return (Math.Max(0, min + Math.Max(left, left + first) + right), Math.Max(0, max));
     }
 
     /// <summary>Mise au point : décrit la coupure des paragraphes qui commencent par ce texte (OPENWRITE_TRACE_TEXT).</summary>
@@ -584,7 +610,7 @@ public sealed class ParagraphLayouter
         List<string>? lineNotes = null;
         foreach (var (pos, id) in c.Footnotes)
             if (pos >= start && pos < end) (lineNotes ??= new()).Add(id);
-        return new LineBox { Start = start, End = end, Height = h, FitHeight = fit, Baseline = baseline, EndKind = kind, ExtraPerSpace = extra, Footnotes = lineNotes }.WithPieces(line.Pieces);
+        return new LineBox { Start = start, End = end, Height = h, FitHeight = fit, Baseline = baseline, EndKind = kind, ExtraPerSpace = extra, Footnotes = lineNotes, Ink = ink }.WithPieces(line.Pieces);
     }
 }
 

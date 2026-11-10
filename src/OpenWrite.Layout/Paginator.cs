@@ -121,8 +121,18 @@ public readonly record struct PlacedLine(ParagraphLayout Paragraph, int Line, do
     public double Notes { get; init; }
 }
 
-/// <summary>Cellule de tableau placée : rectangle (points), fond (RRGGBB) et bordures (épaisseur en points, 0 = aucune).</summary>
-public readonly record struct CellBox(double X, double Y, double W, double H, string? Fill, double Top, double Bottom, double Left, double Right);
+/// <summary>Cellule de tableau placée : rectangle (points), fond (RRGGBB) et bordures (traits ; épaisseur 0 = aucun).</summary>
+public readonly record struct CellBox(double X, double Y, double W, double H, string? Fill, BorderLine Top, BorderLine Bottom, BorderLine Left, BorderLine Right)
+{
+    /// <summary>Cellule du modèle (la première d'une fusion verticale) ; null pour un trait qui n'est pas une cellule.</summary>
+    public TableCell? Cell { get; init; }
+    public Table? Table { get; init; }
+    /// <summary>Rang de la rangée dans le tableau, colonne de la grille où commence la cellule.</summary>
+    public int Row { get; init; }
+    public int Column { get; init; }
+    /// <summary>Cellule d'un tableau imbriqué dans une cellule.</summary>
+    public bool Nested { get; init; }
+}
 
 /// <summary>Point de départ d'une page : élément de flux et ligne (ou rangée de tableau) où elle commence.</summary>
 /// <remarks>
@@ -160,7 +170,7 @@ public sealed class Page
 }
 
 /// <summary>Mise en page d'un document : pages, caches des paragraphes, reprise incrémentale.</summary>
-public sealed class DocumentLayout
+public sealed partial class DocumentLayout
 {
     readonly ParagraphLayouter _lines;
     readonly Story _body;
@@ -430,7 +440,7 @@ public sealed class DocumentLayout
         var result = new Page { Geometry = g, Start = page.Start };
         if (_footnote("separator") is { } s)
         {
-            result.Cells.Add(new CellBox(g.Left, y + sep / 2, g.ColumnWidth / 3, 0, null, 0.5, 0, 0, 0));
+            result.Cells.Add(new CellBox(g.Left, y + sep / 2, g.ColumnWidth / 3, 0, null, new BorderLine(0.5), default, default, default));
             y += sep;
         }
         foreach (var id in page.NoteIds)
@@ -463,11 +473,10 @@ public sealed class DocumentLayout
                     y += BorderOf(pl, "bottom") + pl.SpaceAfter;
                     break;
                 case Table t:
-                    foreach (var row in t.Items.OfType<TableRow>())
+                    foreach (var row in MeasureTable(t, g.Left, g.ColumnWidth).Rows)
                     {
-                        var box = MeasureRow(t, row, g.Left, g.ColumnWidth);
-                        PlaceRowAt(box, y, into);
-                        y += box.Height;
+                        PlaceRowAt(row, y, into);
+                        y += row.Height;
                     }
                     break;
                 case BlockContentControl sdt:
@@ -500,7 +509,7 @@ public sealed class DocumentLayout
                     prev = pl;
                     break;
                 case Table t:
-                    foreach (var row in t.Items.OfType<TableRow>()) h += MeasureRow(t, row, 0, width).Height;
+                    h += MeasureTable(t, 0, width).Rows.Sum(r => r.Height);
                     prev = null;
                     break;
                 case BlockContentControl sdt:
@@ -511,10 +520,10 @@ public sealed class DocumentLayout
         return h;
     }
 
-    ParagraphLayout LayoutOf(Paragraph p, double width, string? tableStyle = null)
+    ParagraphLayout LayoutOf(Paragraph p, double width, CellStyle cell = default)
     {
-        if (_cache.TryGetValue(p, out var l) && Math.Abs(l.Width - width) < 0.01) return l;
-        l = _lines.Layout(p, width, tableStyle);
+        if (_cache.TryGetValue(p, out var l) && Math.Abs(l.Width - width) < 0.01 && l.Cell == cell) return l;
+        l = _lines.Layout(p, width, cell);
         _cache.AddOrUpdate(p, l);
         LastParagraphsLaidOut++;
         return l;
@@ -1099,303 +1108,5 @@ public sealed class DocumentLayout
             break;
         }
         return h;
-    }
-
-    /// <summary>Rangée de tableau mesurée : hauteur, et lignes des cellules (abscisse de la cellule, lignes et leur décalage vertical).</summary>
-    sealed record RowBox(double Height, List<(double X, double W, List<(ParagraphLayout L, double Y)> Lines)> Cells)
-    {
-        /// <summary>Fond et bordures de chaque cellule (même ordre que <see cref="Cells"/>).</summary>
-        public List<(string? Fill, double Top, double Bottom, double Left, double Right)> Looks { get; init; } = new();
-        /// <summary>Hauteur sans les bordures horizontales.</summary>
-        public double Content { get; init; }
-    }
-
-    const double CellPadding = 5.4;     // marges gauche et droite des cellules par défaut (108 twips)
-
-    static double Twips(string? v) => double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d / 20 : 0;
-
-    /// <summary>Mesure une rangée : largeurs de la grille (w:gridCol, w:gridSpan), contenu des cellules, w:trHeight.</summary>
-    /// <summary>
-    /// Épaisseur (points) de la bordure horizontale d'une rangée : la plus épaisse de ses cellules (w:tcBorders), sinon
-    /// celle du tableau (w:insideH entre deux rangées, w:top / w:bottom aux bords ; style de tableau compris).
-    /// </summary>
-    double RowBorder(Table t, TableRow row, string side, bool edge)
-    {
-        var W = t.Props.Ns;
-        static double Width(XElement? b, XNamespace W) =>
-            b is null || b.Attribute(W + "val")?.Value is null or "none" or "nil" ? 0
-            : double.TryParse(b.Attribute(W + "sz")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v / 8 : 0.5;
-        var tableBorders = t.Props.Get("tblBorders") ?? TableStyleBorders(t);
-        double table = Width(tableBorders?.Element(W + (edge ? side : "insideH")), W);
-        double cells = 0;
-        bool any = false;
-        foreach (var cell in row.Items.OfType<TableCell>())
-            if (cell.Props.Get("tcBorders")?.Element(W + side) is { } cb) { cells = Math.Max(cells, Width(cb, W)); any = true; }
-        return any ? Math.Max(cells, table) : table;
-    }
-
-    XElement? TableStyleBorders(Table t)
-    {
-        var W = t.Props.Ns;
-        var sheet = _lines.Styles.Sheet;
-        foreach (var st in sheet.Chain(t.Props.Val("tblStyle") ?? sheet.DefaultStyle("table")?.Attribute(W + "styleId")?.Value))
-            if (st.Element(W + "tblPr")?.Element(W + "tblBorders") is { } b) return b;
-        return null;
-    }
-
-    /// <summary>Fond (w:shd/@fill) et bordures d'une cellule : w:tcBorders, sinon celles du tableau (bords et intérieures confondus).</summary>
-    static (string?, double, double, double, double) CellLook(Table t, TableCell cell, XElement? tableBorders, bool continued)
-    {
-        var W = t.Props.Ns;
-        var fill = cell.Props.Get("shd")?.Attribute(W + "fill")?.Value;
-        if (fill is null or "auto" || fill.Length != 6) fill = null;
-        var own = cell.Props.Get("tcBorders");
-        double Side(string side, string inner)
-        {
-            var b = own?.Element(W + side) ?? tableBorders?.Element(W + side) ?? tableBorders?.Element(W + inner);
-            if (b is null || b.Attribute(W + "val")?.Value is null or "none" or "nil") return 0;
-            return double.TryParse(b.Attribute(W + "sz")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? Math.Max(0.25, v / 8) : 0.5;
-        }
-        return (fill, continued ? 0 : Side("top", "insideH"), Side("bottom", "insideH"), Side("left", "insideV"), Side("right", "insideV"));
-    }
-
-    RowBox MeasureRow(Table t, TableRow row, double left, double columnWidth)
-    {
-        var W = t.Props.Ns;
-        var cols = t.Grid?.Elements(W + "gridCol").Select(g => Twips(g.Attribute(W + "w")?.Value)).ToList() ?? new List<double>();
-        var style = t.Props.Val("tblStyle");
-        double x = left + Twips(t.Props.Get("tblInd")?.Attribute(W + "w")?.Value) - CellPadding;
-        var cells = row.Items.OfType<TableCell>().ToList();
-        var placed = new List<(double, double, List<(ParagraphLayout, double)>)>();
-        var looks = new List<(string?, double, double, double, double)>();
-        var tableBorders = t.Props.Get("tblBorders") ?? TableStyleBorders(t);
-        int col = 0;
-        double rowH = 0;
-        foreach (var cell in cells)
-        {
-            int span = int.TryParse(cell.Props.Val("gridSpan"), out var s) ? s : 1;
-            double w = 0;
-            for (int k = 0; k < span; k++)
-                w += col + k < cols.Count ? cols[col + k] : columnWidth / Math.Max(1, cells.Count);
-            col += span;
-            double cy = 0;
-            var lines = new List<(ParagraphLayout, double)>();
-            ParagraphLayout? prev = null;
-            foreach (var b in cell.Content.Paragraphs())
-            {
-                var pl = LayoutOf(b, Math.Max(1, w - 2 * CellPadding), style);
-                if (pl.Content.Hidden) continue;
-                double before = pl.SpaceBefore;
-                if (prev is not null && pl.Format.ContextualSpacing && prev.Format.StyleId == pl.Format.StyleId) before = 0;
-                cy += before;
-                lines.Add((pl, cy));
-                cy += pl.Height + pl.SpaceAfter;
-                prev = pl;
-                if (Trace && pl.Lines.Count > 1)
-                    Console.WriteLine($"    cellule {w:0.0} pt : « {pl.Content.Text[..Math.Min(40, pl.Content.Text.Length)]} » {pl.Lines.Count} lignes : "
-                        + string.Join(" | ", pl.Lines.Select(l => pl.Content.Text[l.Start..l.End])));
-            }
-            // fusion verticale (w:vMerge sans valeur = suite) : la cellule n'impose pas de hauteur
-            bool continued = cell.Props.Get("vMerge") is { } vm && vm.Attribute(W + "val")?.Value is null or "continue";
-            if (continued) cy = 0;
-            placed.Add((x, w, lines));
-            looks.Add(CellLook(t, cell, tableBorders, continued));
-            rowH = Math.Max(rowH, cy);
-            x += w;
-        }
-        // hauteur imposée (w:trHeight : au moins, ou exacte)
-        if (row.Props.Get("trHeight") is { } th)
-        {
-            double v = Twips(th.Attribute(W + "val")?.Value);
-            rowH = th.Attribute(W + "hRule")?.Value == "exact" ? v : Math.Max(rowH, v);
-        }
-        // bordures horizontales : celle du bas de chaque rangée, et celle du haut pour la première (Syllabus : rangée
-        // à bordure basse de 3 pt plus haute de 2,8 pt dans Word, filet de 0,5 pt : 0,7 pt)
-        var rows = t.Items.OfType<TableRow>().ToList();
-        int index = rows.IndexOf(row);
-        // bordure partagée entre deux rangées : la plus épaisse des deux (bas de la précédente, haut de celle-ci)
-        double top = index == 0 ? RowBorder(t, row, "top", edge: true)
-            : Math.Max(0, RowBorder(t, row, "top", edge: false) - RowBorder(t, rows[index - 1], "bottom", edge: false));
-        double borders = RowBorder(t, row, "bottom", edge: index == rows.Count - 1) + top;
-        return new RowBox(rowH + borders, placed) { Content = rowH, Looks = looks };
-    }
-
-    /// <summary>Tableau : rangées entières, une rangée trop haute pour la place restante passe à la page suivante.</summary>
-    int? PlaceTable(Table t, int i, int startRow, double startOffset, Cursor c, PageBreaker newPage)
-    {
-        var rows = t.Items.OfType<TableRow>().ToList();
-        // tableau flottant (w:tblpPr) : il ne prend pas de place dans le flux ; ancré en bas de la marge, il réduit
-        // la hauteur du corps de la page (Syllabus, page de garde) ; les autres positions viennent avec le lot 7
-        if (t.Props.Get("tblpPr") is { } pos)
-        {
-            var W = t.Props.Ns;
-            double height = rows.Sum(r => MeasureRow(t, r, c.ColX, c.ColW).Height);
-            if (pos.Attribute(W + "tblpYSpec")?.Value == "bottom" && (pos.Attribute(W + "vertAnchor")?.Value ?? "margin") == "margin")
-            {
-                double y = c.Page.ContentBottom - height;
-                foreach (var r in rows)
-                {
-                    var box = MeasureRow(t, r, c.ColX, c.ColW);
-                    PlaceRowAt(box, y, c.Page);
-                    y += box.Height;
-                }
-                c.Page.ReservedBottom += height + Twips(pos.Attribute(W + "bottomFromText")?.Value);
-            }
-            return null;
-        }
-        // rangées d'en-tête (w:tblHeader en tête du tableau) : répétées en haut de chaque page où le tableau continue
-        int headers = 0;
-        while (headers < rows.Count && rows[headers].Props.Get("tblHeader") is { } th && th.Attribute(t.Props.Ns + "val")?.Value is null or "1" or "true" or "on") headers++;
-        void RepeatHeaders()
-        {
-            for (int h = 0; h < headers && h < rows.Count; h++)
-            {
-                var hb = MeasureRow(t, rows[h], c.ColX, c.ColW);
-                PlaceRowAt(hb, c.Y, c.Page);
-                c.Y += hb.Height;
-            }
-        }
-        if (startRow > 0 || startOffset > 0)
-            if (startRow >= headers) RepeatHeaders();
-        double offset = startOffset;
-        for (int r = startRow; r < rows.Count; r++, offset = 0)
-        {
-            var box = MeasureRow(t, rows[r], c.ColX, c.ColW);
-            while (true)
-            {
-                double remaining = RowPartHeight(box, offset, null);
-                if (c.Y + remaining <= c.Page.ContentBottom + 0.01 || c.Empty && !CanSplit(rows[r], t))
-                {
-                    PlaceRowPart(box, offset, null, c.Y, c.Page);
-                    c.Y += remaining;
-                    c.Empty = false;
-                    break;
-                }
-                // rangée trop haute pour la place restante : coupée entre les lignes de ses cellules (sauf w:cantSplit),
-                // sinon renvoyée entière à la page suivante
-                double cut = offset + (c.Page.ContentBottom - c.Y);
-                if (CanSplit(rows[r], t) && r >= headers && HasLinesBetween(box, offset, cut))
-                {
-                    double placed = RowPartHeight(box, offset, cut);
-                    PlaceRowPart(box, offset, cut, c.Y, c.Page);
-                    c.Y += placed;
-                    c.Empty = false;
-                    double next = LastBottomBefore(box, offset, cut);
-                    if (newPage(i, r, fromBreak: false, next) is { } k) return k;
-                    RepeatHeaders();
-                    offset = next;
-                    continue;
-                }
-                if (c.Empty)
-                {
-                    // ni coupable ni entière : placée telle quelle (elle dépasse le bas de la page)
-                    PlaceRowPart(box, offset, null, c.Y, c.Page);
-                    c.Y += remaining;
-                    c.Empty = false;
-                    break;
-                }
-                if (newPage(i, r, fromBreak: false, offset) is { } k2) return k2;
-                RepeatHeaders();
-            }
-        }
-        c.Prev = null;
-        return null;
-    }
-
-    static bool CanSplit(TableRow row, Table t) =>
-        (row.Props.Get("cantSplit") is not { } cs || cs.Attribute(t.Props.Ns + "val")?.Value is "0" or "false" or "off")
-        // une rangée à hauteur minimale (w:trHeight) ne se coupe pas (Syllabus : rangée de 146 pt envoyée entière à la
-        // page suivante par Word alors que 120 pt restaient ; écart ramené de -137 à -3 pt sur la page suivante)
-        && row.Props.Get("trHeight") is null;
-
-    /// <summary>Lignes des cellules d'une rangée : cellule, paragraphe, ligne, haut et bas dans la rangée.</summary>
-    static IEnumerable<(int Cell, double X, ParagraphLayout L, int Line, double Top, double Bottom)> RowLines(RowBox box)
-    {
-        for (int ci = 0; ci < box.Cells.Count; ci++)
-        {
-            var (cx, _, lines) = box.Cells[ci];
-            foreach (var (pl, ly) in lines)
-            {
-                double y = ly;
-                for (int l = 0; l < pl.Lines.Count; l++)
-                {
-                    yield return (ci, cx, pl, l, y, y + pl.Lines[l].Height);
-                    y += pl.Lines[l].Height;
-                }
-            }
-        }
-    }
-
-    /// <summary>Haut de la première ligne restante de chaque cellule (lignes dont le bas dépasse <paramref name="from"/>).</summary>
-    static double[] CellShift(RowBox box, double from)
-    {
-        var shift = Enumerable.Repeat(double.NaN, box.Cells.Count).ToArray();
-        foreach (var x in RowLines(box))
-            if (x.Bottom > from + 0.01 && double.IsNaN(shift[x.Cell])) shift[x.Cell] = x.Top;
-        return shift;
-    }
-
-    static bool HasLinesBetween(RowBox box, double from, double to) =>
-        RowLines(box).Any(x => x.Bottom > from + 0.01 && x.Bottom <= to + 0.01);
-
-    /// <summary>Bas de la dernière ligne placée avant la coupure (point de reprise sur la page suivante).</summary>
-    static double LastBottomBefore(RowBox box, double from, double to)
-    {
-        // reprise : tout ce qui est sous la coupure ; on mémorise la coupure elle-même (les lignes dont le bas la
-        // dépasse continuent)
-        return to;
-    }
-
-    /// <summary>Hauteur de la partie [from, to[ de la rangée (to null : jusqu'au bout, bordure et hauteur minimale comprises).</summary>
-    static double RowPartHeight(RowBox box, double from, double? to)
-    {
-        if (from <= 0 && to is null) return box.Height;
-        var shift = CellShift(box, from);
-        double h = 0;
-        foreach (var x in RowLines(box))
-        {
-            if (x.Bottom <= from + 0.01 || to is { } t && x.Bottom > t + 0.01) continue;
-            h = Math.Max(h, x.Bottom - shift[x.Cell]);
-        }
-        if (to is null) h += box.Height - box.Content;     // bordures de la rangée, à la fin de la dernière partie
-        return h;
-    }
-
-    static void PlaceRowPart(RowBox box, double from, double? to, double y, Page page)
-    {
-        if (from <= 0 && to is null) { PlaceRowAt(box, y, page); return; }
-        var shift = CellShift(box, from);
-        double h = RowPartHeight(box, from, to);
-        for (int ci = 0; ci < box.Cells.Count; ci++) page.Cells.Add(Cell(box, ci, y, h));
-        foreach (var x in RowLines(box))
-        {
-            if (x.Bottom <= from + 0.01 || to is { } t && x.Bottom > t + 0.01) continue;
-            page.Lines.Add(new PlacedLine(x.L, x.Line, x.X + CellPadding, y + x.Top - shift[x.Cell]));
-        }
-    }
-
-    static CellBox Cell(RowBox box, int ci, double y, double h)
-    {
-        var (cx, cw, _) = box.Cells[ci];
-        var (fill, top, bottom, left, right) = ci < box.Looks.Count ? box.Looks[ci] : (null, 0, 0, 0, 0);
-        return new CellBox(cx, y, cw, h, fill, top, bottom, left, right);
-    }
-
-    static void PlaceRowAt(RowBox box, double y, Page page)
-    {
-        for (int ci = 0; ci < box.Cells.Count; ci++)
-        {
-            var (cx, cw, lines) = box.Cells[ci];
-            page.Cells.Add(Cell(box, ci, y, box.Height));
-            foreach (var (pl, ly) in lines)
-            {
-                double yy = y + ly;
-                for (int l = 0; l < pl.Lines.Count; l++)
-                {
-                    page.Lines.Add(new PlacedLine(pl, l, cx + CellPadding, yy));
-                    yy += pl.Lines[l].Height;
-                }
-            }
-        }
     }
 }

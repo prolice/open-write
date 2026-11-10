@@ -293,15 +293,51 @@ public sealed class PageRenderer
     static void DrawCell(DrawingContext dc, CellBox c)
     {
         if (c.Fill is { } fill && ParseColor(fill) is { } fc) dc.DrawRectangle(Freeze(new SolidColorBrush(fc)), null, new Rect(c.X, c.Y, Math.Max(0, c.W), Math.Max(0, c.H)));
-        void Edge(double t, double x1, double y1, double x2, double y2)
+        DrawBorder(dc, c.Top, c.X, c.Y, c.X + c.W, c.Y);
+        DrawBorder(dc, c.Bottom, c.X, c.Y + c.H, c.X + c.W, c.Y + c.H);
+        DrawBorder(dc, c.Left, c.X, c.Y, c.X, c.Y + c.H);
+        DrawBorder(dc, c.Right, c.X + c.W, c.Y, c.X + c.W, c.Y + c.H);
+    }
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<(double, string?, string), Pen> BorderPens = new();
+
+    /// <summary>
+    /// Trait de bordure de cellule : couleur, épaisseur et style de Word (simple, épais, double, pointillés, tirets ;
+    /// les styles composés et artistiques sont tracés simples).
+    /// </summary>
+    static void DrawBorder(DrawingContext dc, BorderLine b, double x1, double y1, double x2, double y2)
+    {
+        if (!b.Visible) return;
+        if (b.Style is "double" or "triple" || b.Style.StartsWith("thinThick", StringComparison.Ordinal) || b.Style.StartsWith("thickThin", StringComparison.Ordinal))
         {
-            if (t <= 0) return;
-            dc.DrawLine(new Pen(Brushes.Black, t), new Point(x1, y1), new Point(x2, y2));
+            // deux traits parallèles écartés de l'épaisseur du trait
+            var pen = BorderPen(b with { Style = "single" });
+            double d = Math.Max(0.5, b.Width);
+            bool horizontal = Math.Abs(y2 - y1) < Math.Abs(x2 - x1);
+            var (dx, dy) = horizontal ? (0.0, d) : (d, 0.0);
+            dc.DrawLine(pen, new Point(x1 - dx, y1 - dy), new Point(x2 - dx, y2 - dy));
+            dc.DrawLine(pen, new Point(x1 + dx, y1 + dy), new Point(x2 + dx, y2 + dy));
+            return;
         }
-        Edge(c.Top, c.X, c.Y, c.X + c.W, c.Y);
-        Edge(c.Bottom, c.X, c.Y + c.H, c.X + c.W, c.Y + c.H);
-        Edge(c.Left, c.X, c.Y, c.X, c.Y + c.H);
-        Edge(c.Right, c.X + c.W, c.Y, c.X + c.W, c.Y + c.H);
+        dc.DrawLine(BorderPen(b), new Point(x1, y1), new Point(x2, y2));
+    }
+
+    static Pen BorderPen(BorderLine b)
+    {
+        var key = (b.Width, b.Color, b.Style);
+        if (BorderPens.TryGetValue(key, out var pen)) return pen;
+        Brush brush = b.Color is { } col && ParseColor(col) is { } c ? Freeze(new SolidColorBrush(c)) : Brushes.Black;
+        pen = new Pen(brush, b.Width);
+        pen.DashStyle = b.Style switch
+        {
+            "dotted" => new DashStyle(new double[] { 1, 1 }, 0),
+            "dashed" or "dashSmallGap" => new DashStyle(new double[] { 3, 2 }, 0),
+            "dotDash" => new DashStyle(new double[] { 3, 1.5, 1, 1.5 }, 0),
+            "dotDotDash" => new DashStyle(new double[] { 3, 1.5, 1, 1.5, 1, 1.5 }, 0),
+            _ => DashStyles.Solid,
+        };
+        pen.Freeze();
+        return BorderPens[key] = pen;
     }
 
     void DrawLine(DrawingContext dc, PlacedLine placed, Brush? ink)

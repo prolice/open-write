@@ -50,6 +50,14 @@ public sealed class StyleSheet
         return res;
     }
 
+    /// <summary>
+    /// Mode de compatibilité (w:compatSetting « compatibilityMode ») : 15 = Word 2013 et suivants, 14 = Word 2010,
+    /// 12 = Word 2007 (valeur quand le réglage manque).
+    /// </summary>
+    public int CompatibilityMode =>
+        Settings?.Element(W + "compat")?.Elements(W + "compatSetting")
+            .FirstOrDefault(e => e.Attribute(W + "name")?.Value == "compatibilityMode")?.Attribute(W + "val")?.Value is { } v && int.TryParse(v, out var m) ? m : 12;
+
     public XElement? DefaultRunProps => Styles?.Element(W + "docDefaults")?.Element(W + "rPrDefault")?.Element(W + "rPr");
     public XElement? DefaultParagraphProps => Styles?.Element(W + "docDefaults")?.Element(W + "pPrDefault")?.Element(W + "pPr");
 

@@ -127,15 +127,15 @@ static class LayoutBench
     }
 
     /// <summary>Page (1…) et position verticale de la première ligne de chaque paragraphe, dans l'ordre du document.</summary>
-    static List<(string Key, int Page, double Y)> Positions(Story body, DocumentLayout layout)
+    static List<(string Key, int Page, double Y, double X)> Positions(Story body, DocumentLayout layout)
     {
-        var first = new Dictionary<Paragraph, (int, double)>(ReferenceEqualityComparer.Instance);
+        var first = new Dictionary<Paragraph, (int, double, double)>(ReferenceEqualityComparer.Instance);
         for (int k = 0; k < layout.Pages.Count; k++)
             foreach (var l in layout.Pages[k].Lines)
-                first.TryAdd(l.Paragraph.Paragraph, (k + 1, l.Y));
-        var list = new List<(string, int, double)>();
+                first.TryAdd(l.Paragraph.Paragraph, (k + 1, l.Y, l.X + (l.Paragraph.Format.IndentLeft + Math.Max(0, l.Paragraph.Format.IndentFirstLine)) / 20.0));
+        var list = new List<(string, int, double, double)>();
         foreach (var p in body.Paragraphs())
-            if (first.TryGetValue(p, out var pos)) list.Add((Key(p.Text), pos.Item1, pos.Item2));
+            if (first.TryGetValue(p, out var pos)) list.Add((Key(p.Text), pos.Item1, pos.Item2, pos.Item3));
         // OPENWRITE_BENCH_DUMP=n : positions d'OpenWrite sur la page n (mise au point)
         if (int.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_BENCH_DUMP"), out var dump))
             foreach (var x in list.Where(x => x.Item2 == dump).TakeLast(Environment.GetEnvironmentVariable("OPENWRITE_BENCH_END") == "1" ? 12 : 1000).Take(80)) Console.WriteLine($"    OpenWrite p.{dump} {x.Item3,6:0.0} « {x.Item1} »");
@@ -146,13 +146,15 @@ static class LayoutBench
     /// Écart vertical avec Word, paragraphe par paragraphe (appariés par leurs 12 premiers caractères, dans l'ordre) :
     /// médiane et pire écart sur les paragraphes de la même page ; --detail : premiers écarts de plus de 2 pt.
     /// </summary>
-    static string ComparePositions(string file, List<(string Key, int Page, double Y)> mine, bool detail)
+    static string ComparePositions(string file, List<(string Key, int Page, double Y, double X)> mine, bool detail)
     {
         var word = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file)).RootElement.EnumerateArray()
-            .Select(e => (Key: Key(e.GetProperty("text").GetString() ?? ""), Page: e.GetProperty("page").GetInt32(), Y: e.GetProperty("y").GetDouble()))
+            .Select(e => (Key: Key(e.GetProperty("text").GetString() ?? ""), Page: e.GetProperty("page").GetInt32(), Y: e.GetProperty("y").GetDouble(),
+                X: e.TryGetProperty("x", out var x) ? x.GetDouble() : double.NaN))
             .Where(w => w.Key.Length >= 4).ToList();
         mine = mine.Where(m => m.Key.Length >= 4).ToList();
         var deltas = new List<double>();
+        var dx = new List<double>();
         int shown = 0, otherPage = 0;
         foreach (var (wi, mi) in Align(word.Select(w => w.Key).ToList(), mine.Select(m => m.Key).ToList()))
         {
@@ -161,12 +163,17 @@ static class LayoutBench
             if (m.Page != w.Page) { otherPage++; continue; }
             double d = m.Y - w.Y;
             deltas.Add(d);
-            if (detail && (Environment.GetEnvironmentVariable("OPENWRITE_BENCH_ALL") == "1" || Math.Abs(d) > 2 && shown++ < 6))
-                Console.WriteLine($"    p.{w.Page} « {w.Key} » : Word {w.Y:0.0} / OpenWrite {m.Y:0.0} ({d:+0.0;-0.0})");
+            // écart horizontal : bord gauche du paragraphe, retraits compris (Word donne la marge pour un paragraphe
+            // centré : alignement non compté) — colonnes de tableau, retraits
+            double ex = double.IsNaN(w.X) ? 0 : m.X - w.X;
+            if (!double.IsNaN(w.X)) dx.Add(ex);
+            if (detail && (Environment.GetEnvironmentVariable("OPENWRITE_BENCH_ALL") == "1" || (Math.Abs(d) > 2 || Math.Abs(ex) > 2) && shown++ < 6))
+                Console.WriteLine($"    p.{w.Page} « {w.Key} » : Word {w.Y:0.0} / OpenWrite {m.Y:0.0} ({d:+0.0;-0.0})" + (double.IsNaN(w.X) ? "" : $", x Word {w.X:0.0} / OpenWrite {m.X:0.0} ({ex:+0.0;-0.0})"));
         }
         if (deltas.Count == 0) return "";
         deltas.Sort();
-        return $"Δy médian {deltas[deltas.Count / 2]:+0.0;-0.0} pt, pire {deltas.MaxBy(Math.Abs):+0.0;-0.0}, {deltas.Count(d => Math.Abs(d) <= 1)}/{deltas.Count} à 1 pt, {otherPage} autre page";
+        return $"Δy médian {deltas[deltas.Count / 2]:+0.0;-0.0} pt, pire {deltas.MaxBy(Math.Abs):+0.0;-0.0}, {deltas.Count(d => Math.Abs(d) <= 1)}/{deltas.Count} à 1 pt, {otherPage} autre page"
+            + (dx.Count > 0 ? $", Δx {dx.Count(d => Math.Abs(d) <= 1)}/{dx.Count} à 1 pt (pire {dx.MaxBy(Math.Abs):+0.0;-0.0})" : "");
     }
 
     /// <summary>Appariement de deux suites de clés par plus longue sous-suite commune (paires d'indices).</summary>
@@ -189,12 +196,21 @@ static class LayoutBench
     /// <summary>Texte du début de la page : première ligne placée et suivantes.</summary>
     static string StartText(Page page)
     {
-        // page commencée au milieu d'une rangée coupée : Word donne le début de la rangée (Range.GoTo)
-        if (page.Start is { Item.Block: Table t, Offset: > 0 } st && t.Items.OfType<TableRow>().ElementAtOrDefault(st.Line) is { } row)
-            return string.Concat(row.Items.OfType<TableCell>().Select(cell => string.Concat(cell.Content.Paragraphs().Select(p => p.Text))));
+        // page commencée dans un tableau : les rangées d'en-tête répétées ne comptent pas ; au milieu d'une rangée
+        // coupée, Word donne le début du premier paragraphe qui continue (Range.GoTo)
+        var skip = new HashSet<Paragraph>(ReferenceEqualityComparer.Instance);
+        if (page.Start is { Item.Block: Table t } st)
+        {
+            var rows = t.Items.OfType<TableRow>().ToList();
+            for (int h = 0; h < rows.Count && h < st.Line && rows[h].Props.Get("tblHeader") is not null; h++)
+                foreach (var p in rows[h].Items.OfType<TableCell>().SelectMany(c => c.Content.Paragraphs())) skip.Add(p);
+            if (st.Offset > 0 && page.Lines.FirstOrDefault(l => !skip.Contains(l.Paragraph.Paragraph)) is { Paragraph: { } first })
+                return first.Content.Text;
+        }
         var sb = new System.Text.StringBuilder();
         foreach (var l in page.Lines)
         {
+            if (skip.Contains(l.Paragraph.Paragraph)) continue;
             var c = l.Paragraph.Content;
             var line = l.Paragraph.Lines[l.Line];
             // les numéros d'appel de note ne sont pas du texte pour Word (caractère spécial dans Range.Text)

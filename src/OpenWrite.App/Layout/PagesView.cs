@@ -98,6 +98,54 @@ public sealed class PagesView : FrameworkElement
     /// <summary>Rectangles de la sélection sur une page (points de la page) ; null : pas de sélection.</summary>
     public Func<int, IEnumerable<Rect>>? Selection { get; set; }
 
+    /// <summary>
+    /// Objet sélectionné (lot 7) : page, cadre et rotation (points de la page), flottant (poignée de rotation, ancre),
+    /// cadre fantôme pendant un glisser, position de l'ancre.
+    /// </summary>
+    public Func<(int Page, Rect Frame, double Rotation, bool Floating, Rect? Ghost, double GhostRotation, Point? Anchor)?>? ObjectSelection { get; set; }
+
+    static readonly Brush HandleFill = Freeze(new SolidColorBrush(Colors.White));
+    static readonly Pen FramePen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x08, 0x7C, 0xFF))), 1));
+    static readonly Pen GhostPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x08, 0x7C, 0xFF))), 1) { DashStyle = DashStyles.Dash });
+
+    void DrawObjectSelection(DrawingContext dc)
+    {
+        if (ObjectSelection?.Invoke() is not { } o || o.Page < 0 || o.Page >= _rects.Count) return;
+        var r = _rects[o.Page];
+        Point P(Point p) => new(r.X + p.X * Scale, r.Y + p.Y * Scale);
+        void Box(Rect f, double rot, Pen pen, bool handles)
+        {
+            var tl = P(f.TopLeft);
+            var screen = new Rect(tl, new Size(f.Width * Scale, f.Height * Scale));
+            dc.PushTransform(new RotateTransform(rot, screen.X + screen.Width / 2, screen.Y + screen.Height / 2));
+            dc.DrawRectangle(null, pen, screen);
+            if (handles)
+            {
+                double h = 7;
+                foreach (var hp in new[]
+                {
+                    screen.TopLeft, new Point(screen.X + screen.Width / 2, screen.Y), screen.TopRight, new Point(screen.Right, screen.Y + screen.Height / 2),
+                    screen.BottomRight, new Point(screen.X + screen.Width / 2, screen.Bottom), screen.BottomLeft, new Point(screen.X, screen.Y + screen.Height / 2),
+                })
+                    dc.DrawRectangle(HandleFill, FramePen, new Rect(hp.X - h / 2, hp.Y - h / 2, h, h));
+                // poignée de rotation au-dessus du milieu du bord haut
+                var top = new Point(screen.X + screen.Width / 2, screen.Y);
+                var rh = new Point(top.X, top.Y - 18 * 1.0);
+                dc.DrawLine(FramePen, top, rh);
+                dc.DrawEllipse(HandleFill, FramePen, rh, 5, 5);
+            }
+            dc.Pop();
+        }
+        Box(o.Frame, o.Rotation, FramePen, handles: true);
+        if (o.Ghost is { } g) Box(g, o.GhostRotation, GhostPen, handles: false);
+        if (o.Anchor is { } a && o.Floating)
+        {
+            var ft = new FormattedText("⚓", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), 11,
+                FramePen.Brush, 1.0);
+            dc.DrawText(ft, P(a));
+        }
+    }
+
     /// <summary>Point d'insertion : page et rectangle (points de la page) ; null : pas de point d'insertion.</summary>
     public (int Page, Rect Rect)? Caret
     {
@@ -136,6 +184,7 @@ public sealed class PagesView : FrameworkElement
             foreach (var s in Selection(i))
                 dc.DrawRectangle(SelectionBrush, null, new Rect(r.X + s.X * Scale, r.Y + s.Y * Scale, Math.Max(0, s.Width * Scale), s.Height * Scale));
         }
+        DrawObjectSelection(dc);
     }
 
     void OnScroll(object? sender, ScrollChangedEventArgs e)

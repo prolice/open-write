@@ -59,7 +59,7 @@ public partial class MainWindow
     sealed record HeaderEdit(string Kind, string RelId, Story Story, int Page, StoryLines Lines);
     HeaderEdit? _hf;
 
-    ILineSource Src => _hf is not null ? _hf.Lines : _layout is not null ? new BodyLines(_layout) : EmptyLines.Instance;
+    ILineSource Src => _box is not null ? _box.Lines : _hf is not null ? _hf.Lines : _layout is not null ? new BodyLines(_layout) : EmptyLines.Instance;
 
     sealed class EmptyLines : ILineSource
     {
@@ -71,7 +71,7 @@ public partial class MainWindow
     }
 
     /// <summary>Suite de blocs que l'on modifie : l'en-tête ou le pied en cours d'édition, sinon le corps.</summary>
-    Story? EditRoot => _hf?.Story ?? Body;
+    Story? EditRoot => _box?.Story ?? _hf?.Story ?? Body;
 
     internal bool InHeaderMode => _hf is not null;
 

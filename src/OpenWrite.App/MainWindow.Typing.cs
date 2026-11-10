@@ -41,6 +41,9 @@ public partial class MainWindow
         };
         view.ContextMenuOpening += (_, _) => view.ContextMenu = BuildContextMenu();
         view.Selection = SelectionRects;
+        view.ObjectSelection = ObjectOverlay;
+        _objSel = null;
+        _box = null;
         _newParaId = null;
         _anchor = null;
         _goalX = null;
@@ -429,6 +432,14 @@ public partial class MainWindow
             return;
         }
         if (alt) return;
+        // objet sélectionné : Suppr, flèches, Échap ; zone de texte : Échap la sélectionne
+        if (_objSel is not null)
+        {
+            if (ObjectKey(key, ctrl)) { e.Handled = true; return; }
+            if (ctrl && key is Key.C or Key.X) { if (key == Key.X) { if (CopySelectedObject()) DeleteSelectedObject(); } else CopySelectedObject(); e.Handled = true; return; }
+            if (!ctrl && key is not (Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl)) SelectObject(null);
+        }
+        if (_box is not null && key == Key.Escape) { ExitTextBox(select: true); e.Handled = true; return; }
         if (FormattingKey(key, ctrl, shift)) { e.Handled = true; return; }
         bool handled = true;
         switch (key)
@@ -514,8 +525,10 @@ public partial class MainWindow
             var kind = hitAt.Y < hp.ContentTop ? "header" : "footer";
             if (hitPage != _hf.Page || kind != _hf.Kind) { EnterHeader(hitPage, kind, hitAt); e.Handled = true; return; }
         }
+        // objets : poignées, objet sous le pointeur, texte d'une zone de texte
+        if (hitPage >= 0 && ObjectMouseDown(hitPage, hitAt, e)) { e.Handled = true; return; }
         // bordure de cellule : redimensionner la colonne ou la ligne
-        if (e.ClickCount == 1 && _hf is null && hitPage >= 0 && StartBorderDrag(hitPage, hitAt)) { e.Handled = true; return; }
+        if (e.ClickCount == 1 && _hf is null && _box is null && hitPage >= 0 && StartBorderDrag(hitPage, hitAt)) { e.Handled = true; return; }
         if (HitView(p) is not { } t) return;
         // Ctrl+clic sur un lien : le suivre (comme Word)
         if (e.ClickCount == 1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _pagesView.HitPage(p).Page >= 0
@@ -770,6 +783,7 @@ public partial class MainWindow
     /// </summary>
     void Relayout()
     {
+        if (RelayoutTextBox()) return;
         if (RelayoutHeader()) return;
         // styles ou numérotation modifiés : résolveur refait, document entier remis en page
         bool stylesChanged = _journal.LastXml.Count > 0;

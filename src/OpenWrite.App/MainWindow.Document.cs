@@ -234,8 +234,9 @@ public partial class MainWindow
     void PagesView_MouseMove(object sender, MouseEventArgs e)
     {
         if (_pagesView is null || _layout is null) return;
-        DragSelect(e);
         var (page, at) = _pagesView.HitPage(e.GetPosition(_pagesView));
+        if (!_mouseSelecting && ObjectMouseMove(page, at, e)) return;
+        DragSelect(e);
         if (!_mouseSelecting && HoverTableBorder(page, at)) return;
         bool onBox = page >= 0 && Layout.PagesView.HitLine(_layout.Pages[page], at) is { } hit && hit.Char >= 0
                      && hit.Line.Paragraph.Content.CheckBoxes.ContainsKey(hit.Char);
@@ -248,6 +249,7 @@ public partial class MainWindow
     {
         if (_pagesView is null) return;
         var (bp, ba) = _pagesView.HitPage(e.GetPosition(_pagesView));
+        if (ObjectMouseUp(bp, ba)) { e.Handled = true; return; }
         if (EndBorderDrag(bp, ba)) { e.Handled = true; return; }
         if (EndMouseSelect() && ClickAt(_pagesView.HitPage(e.GetPosition(_pagesView)))) e.Handled = true;
     }

@@ -132,6 +132,9 @@ public partial class MainWindow
         ["Symbole"] = (ShowSymbols, "Symbole… : caractères spéciaux, espaces et tirets insécables"),
         ["Saut de page"] = (() => InsertSpecial(Core.Editing.SpecialChar.PageBreak), "Saut de page (Ctrl+Entrée)"),
         ["Tableau"] = (() => ShowTableMenu(_clickedButton!), "Tableau : grille, Insérer un tableau…, convertir le texte en tableau"),
+        ["Images"] = (() => ShowPicturesMenu(_clickedButton!), "Insérer une image : depuis un fichier ou le presse-papiers"),
+        ["Formes"] = (() => ShowShapesGallery(_clickedButton!), "Insérer une forme (devant le texte, près du point d'insertion)"),
+        ["Zone de texte"] = (InsertTextBox, "Insérer une zone de texte (habillage carré) et y écrire"),
     };
 
     /// <summary>Commandes de l'onglet Mise en page déjà disponibles.</summary>
@@ -145,6 +148,10 @@ public partial class MainWindow
         ["Sauts"] = (() => ShowBreaksMenu(_clickedButton!), "Sauts de page, de colonne et de section"),
         ["Numéros de ligne"] = (() => ShowLineNumbersMenu(_clickedButton!), "Numéros de ligne dans la marge de gauche"),
         ["Espacement"] = (ShowParagraphDialog, "Paragraphe… : espacement et interligne"),
+        ["Position"] = (() => { if (_objSel is null) StatusText.Text = "Position : sélectionnez d'abord une image ou une forme (clic dessus)."; else ShowObjectPositionMenu(_clickedButton!); },
+            "Placer l'image ou la forme sélectionnée sur la page"),
+        ["Habillage"] = (() => { if (_objSel is null) StatusText.Text = "Habillage : sélectionnez d'abord une image ou une forme (clic dessus)."; else ShowWrapMenu(_clickedButton!); },
+            "Habillage du texte autour de l'image ou de la forme sélectionnée"),
     };
 
     /// <summary>Active les commandes disponibles quand un document est affiché.</summary>
@@ -207,7 +214,7 @@ public partial class MainWindow
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
                         // menu sous le bouton : il garde le clavier
-                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau";
+                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau" or "Images" or "Formes" or "Position" or "Habillage";
                         button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }

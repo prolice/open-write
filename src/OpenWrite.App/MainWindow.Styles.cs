@@ -442,6 +442,7 @@ public partial class MainWindow
     System.Windows.Controls.ContextMenu BuildContextMenu()
     {
         var menu = new System.Windows.Controls.ContextMenu();
+        if (AddObjectContextItems(menu)) return menu;
         void Item(string header, string? gesture, Action act, bool enabled = true)
         {
             var mi = new System.Windows.Controls.MenuItem { Header = header, InputGestureText = gesture ?? "", IsEnabled = enabled };

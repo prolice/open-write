@@ -84,7 +84,7 @@ public sealed partial class DocumentLayout
     /// verticale, autour des objets qui habillent ; aucun segment et la hauteur à descendre si un objet « haut et bas »
     /// (ou un objet sans place à côté) occupe la bande.
     /// </summary>
-    internal static (List<(double L, double R)> Segments, double Down) FreeSegments(IEnumerable<FloatBox> floats, double colL, double colR, double top, double bottom)
+    public static (List<(double L, double R)> Segments, double Down) FreeSegments(IEnumerable<FloatBox> floats, double colL, double colR, double top, double bottom)
     {
         var segs = new List<(double L, double R)> { (colL, colR) };
         double down = 0;

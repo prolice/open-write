@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Windows;
+using OpenWrite.Core.Drawing;
 using OpenWrite.Core.Editing;
 using OpenWrite.Core.Interop;
 using OpenWrite.Core.Model;
@@ -60,6 +61,7 @@ public partial class MainWindow
 
     internal void Copy()
     {
+        if (CopySelectedObject()) return;
         var text = SelectedText();
         if (text.Length == 0) return;
         var data = new DataObject();
@@ -103,8 +105,22 @@ public partial class MainWindow
         catch (System.Runtime.InteropServices.ExternalException) { StatusText.Text = "Le presse-papiers est occupé par un autre programme : réessayez."; }
     }
 
+    /// <summary>Morceau copié dans le presse-papiers interne (objet sélectionné), avec son texte pour les autres programmes.</summary>
+    void SetInternalClipboard(Fragment fragment, string text)
+    {
+        if (_pkg is not { } pkg) return;
+        var data = new DataObject();
+        data.SetText(text, TextDataFormat.UnicodeText);
+        var token = Guid.NewGuid().ToString("N");
+        _internalClip = (token, pkg, fragment);
+        data.SetData(InternalFormat, token);
+        try { Clipboard.SetDataObject(data, copy: true); }
+        catch (System.Runtime.InteropServices.ExternalException) { StatusText.Text = "Le presse-papiers est occupé par un autre programme : réessayez."; }
+    }
+
     void Cut()
     {
+        if (_objSel is not null) { if (CopySelectedObject()) DeleteSelectedObject(); return; }
         if (!HasSelection) return;
         Copy();
         DeleteSelection("Couper");
@@ -204,6 +220,8 @@ public partial class MainWindow
                 if (paras.Count > 0) { fragment = Fragments.Build(paras, mark, Body?.Paragraphs().FirstOrDefault()?.Props.Ns); source = "HTML"; }
             }
             if (fragment is null && Clipboard.ContainsText()) text = Clipboard.GetText();
+            // image seule (copie d'écran, image copiée d'un autre programme) : insérée comme image
+            if (fragment is null && text is null && !textOnly && Has(DataFormats.Bitmap) && PasteImage()) return;
         }
         if (fragment is not null && !fragment.IsEmpty) { PasteFragment(fragment, source); return; }
         if (!string.IsNullOrEmpty(text)) ReplaceSelection(text, "Coller");
@@ -214,6 +232,13 @@ public partial class MainWindow
         if (EditRoot is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
+        // dessins collés : identifiants wp:docPr nouveaux (Word les veut uniques)
+        if (fragment.Blocks.Count > 0 && _pkg is not null)
+        {
+            long next = DrawingOps.MaxDocPrId(AllStories());
+            foreach (var d in fragment.Blocks.SelectMany(b => DrawingOps.AllDrawings(new Story { Blocks = { b } })))
+                DrawingOps.RenumberIds(d, () => ++next);
+        }
         DocPos pos;
         try { pos = Fragments.Paste(_journal, body, "Coller", from, to, fragment, NewParaId()); }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or InvalidOperationException)

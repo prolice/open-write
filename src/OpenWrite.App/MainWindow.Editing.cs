@@ -93,6 +93,9 @@ public partial class MainWindow
     {
         var label = undo ? _journal.UndoLabel : _journal.RedoLabel;
         if (label is null) return;
+        // les blocs restaurés sont des copies : objet sélectionné et zone de texte éditée ne sont plus ceux du document
+        if (_box is not null && _journal.LastChange?.Root is { } r && !ReferenceEquals(r, _box.Story)) _box = null;
+        _objSel = null;
         var caret = undo ? _journal.Undo() : _journal.Redo();
         AfterEdit($"{(undo ? "Annulé" : "Rétabli")} : {label}.", caret);
     }

@@ -415,6 +415,66 @@ public static class SelfTest
         Pump();
         w.SetPageColor("FFF8E7");
         Check(HasWatermark() && w.PackageForTest!.Main!.Items.OfType<System.Xml.Linq.XElement>().Any(e => e.Name.LocalName == "background"), "Ctrl+Y : filigrane revenu ; couleur de page");
+        // objets (1.0) : image insérée en ligne, habillage carré, déplacée, agrandie, Ctrl+Z ; forme ; zone de texte
+        {
+            var bmp = new RenderTargetBitmap(40, 20, 96, 96, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen()) { dc.DrawRectangle(Brushes.OrangeRed, null, new Rect(0, 0, 40, 20)); dc.DrawEllipse(Brushes.White, null, new Point(20, 10), 6, 6); }
+            bmp.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(bmp));
+            using var ms = new MemoryStream();
+            enc.Save(ms);
+            w.FindNext("Deuxième", true, false);
+            Key(System.Windows.Input.Key.Home);
+            w.InsertPicture(ms.ToArray(), ".png", "Essai");
+            Pump();
+            var pic = w.SelectedDrawing;
+            var picObj = pic is null ? null : Core.Drawing.DrawingReader.Read(pic);
+            Check(pic is not null && picObj is { Inline: true, Root: Core.Drawing.PictureVisual } && Math.Abs(picObj.Width - 30) < 0.5 && w.HasObjectSelection,
+                  $"Insérer une image : en ligne, 30 × 15 pt, sélectionnée ({picObj?.Width:0.#} pt)");
+            w.SetObjectWrap("square");
+            Pump();
+            var floats = w.CurrentLayout!.Pages[0].Floats;
+            Check(floats.Count == 1 && floats[0].Object.Wrap == Core.Drawing.WrapKind.Square && w.HasObjectSelection, "Habillage carré : objet flottant sur la page");
+            var before = w.SelectedFrame!.Value;
+            w.MoveSelectedObjectForTest(120, 10);
+            Pump();
+            var after = w.SelectedFrame;
+            Check(after is { } a1 && Math.Abs(a1.X - before.X - 120) < 1 && Math.Abs(a1.Y - before.Y - 10) < 1, $"Déplacer l'objet : 120 pt à droite, 10 pt plus bas ({after?.X - before.X:0.#}, {after?.Y - before.Y:0.#})");
+            w.ResizeSelectedObjectForTest(60, 30);
+            Pump();
+            Check(w.SelectedFrame is { Width: > 59.5 and < 60.5, Height: > 29.5 and < 30.5 }, "Taille de l'objet : 60 × 30 pt");
+            ApplicationCommands.Undo.Execute(null, w);
+            ApplicationCommands.Undo.Execute(null, w);
+            ApplicationCommands.Undo.Execute(null, w);
+            Pump();
+            var back = w.Body!.Paragraphs().SelectMany(p => p.Runs()).SelectMany(r => r.Content).OfType<DrawingContent>().FirstOrDefault();
+            Check(back is not null && Core.Drawing.DrawingReader.Read(back) is { Inline: true, Width: > 29.5 and < 30.5 } && w.CurrentLayout!.Pages[0].Floats.Count == 0,
+                  "Ctrl+Z ×3 : image de nouveau en ligne, taille d'origine");
+            ApplicationCommands.Undo.Execute(null, w);
+            Pump();
+            Check(!w.Body!.Paragraphs().SelectMany(p => p.Runs()).SelectMany(r => r.Content).OfType<DrawingContent>().Any(), "Ctrl+Z : image retirée");
+            // forme : devant le texte, sélectionnée ; Suppr la retire
+            w.InsertShape("ellipse");
+            Pump();
+            Check(w.HasObjectSelection && w.CurrentLayout!.Pages[0].Floats.Any(f => f.Object.Root is Core.Drawing.ShapeVisual { Preset: "ellipse" } && f.Object.Wrap == Core.Drawing.WrapKind.None),
+                  "Insérer une forme : ellipse devant le texte");
+            Key(System.Windows.Input.Key.Delete);
+            Check(!w.HasObjectSelection && w.CurrentLayout!.Pages[0].Floats.Count == 0, "Suppr : forme supprimée");
+            // zone de texte : on écrit dedans, le texte est dans la zone et sur la page
+            w.InsertTextBox();
+            Pump();
+            Type("Dans la zone");
+            var box = w.Body!.Paragraphs().SelectMany(p => p.Runs()).SelectMany(r => r.Content).OfType<DrawingContent>().FirstOrDefault();
+            var boxFloat = w.CurrentLayout!.Pages[0].Floats.FirstOrDefault();
+            Check(w.InTextBox && box is not null && box.TextBoxes.Count == 1 && TextOf(box.TextBoxes[0].Blocks[0]) == "Dans la zone"
+                  && boxFloat is not null && boxFloat.TextLines.Any(l => l.Line.Paragraph.Content.Text == "Dans la zone"),
+                  $"Zone de texte : « {(box is null || box.TextBoxes.Count == 0 ? "" : TextOf(box.TextBoxes[0].Blocks[0]))} » écrit dans la zone, affiché sur la page");
+            Key(System.Windows.Input.Key.Escape);
+            Check(!w.InTextBox && w.HasObjectSelection, "Échap : la zone est sélectionnée");
+            Key(System.Windows.Input.Key.Escape);
+        }
         // mise en page : paysage et deux colonnes, puis Ctrl+Z
         w.EditSections("Paysage", s => { Core.Editing.SectionOps.SetOrientation(s, true); Core.Editing.SectionOps.SetColumns(s, 2); });
         Pump();
@@ -443,6 +503,10 @@ public static class SelfTest
         var reTable = rereadPkg.Main!.Stories().First().Blocks.OfType<Table>().First();
         Check(new Core.Editing.TableOps.Map(reTable).Columns == 3 && reTable.Items.OfType<TableRow>().Count() == 2 && reTable.Props.Val("tblStyle") is not null,
               "fichier relu : tableau de 2 lignes × 3 colonnes avec son style");
+        var reBox = Core.Drawing.DrawingOps.AllDrawings(rereadPkg.Main!.Stories().First()).FirstOrDefault();
+        Check(reBox is not null && reBox.TextBoxes.Count == 1 && TextOf(reBox.TextBoxes[0].Blocks[0]) == "Dans la zone"
+              && Core.Drawing.DrawingReader.Read(reBox) is { Inline: false, Wrap: Core.Drawing.WrapKind.Square },
+              "fichier relu : zone de texte flottante avec son texte");
 
         Idle();
         var content = (FrameworkElement)w.Content;

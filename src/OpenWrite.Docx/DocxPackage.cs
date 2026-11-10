@@ -307,6 +307,78 @@ public sealed class DocxPackage
         return (id, part.Stories().First());
     }
 
+    public const string ImageType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+
+    /// <summary>
+    /// Ajoute une image au paquet (word/media/imageN.ext), la relie à la partie <paramref name="partName"/> et déclare
+    /// son type de contenu ; renvoie l'identifiant de relation (r:embed). Une image dont l'insertion est annulée reste
+    /// dans le paquet, inutilisée (sans effet pour Word).
+    /// </summary>
+    public string AddImage(string partName, byte[] data, string extension)
+    {
+        extension = extension.TrimStart('.').ToLowerInvariant();
+        if (extension == "jpg") extension = "jpeg";
+        var mainDir = Main?.PartName is { } mp && mp.Contains('/') ? mp[..mp.LastIndexOf('/')] : "word";
+        int n = 1;
+        while (Entries.Any(e => e.Name.StartsWith($"{mainDir}/media/image{n}.", StringComparison.OrdinalIgnoreCase))) n++;
+        var name = $"{mainDir}/media/image{n}.{extension}";
+        Entries.Add(new Entry(name, data, DateTimeOffset.Now));
+        // cible relative au dossier de la partie qui l'utilise
+        var dir = partName.Contains('/') ? partName[..partName.LastIndexOf('/')] : "";
+        var target = dir == mainDir ? $"media/image{n}.{extension}" : "/" + name;
+        AddRelationship(partName, ImageType, target, external: false);
+        AddContentTypeDefault(extension, extension switch
+        {
+            "png" => "image/png", "jpeg" => "image/jpeg", "gif" => "image/gif", "bmp" => "image/bmp", "tif" or "tiff" => "image/tiff",
+            "emf" => "image/x-emf", "wmf" => "image/x-wmf", "svg" => "image/svg+xml", "ico" => "image/x-icon", _ => "application/octet-stream",
+        });
+        _mainRels = null;
+        return Relationships(partName).Values.First(r => !r.External && string.Equals(r.Target, name, StringComparison.OrdinalIgnoreCase)).Id;
+    }
+
+    void AddContentTypeDefault(string extension, string contentType)
+    {
+        var entry = Find("[Content_Types].xml");
+        if (entry is null) return;
+        var x = ParseXml(entry.Data);
+        var root = x.Root!;
+        if (root.Elements().Any(e => e.Name.LocalName == "Default" && string.Equals(e.Attribute("Extension")?.Value, extension, StringComparison.OrdinalIgnoreCase))) return;
+        root.AddFirst(new XElement(root.Name.Namespace + "Default", new XAttribute("Extension", extension), new XAttribute("ContentType", contentType)));
+        SetEntry("[Content_Types].xml", x, entry);
+    }
+
+    /// <summary>
+    /// Déclare sur la racine d'une partie de texte les espaces de noms des dessins (wp, wps, wp14, mc, r, w14, v, o, w10)
+    /// et les préfixes ignorables de Word 2010 (mc:Ignorable « w14 wp14 »), pour que les dessins créés gardent les
+    /// préfixes habituels.
+    /// </summary>
+    public static void EnsureDrawingNamespaces(StoryPart part)
+    {
+        XNamespace mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+        var wanted = new[]
+        {
+            ("wpc", "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"),
+            ("mc", mc.NamespaceName),
+            ("o", "urn:schemas-microsoft-com:office:office"),
+            ("r", RelNs),
+            ("v", "urn:schemas-microsoft-com:vml"),
+            ("wp14", "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"),
+            ("wp", "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"),
+            ("w10", "urn:schemas-microsoft-com:office:word"),
+            ("w14", "http://schemas.microsoft.com/office/word/2010/wordml"),
+            ("wpg", "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"),
+            ("wps", "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"),
+        };
+        foreach (var (prefix, ns) in wanted)
+            if (!part.RootAttributes.Any(a => a.IsNamespaceDeclaration && a.Value == ns) && !part.RootAttributes.Any(a => a.IsNamespaceDeclaration && a.Name.LocalName == prefix))
+                part.RootAttributes.Add(new XAttribute(XNamespace.Xmlns + prefix, ns));
+        var ign = part.RootAttributes.FirstOrDefault(a => a.Name == mc + "Ignorable");
+        var list = (ign?.Value ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        foreach (var p in new[] { "w14", "wp14" }) if (!list.Contains(p)) list.Add(p);
+        if (ign is not null) part.RootAttributes.Remove(ign);
+        part.RootAttributes.Add(new XAttribute(mc + "Ignorable", string.Join(" ", list)));
+    }
+
     void AddRelationship(string partName, string type, string target, bool external)
     {
         var dir = partName.Contains('/') ? partName[..partName.LastIndexOf('/')] : "";

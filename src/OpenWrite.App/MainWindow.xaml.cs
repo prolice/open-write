@@ -102,6 +102,7 @@ public partial class MainWindow : Window
         _styles = null;
         _layout = null;
         _drawings = null;
+        if (_hf is not null) { _hf = null; ShowHeaderTab(false); }
         _pagesView = null;
         _journal.Clear();
         _recovered = false;

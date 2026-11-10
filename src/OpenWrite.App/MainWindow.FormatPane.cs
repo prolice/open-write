@@ -176,7 +176,7 @@ public partial class MainWindow
     /// <summary>Applique une modification aux paragraphes de la sélection (ou à celui du point d'insertion), annulable.</summary>
     internal void ApplyParagraphs(string label, Action<Paragraph> apply)
     {
-        if (Body is not { } body || Ordered() is not { } sel) return;
+        if (EditRoot is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         var (anchor, caret) = SelectionDocPos();

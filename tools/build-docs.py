@@ -151,7 +151,7 @@ tabulations, sauts de page.</p>
 forme</strong> : entre deux endroits du document (styles, tableaux, champs compris), depuis Word, LibreOffice ou un
 navigateur, et vers eux (gras, italique, police, taille, couleur, alignement). {k('Ctrl', 'Maj', 'V')} colle le texte
 seul. Un tableau compris dans la sélection est copié ou supprimé en entier.</p>
-{warn("Pas encore modifiables : les en-têtes et pieds de page (version 0.6), les notes (version 1.2), et une sélection sur plusieurs cellules d'un même tableau (version 0.7). Les images d'un autre programme ne sont pas encore collées.")}
+{warn("Pas encore modifiables : les notes (version 1.2) et une sélection sur plusieurs cellules d'un même tableau (version 0.7). Les images d'un autre programme ne sont pas encore collées.")}
 """),
         ("styles", "Styles", f"""
 <p>Un style donne d'un coup la police, la taille, les espacements… d'un paragraphe ; le modifier change tous les
@@ -177,6 +177,28 @@ en liste, ou les en sortent. Au début d'un élément, {k('Tab')} et {k('Maj', '
 texte), <strong>Couleurs</strong> (titres, accents, liens) ou les deux avec <strong>Thèmes</strong>. Seul le texte qui
 utilise les polices et couleurs du thème change — les titres et citations notamment ; une police ou une couleur choisie
 à la main reste. Dans la liste des polices du volet, « +Titres » et « +Corps » sont les polices du thème.</p>
+"""),
+        ("mise-en-page", "Mise en page et colonnes", f"""
+<p>L'onglet <strong>Mise en page</strong> règle la section du point d'insertion : <strong>Marges</strong> (préréglages
+ou marges personnalisées), <strong>Orientation</strong> (portrait, paysage), <strong>Taille</strong> du papier,
+<strong>Colonnes</strong> (une à trois, gauche, droite, ou nombre et espacement au choix avec un trait entre les
+colonnes), <strong>Numéros de ligne</strong>. La boîte <strong>Mise en page</strong> s'applique à la section ou à tout
+le document.</p>
+<p><strong>Sauts</strong> insère un saut de page ({k('Ctrl', 'Entrée')}), de colonne ({k('Ctrl', 'Maj', 'Entrée')})
+ou de section : la nouvelle section commence à la page suivante, sur la même page (continu), ou à la prochaine page
+paire ou impaire, et peut avoir ses propres marges, colonnes et orientation. Une section continue en colonnes est
+équilibrée, comme dans Word.</p>
+<p>Dans l'onglet <strong>Création</strong> : <strong>Filigrane</strong> (CONFIDENTIEL, BROUILLON… ou votre texte),
+<strong>Couleur</strong> de page et <strong>Bordures</strong> de page.</p>
+"""),
+        ("en-tetes", "En-têtes et pieds de page", f"""
+<p><strong>Double-cliquez dans la marge du haut ou du bas</strong> d'une page pour modifier son en-tête ou son pied de
+page (il est créé s'il n'existe pas) : le texte du document est grisé, l'onglet <strong>En-tête et pied de page</strong>
+apparaît. {k('Échap')} ou un double-clic dans la page ramène au document.</p>
+<p>L'onglet propose : <strong>N° de page</strong> (numéro de la page, nombre de pages, « Page X sur Y », format des
+numéros — 1, i, I, a, A — et numéro de départ de la section), <strong>Atteindre</strong> (de l'en-tête au pied),
+<strong>1re page différente</strong>, <strong>Paires et impaires</strong> différentes, <strong>Lier au précédent</strong>
+(reprendre l'en-tête de la section précédente ou en avoir un propre) et la <strong>Position</strong> de l'en-tête et du pied.</p>
 """),
         ("rechercher", "Rechercher et remplacer", f"""
 <p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
@@ -210,7 +232,7 @@ répétés), ses images en ligne et la numérotation de ses listes. La barre d'�
 de pages ; le zoom se règle avec {k('Ctrl')} + molette ou le curseur en bas à droite.</p>
 <p>Une police absente de l'ordinateur est remplacée, comme Word le fait, par la police de remplacement indiquée dans le
 document ou par une police aux mêmes dimensions ; la barre d'état signale les remplacements.</p>
-{warn("Pas encore affichés : les images et formes flottantes, les zones de texte et les colonnes (versions suivantes). Le texte qu'elles contiennent n'est pas perdu : il est conservé à l'enregistrement.")}
+{warn("Pas encore affichés : les images et formes flottantes et les zones de texte (version 1.0). Le texte qu'elles contiennent n'est pas perdu : il est conservé à l'enregistrement.")}
 """),
         ("informations", "Informations sur le document", """
 <p><strong>Fichier ▸ Informations</strong> résume le document : nombre de paragraphes, tableaux, sections, images,
@@ -224,7 +246,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.3", "Vue des pages : pagination comme dans Word, en-têtes et pieds, notes, miniatures"),
             ("0.4", "Saisie et mise en forme directe, presse-papiers"),
             ("0.5", "Styles, listes et thèmes : galerie, modifier et créer des styles, puces et numéros, polices et couleurs du thème"),
-            ("0.6", "Mise en page, sections, en-têtes et pieds de page"),
+            ("0.6", "Mise en page, sections, colonnes, en-têtes et pieds de page modifiables, numéros de page, filigrane, bordures et couleur de page"),
             ("0.7", "Tableaux"),
             ("1.0", "Images, formes et zones de texte"),
             ("1.1", "Orthographe, commentaires, suivi des modifications"),
@@ -272,6 +294,7 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
         ("styles-listes", "Styles et listes", table([
             ("Titre 1, 2, 3", k("Ctrl", "Alt", "1") + " " + k("Ctrl", "Alt", "2") + " " + k("Ctrl", "Alt", "3")),
             ("Normal", k("Ctrl", "Maj", "N")), ("Puces", k("Ctrl", "Maj", "L")),
+            ("Saut de colonne", k("Ctrl", "Maj", "Entrée")), ("Quitter l'en-tête ou le pied", k("Échap")),
             ("Niveau de liste suivant, précédent", k("Tab") + " " + k("Maj", "Tab") + " (au début d'un élément)"),
         ])),
         ("mise-en-forme", "Mise en forme", table([

@@ -18,7 +18,7 @@ namespace OpenWrite.App;
 /// OpenWrite.exe --screenshot document.docx|- image.png [largeur hauteur] [scène].
 /// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about », « page-N » (vue défilée à la page N),
 /// « selection » (quelques mots sélectionnés sur la première page), « marques » (idem, marques de mise en forme affichées),
-/// boîtes « symbole », « police », « paragraphe ».
+/// boîtes « symbole », « police », « paragraphe », « en-tete » (édition de l'en-tête de la première page).
 /// Auto-test de bout en bout (OpenWrite.exe --selftest dossier) : la vraie fenêtre, hors écran, sur un document fabriqué.
 /// </summary>
 public static class SelfTest
@@ -323,6 +323,36 @@ public static class SelfTest
         ApplicationCommands.Undo.Execute(null, w);
         Pump();
         Check(w.Body!.Blocks.Count == 4 && InList(2), "Ctrl+Z : élément vide retiré");
+        // en-tête (0.6) : créé par double-clic dans la marge du haut, frappe, numéro de page, sortie par Échap
+        Check(w.EnterHeader(0, "header"), "Double-clic dans la marge : en-tête créé et édité");
+        Type("Club ");
+        w.InsertPageField("PAGE");
+        Key(System.Windows.Input.Key.Escape);
+        Pump();
+        var hdrPkg = w.PackageForTest!;
+        var hdrStory = hdrPkg.Stories.Values.FirstOrDefault(p => p.Kind == "header")?.Stories().First();
+        Check(!w.InHeaderMode && hdrStory is not null && TextOf(hdrStory.Blocks[0]).StartsWith("Club ")
+              && FieldIndex.Build(hdrStory).All.Any(f => f.Code.Trim() == "PAGE"), "En-tête : texte et champ PAGE, retour au document");
+        // filigrane (dans les en-têtes, un seul Ctrl+Z), couleur de page
+        bool HasWatermark() => w.PackageForTest!.Stories.Values.Where(p => p.Kind == "header").SelectMany(p => p.Stories()).SelectMany(st => st.Paragraphs())
+            .SelectMany(p => p.Runs()).SelectMany(r => r.Content).OfType<OpaqueRunContent>().Any(o => o.Xml.Descendants().Any(e => e.Name.LocalName == "textpath"));
+        w.SetWatermark("BROUILLON");
+        Check(HasWatermark(), "Filigrane posé dans l'en-tête");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(!HasWatermark(), "Ctrl+Z : filigrane retiré d'un coup");
+        ApplicationCommands.Redo.Execute(null, w);
+        Pump();
+        w.SetPageColor("FFF8E7");
+        Check(HasWatermark() && w.PackageForTest!.Main!.Items.OfType<System.Xml.Linq.XElement>().Any(e => e.Name.LocalName == "background"), "Ctrl+Y : filigrane revenu ; couleur de page");
+        // mise en page : paysage et deux colonnes, puis Ctrl+Z
+        w.EditSections("Paysage", s => { Core.Editing.SectionOps.SetOrientation(s, true); Core.Editing.SectionOps.SetColumns(s, 2); });
+        Pump();
+        Check(w.CurrentLayout!.Pages[0].Geometry.PageWidth > w.CurrentLayout!.Pages[0].Geometry.PageHeight && w.CurrentLayout!.Pages[0].Geometry.ColumnCount == 2,
+              "Mise en page : paysage, deux colonnes");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(w.CurrentLayout!.Pages[0].Geometry.PageWidth < w.CurrentLayout!.Pages[0].Geometry.PageHeight, "Ctrl+Z : portrait, une colonne");
         Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
         var reread = DocxPackage.Open(file).Main!.Stories().First();
         Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"
@@ -330,6 +360,12 @@ public static class SelfTest
               && FieldIndex.Build(reread).All.Single(f => f.CheckBox is not null).CheckBox!.Checked, "fichier relu : texte saisi, case toujours cochée");
         var rereadPkg = DocxPackage.Open(file);
         var rereadLink = ((Paragraph)rereadPkg.Main!.Stories().First().Blocks[2]).Inlines.OfType<InlineContainer>().FirstOrDefault(c => c.Name.LocalName == "hyperlink");
+        var reHeader = rereadPkg.Stories.Values.FirstOrDefault(p => p.Kind == "header")?.Stories().First();
+        Check(reHeader is not null && FieldIndex.Build(reHeader).All.Any(f => f.Code.Trim() == "PAGE")
+              && rereadPkg.Main!.Stories().First().FinalSection?.Element?.Elements().Any(e => e.Name.LocalName == "headerReference") == true,
+              "fichier relu : en-tête avec numéro de page, référencé par la section");
+        Check(rereadPkg.Main!.Items.OfType<System.Xml.Linq.XElement>().Any(e => e.Name.LocalName == "background" && e.Attributes().Any(x => x.Value == "FFF8E7")),
+              "fichier relu : couleur de page");
         var reStyles = rereadPkg.XmlPartOf("styles")?.Doc.Root;
         Check(reStyles is not null && rereadPkg.XmlPartOf("numbering") is not null
               && Core.Styles.StyleOps.ByName(new Core.Styles.StyleSheet(reStyles, null), "heading 1") is not null, "fichier relu : styles.xml et numbering.xml créés");
@@ -377,9 +413,17 @@ public static class SelfTest
             updates.Add(w.LastUpdateMs);
             labelled.Add((sw.Elapsed.TotalMilliseconds, what));
         }
-        void Key(Key k) => view.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(view)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
-        void Char(char ch) => view.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, view, ch.ToString()))
-            { RoutedEvent = TextCompositionManager.TextInputEvent });
+        void Key(Key k)
+        {
+            var v = w.PagesViewForTest!;
+            v.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(v)!, 0, k) { RoutedEvent = Keyboard.KeyDownEvent });
+        }
+        void Char(char ch)
+        {
+            var v = w.PagesViewForTest!;
+            v.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, v, ch.ToString()))
+                { RoutedEvent = TextCompositionManager.TextInputEvent });
+        }
         what = "frappe";
         foreach (var ch in "Essai de frappe au milieu du document, avec une phrase assez longue pour changer de ligne. ") Measure(() => Char(ch));
         what = "Entrée";
@@ -403,6 +447,17 @@ public static class SelfTest
         Measure(() => w.ToggleList(Core.Styles.ListKind.Numbered));
         what = "couleurs du thème";
         Measure(() => w.SetThemeColors(3));
+        // lot 5 : en-tête de la première page (créé s'il manque), frappe dedans, sortie ; colonnes de la section
+        what = "entrer dans l'en-tête";
+        Measure(() => w.EnterHeader(0, "header"));
+        what = "frappe dans l'en-tête";
+        foreach (var ch in "En-tête ") Measure(() => Char(ch));
+        what = "numéro de page";
+        Measure(() => w.InsertPageField("PAGE"));
+        what = "sortir de l'en-tête";
+        Measure(() => w.ExitHeader());
+        what = "deux colonnes";
+        Measure(() => w.EditSections("Deux colonnes", s => Core.Editing.SectionOps.SetColumns(s, 2)));
         if (saveCopy is not null) w.SaveCopy(saveCopy);
         Console.WriteLine("plus lentes : " + string.Join(", ", labelled.OrderByDescending(x => x.Ms).Take(4).Select(x => $"{x.What} {x.Ms:0} ms")));
         times.Sort();
@@ -474,6 +529,21 @@ public static class SelfTest
             default:
                 if (scene is not null && w.FindName(scene) is RadioButton rb) rb.IsChecked = true;
                 // « selection » : quelques mots sélectionnés sur la première page
+                if (scene == "arriere-plan")
+                {
+                    Pump();
+                    w.SetWatermark("BROUILLON");
+                    w.SetPageColor("FFF8E7");
+                    w.EditSections("Bordure", s => Core.Editing.SectionOps.SetPageBorders(s, "double", 4), all: true);
+                    w.EditSections("Numéros de ligne", s => Core.Editing.SectionOps.SetLineNumbers(s, "newPage"));
+                    Pump();
+                    w.GoToPage(1);
+                }
+                if (scene == "en-tete")
+                {
+                    Pump();
+                    w.EnterHeader(0, "header");
+                }
                 if (scene is "selection" or "marques")
                 {
                     Pump();

@@ -15,6 +15,7 @@ public partial class MainWindow
     XElement? StylesRoot(bool create = false) => _pkg?.XmlPartOf("styles", create)?.Doc.Root;
     XElement? NumberingRoot(bool create = false) => _pkg?.XmlPartOf("numbering", create)?.Doc.Root;
     internal XElement? StylesXmlForTest => StylesRoot();
+    internal OpenWrite.Docx.DocxPackage? PackageForTest => _pkg;
 
     /// <summary>
     /// Transaction sur les blocs de la sélection (tableaux touchés compris) où l'opération peut aussi modifier styles.xml
@@ -22,7 +23,7 @@ public partial class MainWindow
     /// </summary>
     bool EditSelection(string label, Action<EditTransaction, Story, DocPos, DocPos> op, bool lists = false, bool additive = false)
     {
-        if (Body is not { } body || Ordered() is not { } sel) return false;
+        if (EditRoot is not { } body || Ordered() is not { } sel) return false;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return false; }
         if (!SupportedRange(from, to)) return false;
         var (f, t) = FormatOps.Normalize(from, to);
@@ -133,7 +134,7 @@ public partial class MainWindow
     /// <summary>Puces / numéros : retire la liste si toute la sélection en est déjà une de ce genre, sinon l'applique.</summary>
     internal void ToggleList(ListKind kind)
     {
-        if (_styles is not { } styles || Body is not { } body || Ordered() is not { } sel || ToDocPos(sel.From) is not { } f0 || ToDocPos(sel.To) is not { } t0) return;
+        if (_styles is not { } styles || EditRoot is not { } body || Ordered() is not { } sel || ToDocPos(sel.From) is not { } f0 || ToDocPos(sel.To) is not { } t0) return;
         if (!SupportedRange(f0, t0)) return;
         var (nf, nt) = FormatOps.Normalize(f0, t0);
         var paras = ParagraphsIn(body, nf, nt);

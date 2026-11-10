@@ -77,9 +77,9 @@ public partial class MainWindow
     {
         if (_layout is null || Locate(from) is not { } a || Locate(to) is not { } b) yield break;
         int n = 0;
-        for (LineRef? r = a.Ref; r is { } cur && cur.CompareTo(b.Ref) <= 0 && n < 20000; r = _layout.Step(cur, 1))
+        for (LineRef? r = a.Ref; r is { } cur && cur.CompareTo(b.Ref) <= 0 && n < 20000; r = Src.Step(cur, 1))
         {
-            var l = _layout.Line(cur);
+            var l = Src.Line(cur);
             var box = l.Paragraph.Lines[l.Line];
             var c = l.Paragraph.Content;
             int s = cur.Equals(a.Ref) ? Math.Max(box.Start, from.Index) : box.Start;
@@ -127,7 +127,7 @@ public partial class MainWindow
     /// <summary>Applique une mise en forme de caractère à une plage (annulable), sélection gardée.</summary>
     void ApplyCharacter(string label, TextPoint a, TextPoint b, Action<Paragraph, Run> apply)
     {
-        if (Body is not { } body || ToDocPos(a) is not { } from || ToDocPos(b) is not { } to) { NotEditable(); return; }
+        if (EditRoot is not { } body || ToDocPos(a) is not { } from || ToDocPos(b) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         var (anchor, caret) = SelectionDocPos();
         FormatOps.Apply(_journal, body, label, from, to, () => FormatOps.ApplyToRuns(body, from, to, apply));
@@ -137,7 +137,7 @@ public partial class MainWindow
     /// <summary>Alignement des paragraphes de la sélection (ou du paragraphe du point d'insertion) ; déjà aligné ainsi : à gauche.</summary>
     internal void SetAlignment(string jc)
     {
-        if (Body is not { } body || Ordered() is not { } sel) return;
+        if (EditRoot is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         var paragraphs = new List<Paragraph>();

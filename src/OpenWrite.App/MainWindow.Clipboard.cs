@@ -29,9 +29,9 @@ public partial class MainWindow
         if (!HasSelection || _layout is null || Ordered() is not { } sel || Locate(sel.From) is not { } a || Locate(sel.To) is not { } b) return (paras, false);
         ParagraphLayout? prev = null;
         List<(string, RunFormat)>? runs = null;
-        for (LineRef? r = a.Ref; r is { } cur && cur.CompareTo(b.Ref) <= 0; r = _layout.Step(cur, 1))
+        for (LineRef? r = a.Ref; r is { } cur && cur.CompareTo(b.Ref) <= 0; r = Src.Step(cur, 1))
         {
-            var l = _layout.Line(cur);
+            var l = Src.Line(cur);
             var box = l.Paragraph.Lines[l.Line];
             var c = l.Paragraph.Content;
             if (!ReferenceEquals(prev, l.Paragraph))
@@ -72,7 +72,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { }
         _internalClip = null;
-        if (Body is { } body && _pkg is { } pkg && Ordered() is { } sel && ToDocPos(sel.From) is { } from && ToDocPos(sel.To) is { } to
+        if (EditRoot is { } body && _pkg is { } pkg && Ordered() is { } sel && ToDocPos(sel.From) is { } from && ToDocPos(sel.To) is { } to
             && SupportedRange(from, to, quiet: true))
         {
             try
@@ -155,7 +155,7 @@ public partial class MainWindow
 
     void PasteFragment(Fragment fragment, string source)
     {
-        if (Body is not { } body || Ordered() is not { } sel) return;
+        if (EditRoot is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         DocPos pos;

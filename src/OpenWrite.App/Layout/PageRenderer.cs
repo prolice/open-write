@@ -35,9 +35,126 @@ public sealed class PageRenderer
     /// <summary>Dessine le contenu de la page (sans le fond blanc), en points depuis le coin haut gauche.</summary>
     public void Draw(DrawingContext dc, Page page, DocumentLayout layout, int number, int count)
     {
-        if (layout.HeaderFooter(page, count) is { } hf) DrawContent(dc, hf, header: true);
+        // filigrane (derrière le texte), bordure de page, numéros de ligne
+        if (layout.Watermark(page) is { } wm) DrawWatermark(dc, page, wm);
+        DrawPageBorders(dc, page);
+        DrawLineNumbers(dc, page, layout);
+        if (layout.HeaderFooter(page, count) is { } hf) DrawContent(dc, hf, header: !HeaderMode);
+        // édition d'un en-tête : le corps est grisé, les limites de l'en-tête et du pied sont tracées (comme Word)
+        if (HeaderMode) dc.PushOpacity(0.4);
         DrawContent(dc, page, header: false);
         if (layout.Notes(page) is { } notes) DrawContent(dc, notes, header: false);
+        if (HeaderMode)
+        {
+            dc.Pop();
+            var g = page.Geometry;
+            double top = page.ContentTop, bottom = g.PageHeight - (page.FirstOfSection ? g.FirstBottom : g.Bottom);
+            dc.DrawLine(BoundaryPen, new Point(0, top), new Point(g.PageWidth, top));
+            dc.DrawLine(BoundaryPen, new Point(0, bottom), new Point(g.PageWidth, bottom));
+            DrawLabel(dc, layout.HeaderType(page) switch { "first" => "En-tête de la première page", "even" => "En-tête de page paire", _ => "En-tête" }, g.Left, top + 1);
+            DrawLabel(dc, layout.HeaderType(page) switch { "first" => "Pied de la première page", "even" => "Pied de page paire", _ => "Pied de page" }, g.Left, bottom - 11);
+        }
+    }
+
+    static readonly Dictionary<string, Color> VmlColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["silver"] = Color.FromRgb(0xC0, 0xC0, 0xC0), ["gray"] = Colors.Gray, ["black"] = Colors.Black, ["red"] = Colors.Red, ["blue"] = Colors.Blue,
+    };
+
+    static Color VmlColor(string c) => VmlColors.TryGetValue(c, out var k) ? k
+        : c.TrimStart('#') is { Length: 6 } hex && ParseColor(hex) is { } p ? p : Color.FromRgb(0xC0, 0xC0, 0xC0);
+
+    /// <summary>Filigrane : texte WordArt centré dans la marge, tourné, étiré à la taille de la forme.</summary>
+    static void DrawWatermark(DrawingContext dc, Page page, (string Text, string Font, string Color, double Rotation, double Width, double Height, double Opacity) wm)
+    {
+        if (wm.Text.Length == 0) return;
+        var g = page.Geometry;
+        double cx = g.Left + g.ColumnWidth / 2, cy = (page.ContentTop + g.PageHeight - g.Bottom) / 2;
+        var brush = new SolidColorBrush(VmlColor(wm.Color)) { Opacity = Math.Clamp(wm.Opacity, 0.05, 1) };
+        brush.Freeze();
+        var ft = new FormattedText(wm.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(wm.Font), 100, brush, 1.0);
+        double sx = wm.Width > 0 ? wm.Width / Math.Max(1, ft.Width) : 1, sy = wm.Height > 0 ? wm.Height / Math.Max(1, ft.Height) : sx;
+        dc.PushTransform(new TranslateTransform(cx, cy));
+        dc.PushTransform(new RotateTransform(wm.Rotation));
+        dc.PushTransform(new ScaleTransform(sx, sy));
+        dc.DrawText(ft, new Point(-ft.Width / 2, -ft.Height / 2));
+        dc.Pop(); dc.Pop(); dc.Pop();
+    }
+
+    /// <summary>Bordure de page (w:pgBorders) : distance au bord de la page ou au texte, première page / autres.</summary>
+    static void DrawPageBorders(DrawingContext dc, Page page)
+    {
+        var g = page.Geometry;
+        if (g.SectPr?.Element(g.SectPr.Name.Namespace + "pgBorders") is not { } b) return;
+        var w = b.Name.Namespace;
+        var display = b.Attribute(w + "display")?.Value ?? "allPages";
+        if (display == "firstPage" && !page.FirstOfSection || display == "notFirstPage" && page.FirstOfSection) return;
+        bool fromPage = b.Attribute(w + "offsetFrom")?.Value == "page";
+        double bottomText = g.PageHeight - (page.FirstOfSection ? g.FirstBottom : g.Bottom);
+        foreach (var side in new[] { "top", "left", "bottom", "right" })
+        {
+            if (b.Element(w + side) is not { } e || e.Attribute(w + "val")?.Value is null or "none" or "nil") continue;
+            double Num(string a, double d) => double.TryParse(e.Attribute(w + a)?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : d;
+            double width = Math.Max(0.25, Num("sz", 4) / 8), space = Num("space", fromPage ? 24 : 4);
+            var val = e.Attribute(w + "val")!.Value;
+            var color = e.Attribute(w + "color")?.Value is { Length: 6 } c && ParseColor(c) is { } col ? col : Colors.Black;
+            var pen = new Pen(new SolidColorBrush(color), width) { DashStyle = val switch { "dotted" => DashStyles.Dot, "dashed" or "dashSmallGap" => DashStyles.Dash, "dotDash" => DashStyles.DashDot, _ => DashStyles.Solid } };
+            pen.Freeze();
+            // rectangle de la bordure
+            double l = fromPage ? space : g.Left - space, r = fromPage ? g.PageWidth - space : g.PageWidth - g.Right + space;
+            double t = fromPage ? space : page.ContentTop - space, bt = fromPage ? g.PageHeight - space : bottomText + space;
+            (Point a, Point z) = side switch
+            {
+                "top" => (new Point(l, t), new Point(r, t)),
+                "bottom" => (new Point(l, bt), new Point(r, bt)),
+                "left" => (new Point(l, t), new Point(l, bt)),
+                _ => (new Point(r, t), new Point(r, bt)),
+            };
+            dc.DrawLine(pen, a, z);
+            if (val is "double" or "thinThickSmallGap" or "thickThinSmallGap")
+            {
+                double o = width * 2 + 1;
+                var (dx, dy) = side switch { "top" => (0.0, o), "bottom" => (0.0, -o), "left" => (o, 0.0), _ => (-o, 0.0) };
+                dc.DrawLine(pen, new Point(a.X + dx, a.Y + dy), new Point(z.X + dx, z.Y + dy));
+            }
+        }
+    }
+
+    /// <summary>Numéros de ligne dans la marge de gauche (w:lnNumType : pas, distance).</summary>
+    static void DrawLineNumbers(DrawingContext dc, Page page, DocumentLayout layout)
+    {
+        if (page.FirstLineNumber <= 0) return;
+        var g = page.Geometry;
+        var ln = g.SectPr!.Element(g.SectPr.Name.Namespace + "lnNumType")!;
+        var w = ln.Name.Namespace;
+        int countBy = int.TryParse(ln.Attribute(w + "countBy")?.Value, out var cb) && cb > 0 ? cb : 1;
+        double distance = double.TryParse(ln.Attribute(w + "distance")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d / 20 : 18;
+        int n = page.FirstLineNumber;
+        foreach (var l in layout.NumberedLines(page))
+        {
+            if (n % countBy == 0)
+            {
+                var box = l.Paragraph.Lines[l.Line];
+                var rf = layout.DefaultRunFormat;
+                var ft = new FormattedText(n.ToString(CultureInfo.InvariantCulture), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                    new Typeface(rf.FontAscii ?? "Calibri"), Math.Max(6, rf.Size), Brushes.Black, 1.0);
+                dc.DrawText(ft, new Point(g.Left - distance - ft.Width, l.Y + box.Baseline - ft.Baseline));
+            }
+            n++;
+        }
+    }
+
+    /// <summary>Édition des en-têtes et pieds : en-têtes à l'encre normale, corps grisé.</summary>
+    public bool HeaderMode { get; set; }
+
+    static readonly Pen BoundaryPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x08, 0x7C, 0xFF))), 0.6) { DashStyle = DashStyles.Dash });
+    static readonly Brush LabelBack = Freeze(new SolidColorBrush(Color.FromRgb(0xE1, 0xE9, 0xFF)));
+
+    static void DrawLabel(DrawingContext dc, string text, double x, double y)
+    {
+        var ft = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 7.5, MarkInk, 1.0);
+        dc.DrawRectangle(LabelBack, null, new Rect(x, y, ft.Width + 6, ft.Height + 1));
+        dc.DrawText(ft, new Point(x + 3, y + 0.5));
     }
 
     static readonly Pen RulePen = Freeze(new Pen(Brushes.Black, 0.5));

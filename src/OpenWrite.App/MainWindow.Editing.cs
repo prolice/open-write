@@ -45,6 +45,7 @@ public partial class MainWindow
         }
         _journal.Clear();
         _recovered = false;
+        if (_hf is not null) { _hf = null; ShowHeaderTab(false); }
         return true;
     }
 

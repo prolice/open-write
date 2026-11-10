@@ -31,6 +31,8 @@ public sealed class UndoJournal
         public DateTime Time { get; set; }
         /// <summary>Parties XML modifiées (styles, numérotation) : racine vivante, copies avant / après.</summary>
         public List<(XElement Root, XElement Before, XElement After)> Xml { get; init; } = new();
+        /// <summary>Autres suites de blocs modifiées (en-têtes d'un filigrane…) : copies avant / après de tous leurs blocs.</summary>
+        public List<(Story Root, List<Block> Before, List<Block> After)> Stories { get; init; } = new();
     }
 
     readonly List<Entry> _undo = new();
@@ -101,8 +103,10 @@ public sealed class UndoJournal
             // échec : on remet les blocs d'avant (l'opération a pu les modifier en partie), et les parties XML
             Replace(container, tx.Index, Math.Max(0, newCount), tx.Before.Select(b => b.Clone()));
             foreach (var (root, before) in tx.Xml) Restore(root, before);
+            foreach (var (story, before) in tx.Stories) Replace(story, 0, story.Blocks.Count, before.Select(b => b.Clone()));
             return;
         }
+        var stories = tx.Stories.Select(x => (x.Root, x.Before, x.Root.Blocks.Select(b => b.Clone()).ToList())).ToList();
         var xml = tx.Xml.Select(x => (x.Root, x.Before, new XElement(x.Root))).ToList();
         LastXml = xml.Select(x => x.Root).ToList();
         var after = container.Blocks.GetRange(tx.Index, newCount).Select(b => b.Clone()).ToList();
@@ -110,7 +114,7 @@ public sealed class UndoJournal
         if (_savedAt is not null && _redo.Contains(_savedAt)) _savedLost = true;      // l'état enregistré n'est plus atteignable
         _redo.Clear();
         var last = _undo.Count > 0 ? _undo[^1] : null;
-        if (tx.MergeKey is not null && xml.Count == 0 && last is not null && last.Xml.Count == 0 && last.MergeKey == tx.MergeKey && last != _savedAt && last.Root == tx.Root
+        if (tx.MergeKey is not null && xml.Count == 0 && stories.Count == 0 && last is not null && last.Xml.Count == 0 && last.Stories.Count == 0 && last.MergeKey == tx.MergeKey && last != _savedAt && last.Root == tx.Root
             && last.Container.SequenceEqual(tx.Container) && last.Index == tx.Index && last.After.Count == tx.Before.Count
             && Equals(last.CaretAfter, tx.CaretBefore))
         {
@@ -124,7 +128,7 @@ public sealed class UndoJournal
             _undo.Add(new Entry
             {
                 Label = tx.Label, Root = tx.Root, Container = tx.Container, Index = tx.Index, Before = tx.Before, After = after,
-                CaretBefore = tx.CaretBefore, CaretAfter = caretAfter, MergeKey = tx.MergeKey, Time = DateTime.UtcNow, Xml = xml,
+                CaretBefore = tx.CaretBefore, CaretAfter = caretAfter, MergeKey = tx.MergeKey, Time = DateTime.UtcNow, Xml = xml, Stories = stories,
             });
             if (_undo.Count > MaxEntries)
             {
@@ -133,6 +137,7 @@ public sealed class UndoJournal
             }
         }
         Changed?.Invoke(tx.Root);
+        foreach (var x in stories) Changed?.Invoke(x.Root);
         foreach (var x in xml) XmlChanged?.Invoke(x.Root);
     }
 
@@ -154,9 +159,11 @@ public sealed class UndoJournal
         Replace(DocPos.ResolveContainer(e.Root, e.Container), e.Index, e.After.Count, e.Before.Select(b => b.Clone()));
         LastChange = (e.Root, e.Container, e.Index, e.Before.Count);
         foreach (var (root, before, _) in e.Xml) Restore(root, before);
+        foreach (var (story, before, _) in e.Stories) Replace(story, 0, story.Blocks.Count, before.Select(b => b.Clone()));
         LastXml = e.Xml.Select(x => x.Root).ToList();
         _redo.Add(e);
         Changed?.Invoke(e.Root);
+        foreach (var x in e.Stories) Changed?.Invoke(x.Root);
         foreach (var x in e.Xml) XmlChanged?.Invoke(x.Root);
         return e.CaretBefore;
     }
@@ -170,9 +177,11 @@ public sealed class UndoJournal
         Replace(DocPos.ResolveContainer(e.Root, e.Container), e.Index, e.Before.Count, e.After.Select(b => b.Clone()));
         LastChange = (e.Root, e.Container, e.Index, e.After.Count);
         foreach (var (root, _, after) in e.Xml) Restore(root, after);
+        foreach (var (story, _, after) in e.Stories) Replace(story, 0, story.Blocks.Count, after.Select(b => b.Clone()));
         LastXml = e.Xml.Select(x => x.Root).ToList();
         _undo.Add(e);
         Changed?.Invoke(e.Root);
+        foreach (var x in e.Stories) Changed?.Invoke(x.Root);
         foreach (var x in e.Xml) XmlChanged?.Invoke(x.Root);
         return e.CaretAfter;
     }
@@ -245,6 +254,14 @@ public sealed class EditTransaction : IDisposable
     internal DocPos? CaretBefore { get; }
     internal string? MergeKey { get; }
     internal List<(XElement Root, XElement Before)> Xml { get; } = new();
+    internal List<(Story Root, List<Block> Before)> Stories { get; } = new();
+
+    /// <summary>Suit une autre suite de blocs (un en-tête…) dans cette transaction : tous ses blocs sont copiés maintenant.</summary>
+    public void TrackStory(Story root)
+    {
+        if (ReferenceEquals(root, Root) || Stories.Any(x => ReferenceEquals(x.Root, root))) return;
+        Stories.Add((root, root.Blocks.Select(b => b.Clone()).ToList()));
+    }
 
     /// <summary>
     /// Suit une partie XML (styles.xml, numbering.xml) dans cette transaction : copie prise maintenant, restaurée à

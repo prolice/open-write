@@ -44,7 +44,7 @@ public partial class MainWindow
         }),
         ("TabLayout", new RibbonGroup[]
         {
-            new("Mise en page", "0.6", ("", "Marges"), ("", "Orientation"), ("", "Taille"), ("", "Colonnes"), ("", "Sauts")),
+            new("Mise en page", "0.6", ("", "Marges"), ("", "Orientation"), ("", "Taille"), ("", "Colonnes"), ("", "Sauts"), ("\uE8A5", "Numéros de ligne")),
             new("Paragraphe", "0.4", ("", "Retraits"), ("", "Espacement")),
             new("Organiser", "1.0", ("", "Position"), ("", "Habillage")),
         }),
@@ -120,6 +120,9 @@ public partial class MainWindow
         ["Thèmes"] = (() => ShowThemesMenu(_clickedButton!), "Thèmes : polices et couleurs du document ensemble"),
         ["Polices"] = (() => ShowThemeFontsMenu(_clickedButton!), "Polices du thème : titres et corps du texte"),
         ["Couleurs"] = (() => ShowThemeColorsMenu(_clickedButton!), "Couleurs du thème : titres, accents, liens"),
+        ["Filigrane"] = (() => ShowWatermarkMenu(_clickedButton!), "Filigrane texte derrière le texte de chaque page"),
+        ["Couleur"] = (() => ShowPageColorMenu(_clickedButton!), "Couleur de fond des pages"),
+        ["Bordures"] = (() => ShowPageBordersMenu(_clickedButton!), "Bordure autour des pages"),
     };
 
     /// <summary>Commandes de l'onglet Insertion déjà disponibles.</summary>
@@ -139,6 +142,7 @@ public partial class MainWindow
         ["Taille"] = (() => ShowSizeMenu(_clickedButton!), "Format du papier"),
         ["Colonnes"] = (() => ShowColumnsMenu(_clickedButton!), "Colonnes de la section"),
         ["Sauts"] = (() => ShowBreaksMenu(_clickedButton!), "Sauts de page, de colonne et de section"),
+        ["Numéros de ligne"] = (() => ShowLineNumbersMenu(_clickedButton!), "Numéros de ligne dans la marge de gauche"),
         ["Espacement"] = (ShowParagraphDialog, "Paragraphe… : espacement et interligne"),
     };
 
@@ -202,7 +206,7 @@ public partial class MainWindow
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
                         // menu sous le bouton : il garde le clavier
-                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts";
+                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne";
                         button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }

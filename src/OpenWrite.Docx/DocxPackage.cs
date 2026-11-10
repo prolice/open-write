@@ -219,15 +219,8 @@ public sealed class DocxPackage
     /// </summary>
     public OpenWrite.Core.Styles.StyleSheet StyleSheet()
     {
-        XElement? Part(string kind)
-        {
-            if (Main is null) return null;
-            var name = Targets(Main.PartName, t => t.EndsWith("/" + kind, StringComparison.Ordinal)).FirstOrDefault().Name;
-            if (name is null || Find(name) is not { } e) return null;
-            try { return ParseXml(e.Data).Root; } catch (XmlException) { return null; }
-        }
         // styles et numérotation : parties modifiables (lot 4), les mêmes objets XML que ceux que l'on modifie
-        return new OpenWrite.Core.Styles.StyleSheet(XmlPartOf("styles")?.Doc.Root, XmlPartOf("numbering")?.Doc.Root, XmlPartOf("theme")?.Doc.Root, Part("settings"), Main?.W);
+        return new OpenWrite.Core.Styles.StyleSheet(XmlPartOf("styles")?.Doc.Root, XmlPartOf("numbering")?.Doc.Root, XmlPartOf("theme")?.Doc.Root, XmlPartOf("settings")?.Doc.Root, Main?.W);
     }
 
     // ================================================================ parties XML modifiables (styles, numérotation)
@@ -248,6 +241,7 @@ public sealed class DocxPackage
         ["numbering"] = ("numbering", "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"),
         // thème : jamais créé (Word en écrit toujours un) ; modifiable pour les polices et couleurs du thème
         ["theme"] = ("theme", "application/vnd.openxmlformats-officedocument.theme+xml"),
+        ["settings"] = ("settings", "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"),
     };
 
     /// <summary>Parties XML déjà chargées pour modification.</summary>
@@ -272,7 +266,7 @@ public sealed class DocxPackage
             }
             catch (XmlException) { return null; }
         }
-        if (!create || kind == "theme") return null;
+        if (!create || kind is "theme" or "settings") return null;
         // nouvelle partie à côté du document principal
         var dir = Main.PartName.Contains('/') ? Main.PartName[..Main.PartName.LastIndexOf('/')] : "";
         var newName = (dir.Length > 0 ? dir + "/" : "") + kind + ".xml";
@@ -284,6 +278,33 @@ public sealed class DocxPackage
         var created = new XmlPart { Name = newName, Doc = doc, Dirty = true };
         _xmlParts[newName] = created;
         return created;
+    }
+
+    /// <summary>
+    /// Nouvel en-tête ou pied de page (word/headerN.xml, footerN.xml) : partie avec un paragraphe vide, relation depuis
+    /// le document principal, type de contenu. Renvoie le r:id (à placer dans un w:sectPr) et l'histoire à modifier.
+    /// </summary>
+    public (string RelId, OpenWrite.Core.Model.Story Story) CreateHeaderPart(string kind)
+    {
+        if (Main is null || kind is not ("header" or "footer")) throw new InvalidOperationException("en-tête ou pied de page seulement");
+        var dir = Main.PartName.Contains('/') ? Main.PartName[..Main.PartName.LastIndexOf('/')] : "";
+        int n = 1;
+        while (Find((dir.Length > 0 ? dir + "/" : "") + $"{kind}{n}.xml") is not null) n++;
+        var file = $"{kind}{n}.xml";
+        var name = (dir.Length > 0 ? dir + "/" : "") + file;
+        var w = Main.W;
+        XNamespace r = RelNs;
+        var doc = new XDocument(new XDeclaration("1.0", "UTF-8", "yes"),
+            new XElement(w + (kind == "header" ? "hdr" : "ftr"), new XAttribute(XNamespace.Xmlns + "w", w.NamespaceName), new XAttribute(XNamespace.Xmlns + "r", r.NamespaceName),
+                new XElement(w + "p")));
+        Entries.Add(new Entry(name, Serialize(doc), DateTimeOffset.Now));
+        AddRelationship(Main.PartName, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/" + kind, file, external: false);
+        AddContentTypeOverride("/" + name, $"application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml");
+        _mainRels = null;
+        var part = Load(name, kind) ?? throw new InvalidOperationException("partie créée illisible");
+        part.Dirty = true;
+        var id = Relationships(Main.PartName).Values.First(x => !x.External && string.Equals(x.Target, name, StringComparison.OrdinalIgnoreCase)).Id;
+        return (id, part.Stories().First());
     }
 
     void AddRelationship(string partName, string type, string target, bool external)

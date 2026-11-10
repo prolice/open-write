@@ -90,6 +90,8 @@ public static class StyleOps
         ["Intense Emphasis"] = new("character", "Accentuationintense", "Policepardfaut", null, 21, "", "<w:i/><w:iCs/><w:color w:val=\"4472C4\" w:themeColor=\"accent1\"/>"),
         ["Hyperlink"] = new("character", "Lienhypertexte", "Policepardfaut", null, 99, "", "<w:color w:val=\"0563C1\" w:themeColor=\"hyperlink\"/><w:u w:val=\"single\"/>"),
         ["Default Paragraph Font"] = new("character", "Policepardfaut", null, null, 1, "", ""),
+        ["header"] = new("paragraph", "En-tte", "Normal", null, 99, "<w:tabs><w:tab w:val=\"center\" w:pos=\"4536\"/><w:tab w:val=\"right\" w:pos=\"9072\"/></w:tabs><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>", ""),
+        ["footer"] = new("paragraph", "Pieddepage", "Normal", null, 99, "<w:tabs><w:tab w:val=\"center\" w:pos=\"4536\"/><w:tab w:val=\"right\" w:pos=\"9072\"/></w:tabs><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>", ""),
     };
 
     /// <summary>Type (paragraph / character) d'un style intégré connu, null s'il ne l'est pas.</summary>

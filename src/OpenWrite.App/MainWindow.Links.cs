@@ -26,7 +26,7 @@ public partial class MainWindow
     {
         if (_pagesView is null || _layout is null) return null;
         var (page, at) = _pagesView.HitPage(viewPoint);
-        if (page < 0 || Layout.PagesView.HitLine(_layout.Pages[page], at) is not { } hit || hit.Char < 0) return null;
+        if (page < 0 || Layout.PagesView.HitLine(Src.PageLines(page), at) is not { } hit || hit.Char < 0) return null;
         return new TextPoint(hit.Line.Paragraph.Paragraph, hit.Char);
     }
 
@@ -97,7 +97,7 @@ public partial class MainWindow
     /// <summary>Ctrl+K : insérer un lien (sur la sélection ou un nouveau texte) ou modifier / supprimer celui du point d'insertion.</summary>
     internal void ShowLinkDialog()
     {
-        if (Body is not { } body || _pkg?.Main is not { } main || Ordered() is not { } sel) return;
+        if (EditRoot is not { } body || _pkg?.Main is not { } main || Ordered() is not { } sel) return;
         if (!ReferenceEquals(sel.From.Paragraph, sel.To.Paragraph)) { StatusText.Text = "Un lien se pose dans un seul paragraphe : sélectionnez moins de texte."; return; }
         var p = sel.From.Paragraph;
         if (LayoutOf(p) is not { } pl || ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
@@ -117,7 +117,7 @@ public partial class MainWindow
     /// </summary>
     internal void ApplyLink(string? address, string text, bool remove)
     {
-        if (Body is not { } body || _pkg?.Main is not { } main || Ordered() is not { } sel) return;
+        if (EditRoot is not { } body || _pkg?.Main is not { } main || Ordered() is not { } sel) return;
         if (!ReferenceEquals(sel.From.Paragraph, sel.To.Paragraph)) return;
         var p = sel.From.Paragraph;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }

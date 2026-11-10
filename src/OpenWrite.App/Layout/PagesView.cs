@@ -154,6 +154,9 @@ public sealed class PagesView : FrameworkElement
     public double Scale { get; }
     public double Gap { get; }
     public bool Thumbnails { get; }
+    /// <summary>Fond des pages (couleur de page du document, w:background).</summary>
+    public Brush PageBackground { get; set { field = value; InvalidateVisual(); } } = Brushes.White;
+
     /// <summary>Page mise en évidence (miniatures : page affichée dans la vue principale).</summary>
     public int Current { get; set { if (field != value) { field = value; InvalidateVisual(); } } } = -1;
 
@@ -204,7 +207,7 @@ public sealed class PagesView : FrameworkElement
             var r = _rects[i];
             if (r.Bottom < visible.Top || r.Top > visible.Bottom) continue;
             dc.DrawRectangle(Shadow, null, new Rect(r.X + 2, r.Y + 3, r.Width, r.Height));
-            dc.DrawRectangle(Brushes.White, i == Current ? CurrentBorder : PageBorder, r);
+            dc.DrawRectangle(PageBackground, i == Current ? CurrentBorder : PageBorder, r);
             dc.PushClip(new RectangleGeometry(r));
             dc.PushTransform(new MatrixTransform(Scale, 0, 0, Scale, r.X, r.Y));
             dc.DrawDrawing(_drawings.Get(i));
@@ -242,9 +245,11 @@ public sealed class PagesView : FrameworkElement
     }
 
     /// <summary>Ligne de texte sous un point de la page (points), avec la position du caractère.</summary>
-    public static (PlacedLine Line, int Char)? HitLine(Page page, Point at)
+    public static (PlacedLine Line, int Char)? HitLine(Page page, Point at) => HitLine(page.Lines, at);
+
+    public static (PlacedLine Line, int Char)? HitLine(IReadOnlyList<PlacedLine> lines, Point at)
     {
-        foreach (var l in page.Lines)
+        foreach (var l in lines)
         {
             var box = l.Paragraph.Lines[l.Line];
             if (at.Y < l.Y || at.Y >= l.Y + box.Height) continue;

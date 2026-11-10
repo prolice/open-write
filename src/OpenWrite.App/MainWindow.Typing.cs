@@ -45,7 +45,7 @@ public partial class MainWindow
         _anchor = null;
         _goalX = null;
         // point d'insertion gardé après un rechargement (annuler, rétablir) s'il désigne encore un paragraphe affiché
-        if (_caret is not { } c || _layout is null || _layout.LinesOf(c.Paragraph).Count == 0) _caret = DocumentStart();
+        if (_caret is not { } c || _layout is null || Src.LinesOf(c.Paragraph).Count == 0) _caret = DocumentStart();
         Dispatcher.BeginInvoke(() => { view.Focus(); UpdateCaret(scroll: false); }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
@@ -100,19 +100,19 @@ public partial class MainWindow
     (LineRef Ref, PlacedLine Line)? Locate(TextPoint t)
     {
         if (_layout is null) return null;
-        var refs = _layout.LinesOf(t.Paragraph);
+        var refs = Src.LinesOf(t.Paragraph);
         if (refs.Count == 0) return null;
-        var pl = _layout.Line(refs[0]).Paragraph;
+        var pl = Src.Line(refs[0]).Paragraph;
         int line = CaretGeometry.LineOf(pl, Math.Min(t.Index, pl.Content.Text.Length), t.AtLineEnd);
         foreach (var r in refs)
         {
-            var placed = _layout.Line(r);
+            var placed = Src.Line(r);
             if (placed.Line == line) return (r, placed);
         }
-        return (refs[0], _layout.Line(refs[0]));
+        return (refs[0], Src.Line(refs[0]));
     }
 
-    ParagraphLayout? LayoutOf(Paragraph p) => _layout?.LinesOf(p) is { Count: > 0 } refs ? _layout.Line(refs[0]).Paragraph : null;
+    ParagraphLayout? LayoutOf(Paragraph p) => Src.LinesOf(p) is { Count: > 0 } refs ? Src.Line(refs[0]).Paragraph : null;
 
     /// <summary>Ordre du document entre deux points (ligne placée, puis caractère).</summary>
     int Compare(TextPoint a, TextPoint b)
@@ -135,7 +135,7 @@ public partial class MainWindow
     /// <summary>Position du modèle d'un point du texte affiché (paragraphes du corps seulement).</summary>
     DocPos? ToDocPos(TextPoint t)
     {
-        if (Body is not { } body || LayoutOf(t.Paragraph) is not { } pl) return null;
+        if (EditRoot is not { } body || LayoutOf(t.Paragraph) is not { } pl) return null;
         try { return DocPos.Of(body, t.Paragraph, CaretGeometry.ModelOffset(pl.Content, t.Index)); }
         catch (ArgumentException) { return null; }
     }
@@ -143,7 +143,7 @@ public partial class MainWindow
     /// <summary>Point du texte affiché d'une position du modèle (après une modification, une annulation).</summary>
     TextPoint? FromDocPos(DocPos pos)
     {
-        if (Body is not { } body) return null;
+        if (EditRoot is not { } body) return null;
         Paragraph p;
         try { p = pos.Paragraph(body); }
         catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException) { return null; }
@@ -155,9 +155,9 @@ public partial class MainWindow
     {
         if (_layout is null) return null;
         for (int k = 0; k < _layout.Pages.Count; k++)
-            if (_layout.Pages[k].Lines.Count > 0)
+            if (Src.PageLines(k).Count > 0)
             {
-                var l = _layout.Pages[k].Lines[0];
+                var l = Src.PageLines(k)[0];
                 return new TextPoint(l.Paragraph.Paragraph, l.Paragraph.Lines[l.Line].Start);
             }
         return null;
@@ -167,9 +167,9 @@ public partial class MainWindow
     {
         if (_layout is null) return null;
         for (int k = _layout.Pages.Count - 1; k >= 0; k--)
-            if (_layout.Pages[k].Lines.Count > 0)
+            if (Src.PageLines(k).Count > 0)
             {
-                var l = _layout.Pages[k].Lines[^1];
+                var l = Src.PageLines(k)[^1];
                 return new TextPoint(l.Paragraph.Paragraph, l.Paragraph.Content.Text.Length);
             }
         return null;
@@ -198,7 +198,7 @@ public partial class MainWindow
         if (_layout is null || page < 0 || page >= _layout.Pages.Count) return null;
         PlacedLine? best = null;
         double bestScore = double.MaxValue;
-        foreach (var l in _layout.Pages[page].Lines)
+        foreach (var l in Src.PageLines(page))
         {
             var box = l.Paragraph.Lines[l.Line];
             double dy = at.Y < l.Y ? l.Y - at.Y : at.Y > l.Y + box.Height ? at.Y - l.Y - box.Height : 0;
@@ -286,7 +286,7 @@ public partial class MainWindow
         if (!HasSelection || _layout is null || Ordered() is not { } sel) yield break;
         if (Locate(sel.From) is not { } a || Locate(sel.To) is not { } b) yield break;
         if (page < a.Ref.Page || page > b.Ref.Page) yield break;
-        var lines = _layout.Pages[page].Lines;
+        var lines = Src.PageLines(page);
         int first = page == a.Ref.Page ? a.Ref.Line : 0, last = page == b.Ref.Page ? b.Ref.Line : lines.Count - 1;
         for (int j = first; j <= last && j < lines.Count; j++)
         {
@@ -309,9 +309,9 @@ public partial class MainWindow
         if (Locate(sel.From) is not { } a || Locate(sel.To) is not { } b) return "";
         var sb = new StringBuilder();
         ParagraphLayout? prev = null;
-        for (LineRef? r = a.Ref; r is { } cur && cur.CompareTo(b.Ref) <= 0; r = _layout.Step(cur, 1))
+        for (LineRef? r = a.Ref; r is { } cur && cur.CompareTo(b.Ref) <= 0; r = Src.Step(cur, 1))
         {
-            var l = _layout.Line(cur);
+            var l = Src.Line(cur);
             var box = l.Paragraph.Lines[l.Line];
             var text = l.Paragraph.Content.Text;
             if (prev is not null && !ReferenceEquals(prev, l.Paragraph)) sb.Append("\r\n");
@@ -346,10 +346,10 @@ public partial class MainWindow
         var text = pl.Content.Text;
         if (t.Index < text.Length) return new TextPoint(t.Paragraph, word ? CaretGeometry.NextWord(text, t.Index) : t.Index + 1);
         // fin du paragraphe : début du paragraphe suivant
-        var refs = _layout!.LinesOf(t.Paragraph);
-        for (LineRef? r = _layout.Step(refs[^1], 1); r is { } cur; r = _layout.Step(cur, 1))
+        var refs = Src.LinesOf(t.Paragraph);
+        for (LineRef? r = Src.Step(refs[^1], 1); r is { } cur; r = Src.Step(cur, 1))
         {
-            var l = _layout.Line(cur);
+            var l = Src.Line(cur);
             if (!ReferenceEquals(l.Paragraph.Paragraph, t.Paragraph)) return new TextPoint(l.Paragraph.Paragraph, l.Paragraph.Lines[l.Line].Start);
         }
         return t;
@@ -360,10 +360,10 @@ public partial class MainWindow
         if (LayoutOf(t.Paragraph) is not { } pl) return null;
         var text = pl.Content.Text;
         if (t.Index > 0) return new TextPoint(t.Paragraph, word ? CaretGeometry.PreviousWord(text, t.Index) : t.Index - 1);
-        var refs = _layout!.LinesOf(t.Paragraph);
-        for (LineRef? r = _layout.Step(refs[0], -1); r is { } cur; r = _layout.Step(cur, -1))
+        var refs = Src.LinesOf(t.Paragraph);
+        for (LineRef? r = Src.Step(refs[0], -1); r is { } cur; r = Src.Step(cur, -1))
         {
-            var l = _layout.Line(cur);
+            var l = Src.Line(cur);
             if (!ReferenceEquals(l.Paragraph.Paragraph, t.Paragraph))
             {
                 int n = l.Paragraph.Content.Text.Length;
@@ -385,8 +385,8 @@ public partial class MainWindow
     {
         if (_layout is null || Locate(t) is not { } loc || CaretRect(t) is not { } cr) return null;
         _goalX ??= cr.Rect.X;
-        if (_layout.Step(loc.Ref, delta) is not { } target) return delta > 0 ? DocumentEnd() : DocumentStart();
-        var l = _layout.Line(target);
+        if (Src.Step(loc.Ref, delta) is not { } target) return delta > 0 ? DocumentEnd() : DocumentStart();
+        var l = Src.Line(target);
         var box = l.Paragraph.Lines[l.Line];
         int idx = CaretGeometry.IndexAtX(l.Paragraph, l.Line, _goalX.Value - l.X);
         return new TextPoint(l.Paragraph.Paragraph, idx, idx == box.End && box.EndKind == LineEnd.Wrap && idx > box.Start);
@@ -457,6 +457,7 @@ public partial class MainWindow
             case Key.OemMinus when ctrl && shift:
             case Key.Subtract when ctrl && shift: ReplaceSelection("\u2011", "Trait d'union insécable"); break;
             case Key.Escape when HasSelection: MoveTo(c, extend: false); break;
+            case Key.Escape when _hf is not null: ExitHeader(); break;
             case Key.A when ctrl: SelectAll(); break;
             case Key.C when ctrl:
             case Key.Insert when ctrl: Copy(); break;
@@ -491,6 +492,18 @@ public partial class MainWindow
         if (_pagesView is null) return;
         _pagesView.Focus();
         var p = e.GetPosition(_pagesView);
+        // en-têtes et pieds : double-clic dans les marges pour y entrer, dans le corps pour en sortir ; en mode en-tête,
+        // un clic simple ne quitte pas l'en-tête (comme Word)
+        var (hitPage, hitAt) = _pagesView.HitPage(p);
+        if (e.ClickCount == 2 && hitPage >= 0 && HeaderDoubleClick(hitPage, hitAt)) { e.Handled = true; return; }
+        if (_hf is not null && hitPage >= 0 && _layout is { } hl)
+        {
+            var hp = hl.Pages[hitPage];
+            bool inMargins = hitAt.Y < hp.ContentTop || hitAt.Y > hp.ContentBottom + hp.ReservedBottom;
+            if (!inMargins) { e.Handled = true; return; }
+            var kind = hitAt.Y < hp.ContentTop ? "header" : "footer";
+            if (hitPage != _hf.Page || kind != _hf.Kind) { EnterHeader(hitPage, kind, hitAt); e.Handled = true; return; }
+        }
         if (HitView(p) is not { } t) return;
         // Ctrl+clic sur un lien : le suivre (comme Word)
         if (e.ClickCount == 1 && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && _pagesView.HitPage(p).Page >= 0
@@ -560,7 +573,7 @@ public partial class MainWindow
     /// <summary>Remplace la sélection (ou insère au point d'insertion) par un texte ; une frappe simple se regroupe par mot.</summary>
     void ReplaceSelection(string text, string label)
     {
-        if (Body is not { } body || Ordered() is not { } sel) return;
+        if (EditRoot is not { } body || Ordered() is not { } sel) return;
         if (ToDocPos(sel.From) is not { } from || ToDocPos(sel.To) is not { } to) { NotEditable(); return; }
         if (!SupportedRange(from, to)) return;
         DocPos pos;
@@ -597,7 +610,7 @@ public partial class MainWindow
     void Backspace(bool word)
     {
         if (HasSelection) { DeleteSelection(); return; }
-        if (Body is not { } body || _caret is not { } c || LayoutOf(c.Paragraph) is not { } pl || ToDocPos(c) is not { } at) { NotEditable(); return; }
+        if (EditRoot is not { } body || _caret is not { } c || LayoutOf(c.Paragraph) is not { } pl || ToDocPos(c) is not { } at) { NotEditable(); return; }
         var content = pl.Content;
         if (c.Index > 0)
         {
@@ -615,7 +628,7 @@ public partial class MainWindow
     void DeleteForward(bool word)
     {
         if (HasSelection) { DeleteSelection(); return; }
-        if (Body is not { } body || _caret is not { } c || LayoutOf(c.Paragraph) is not { } pl || ToDocPos(c) is not { } at) { NotEditable(); return; }
+        if (EditRoot is not { } body || _caret is not { } c || LayoutOf(c.Paragraph) is not { } pl || ToDocPos(c) is not { } at) { NotEditable(); return; }
         var content = pl.Content;
         if (c.Index < content.Text.Length)
         {
@@ -632,7 +645,7 @@ public partial class MainWindow
 
     void Delete(DocPos from, DocPos to)
     {
-        if (Body is not { } body || from.Equals(to)) return;
+        if (EditRoot is not { } body || from.Equals(to)) return;
         try { AfterTyping(TextOps.DeleteRange(_journal, body, from, to)); }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or InvalidOperationException)
         {
@@ -645,7 +658,7 @@ public partial class MainWindow
         if (HasSelection) { ReplaceSelection("\n", "Nouveau paragraphe"); return; }
         // Entrée sur un élément de liste vide : fin de la liste (Word)
         if (CaretInList() && _caret is { } lc && LayoutOf(lc.Paragraph) is { } lpl && lpl.Content.Text.Length == 0) { EndList(); return; }
-        if (Body is not { } body || _caret is not { } c || ToDocPos(c) is not { } at) { NotEditable(); return; }
+        if (EditRoot is not { } body || _caret is not { } c || ToDocPos(c) is not { } at) { NotEditable(); return; }
         AfterTyping(TextOps.SplitParagraph(_journal, body, at, NewParaId(), NextStyle));
     }
 
@@ -659,7 +672,7 @@ public partial class MainWindow
 
     void InsertSpecial(SpecialChar kind)
     {
-        if (Body is not { } body || _caret is not { } c) return;
+        if (EditRoot is not { } body || _caret is not { } c) return;
         if (HasSelection) { ReplaceSelection(kind switch { SpecialChar.Tab => "\t", SpecialChar.LineBreak => "\v", _ => "\f" }, "Saisie"); return; }
         if (ToDocPos(c) is not { } at) { NotEditable(); return; }
         AfterTyping(TextOps.InsertSpecial(_journal, body, at, kind));
@@ -673,7 +686,7 @@ public partial class MainWindow
     /// <summary>Tableau, ligne et cellule qui contiennent un point (chemin : …, tableau, ligne, cellule, paragraphe).</summary>
     (Table Table, int Row, int Cell, int[] TablePath)? CellOf(TextPoint? t)
     {
-        if (Body is not { } body || t is null || ToDocPos(t.Value) is not { } pos || pos.Path.Count < 4) return null;
+        if (EditRoot is not { } body || t is null || ToDocPos(t.Value) is not { } pos || pos.Path.Count < 4) return null;
         var path = pos.Path;
         var prefix = path.Take(path.Count - 4).ToArray();
         Story parent;
@@ -688,7 +701,7 @@ public partial class MainWindow
     /// </summary>
     void MoveToCell(int direction)
     {
-        if (Body is not { } body || CellOf(_caret) is not { } at) return;
+        if (EditRoot is not { } body || CellOf(_caret) is not { } at) return;
         // cellules du tableau dans l'ordre : (ligne, élément)
         var cells = new List<(int Row, int Item, TableCell Cell)>();
         for (int r = 0; r < at.Table.Items.Count; r++)
@@ -737,6 +750,7 @@ public partial class MainWindow
     /// </summary>
     void Relayout()
     {
+        if (RelayoutHeader()) return;
         // styles ou numérotation modifiés : résolveur refait, document entier remis en page
         bool stylesChanged = _journal.LastXml.Count > 0;
         bool additive = _xmlAdditive;

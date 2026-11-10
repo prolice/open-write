@@ -150,6 +150,8 @@ public sealed class Page
     public List<string> NoteIds { get; } = new();
     /// <summary>Numéro de la page (sections qui recommencent comprises), texte affiché (format de la section), pages de la section.</summary>
     public int Number { get; set; }
+    /// <summary>Numéro de la première ligne numérotée de la page (w:lnNumType), 0 si la section n'en a pas.</summary>
+    public int FirstLineNumber { get; set; }
     public string NumberText { get; set; } = "";
     public int SectionPageCount { get; set; }
     /// <summary>Traits entre colonnes (abscisse, haut, bas ; points), pour l'affichage.</summary>
@@ -477,6 +479,9 @@ public sealed class DocumentLayout
     }
 
     /// <summary>Hauteur d'une histoire (en-tête, pied) : paragraphes et rangées de tableau empilés.</summary>
+    /// <summary>Hauteur d'un en-tête ou d'un pied (édition en place : faut-il remettre le corps en page ?).</summary>
+    public double StoryHeightOf(Story story, double width) => StoryHeight(story, width);
+
     double StoryHeight(Story story, double width)
     {
         double h = 0;
@@ -559,6 +564,66 @@ public sealed class DocumentLayout
             pg.NumberText = ListNumbering.Format(number, pg.Geometry.NumberFormat);
         }
         for (int j = sectionStart; j < Pages.Count; j++) Pages[j].SectionPageCount = Pages.Count - sectionStart;
+        NumberLines();
+    }
+
+    /// <summary>
+    /// Numéros de ligne (w:lnNumType) : lignes des paragraphes du corps hors tableaux, sauf w:suppressLineNumbers ; la
+    /// numérotation repart à chaque page (par défaut), à chaque section ou continue.
+    /// </summary>
+    void NumberLines()
+    {
+        int count = 0;
+        SectionGeometry? prev = null;
+        foreach (var pg in Pages)
+        {
+            var g = pg.Geometry;
+            var ln = g.SectPr?.Element(g.SectPr.Name.Namespace + "lnNumType");
+            if (ln is null) { pg.FirstLineNumber = 0; prev = g; continue; }
+            var w = ln.Name.Namespace;
+            var restart = ln.Attribute(w + "restart")?.Value ?? "newPage";
+            int start = int.TryParse(ln.Attribute(w + "start")?.Value, out var st) ? st + 1 : 1;
+            if (restart == "newPage" || restart == "newSection" && !ReferenceEquals(prev, g) && pg.FirstOfSection || prev is null || prev.SectPr?.Element(w + "lnNumType") is null)
+                count = start - 1;
+            pg.FirstLineNumber = count + 1;
+            count += NumberedLines(pg).Count();
+            prev = g;
+        }
+    }
+
+    /// <summary>Police et taille par défaut du document (numéros de ligne, comme le style « Numéro de ligne » de Word).</summary>
+    public RunFormat DefaultRunFormat => _defaultRun ??= _lines.Styles.ParagraphMark(new Paragraph());
+    RunFormat? _defaultRun;
+
+    /// <summary>Lignes numérotées d'une page (paragraphes du corps hors tableaux, sans w:suppressLineNumbers).</summary>
+    public IEnumerable<PlacedLine> NumberedLines(Page page) => page.Lines.Where(l =>
+        _itemIndex.ContainsKey(l.Paragraph.Paragraph) && !l.Paragraph.Format.Effective.Elements().Any(e => e.Name.LocalName == "suppressLineNumbers"));
+
+    /// <summary>
+    /// Filigrane de la page : forme WordArt de l'en-tête (v:shape … v:textpath, comme Word l'écrit) — texte, police,
+    /// couleur, rotation, largeur et hauteur (points) ; null s'il n'y en a pas.
+    /// </summary>
+    public (string Text, string Font, string Color, double Rotation, double Width, double Height, double Opacity)? Watermark(Page page)
+    {
+        if (_related is null || HeaderId(page, "header") is not { } id || _related(id) is not { } story) return null;
+        foreach (var p in story.Paragraphs())
+            foreach (var r in p.Runs())
+                foreach (var c in r.Content.OfType<OpaqueRunContent>())
+                {
+                    var shape = c.Xml.Descendants().FirstOrDefault(e => e.Name.LocalName == "shape" && e.Elements().Any(x => x.Name.LocalName == "textpath"));
+                    if (shape is null) continue;
+                    var tp = shape.Elements().First(x => x.Name.LocalName == "textpath");
+                    var style = (shape.Attribute("style")?.Value ?? "").Split(';').Select(x => x.Split(':')).Where(x => x.Length == 2)
+                        .ToDictionary(x => x[0].Trim(), x => x[1].Trim(), StringComparer.OrdinalIgnoreCase);
+                    static double Pt(string? v) => v is not null && double.TryParse(v.Replace("pt", ""), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 0;
+                    var font = System.Text.RegularExpressions.Regex.Match(tp.Attribute("style")?.Value ?? "", "font-family:\\s*\"?([^\";]+)").Groups[1].Value;
+                    var fill = shape.Attribute("fillcolor")?.Value ?? "silver";
+                    double opacity = shape.Elements().FirstOrDefault(x => x.Name.LocalName == "fill")?.Attribute("opacity")?.Value is { } o
+                        && double.TryParse(o.TrimStart('.').Length == o.Length - 1 ? "0" + o : o, NumberStyles.Float, CultureInfo.InvariantCulture, out var op) ? op : 1;
+                    return (tp.Attribute("string")?.Value ?? "", font.Length > 0 ? font : "Calibri", fill,
+                            Pt(style.GetValueOrDefault("rotation")), Pt(style.GetValueOrDefault("width")), Pt(style.GetValueOrDefault("height")), opacity);
+                }
+        return null;
     }
 
     /// <summary>

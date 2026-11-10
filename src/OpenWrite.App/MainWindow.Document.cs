@@ -132,13 +132,15 @@ public partial class MainWindow
         _layout = new DocumentLayout(body, styles, _fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id));
         _layout.LayoutAll();
         LastLayoutMs = sw.Elapsed.TotalMilliseconds;
-        _drawings = new Layout.PageDrawings(_layout, new Layout.PageRenderer(ImageOf) { ShowMarks = _showMarks });
+        _drawings = new Layout.PageDrawings(_layout, new Layout.PageRenderer(ImageOf) { ShowMarks = _showMarks, HeaderMode = _hf is not null });
+        RefreshHeaderLines();
         _pagesView = new Layout.PagesView(_drawings, PtToDip, 24);
         _pagesView.MouseMove += PagesView_MouseMove;
         _pagesView.MouseLeftButtonUp += PagesView_MouseLeftButtonUp;
         Workspace.Children.Add(_pagesView);
         InitTyping(_pagesView);
         BuildThumbnails();
+        UpdatePageBackground();
         UpdatePageStatus();
     }
 

@@ -173,4 +173,31 @@ public static class SectionOps
         ((Paragraph)body.Blocks[pos.BlockIndex]).Props.Set(before);
         return after;
     }
+
+    /// <summary>
+    /// Bordure de page (w:pgBorders) : style Word (single, double, dotted, dashed, thick…), épaisseur en huitièmes de
+    /// point, couleur RRGGBB ou « auto », distance (points) au texte ou au bord de la page ; null retire la bordure.
+    /// </summary>
+    public static void SetPageBorders(XElement sectPr, string? style, int sizeEighths = 4, string color = "auto", double spacePt = 24, bool fromPage = true)
+    {
+        var w = sectPr.Name.Namespace;
+        sectPr.Element(w + "pgBorders")?.Remove();
+        if (style is null or "none") return;
+        var b = Child(sectPr, "pgBorders");
+        if (fromPage) b.SetAttributeValue(w + "offsetFrom", "page");
+        foreach (var side in new[] { "top", "left", "bottom", "right" })
+            b.Add(new XElement(w + side, new XAttribute(w + "val", style), new XAttribute(w + "sz", sizeEighths),
+                new XAttribute(w + "space", Math.Round(Math.Min(31, spacePt)).ToString(CultureInfo.InvariantCulture)), new XAttribute(w + "color", color)));
+    }
+
+    /// <summary>Numéros de ligne : aucun (null), continus, recommencés à chaque page ou à chaque section.</summary>
+    public static void SetLineNumbers(XElement sectPr, string? restart)
+    {
+        var w = sectPr.Name.Namespace;
+        sectPr.Element(w + "lnNumType")?.Remove();
+        if (restart is null) return;
+        var ln = Child(sectPr, "lnNumType");
+        ln.SetAttributeValue(w + "countBy", 1);
+        ln.SetAttributeValue(w + "restart", restart);
+    }
 }

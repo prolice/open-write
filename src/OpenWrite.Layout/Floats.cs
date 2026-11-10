@@ -15,6 +15,8 @@ public sealed class FloatBox
     public Paragraph? Anchor { get; init; }
     /// <summary>En-tête ou pied d'où vient l'objet (r:id), pour retrouver ses images ; null : corps du document.</summary>
     public string? PartId { get; init; }
+    /// <summary>Tableau flottant (w:tblpPr) qui écarte le texte ; ses cellules et lignes sont celles de la page.</summary>
+    public Table? Table { get; init; }
     /// <summary>Cadre de l'objet (wp:extent).</summary>
     public double X { get; init; }
     public double Y { get; init; }
@@ -225,6 +227,28 @@ public sealed partial class DocumentLayout
             }
         }
         return conflict;
+    }
+
+    /// <summary>
+    /// Objets ancrés dans des cellules de tableau : placés par rapport à la cellule (colonne = largeur du texte de la
+    /// cellule, paragraphe = sa première ligne), comme Word avec « disposition dans la cellule » ; ils n'écartent pas
+    /// le texte des cellules (simplification).
+    /// </summary>
+    void AddCellAnchors(Page page)
+    {
+        foreach (var l in page.Lines)
+        {
+            var pl = l.Paragraph;
+            if (l.Line != 0 || pl.Content.Anchors.Count == 0 || _itemIndex.ContainsKey(pl.Paragraph)) continue;
+            foreach (var (_, o) in pl.Content.Anchors)
+            {
+                if (page.Floats.Any(f => ReferenceEquals(f.Object.Source, o.Source))) continue;
+                var (x, y, w, h) = Position(o, page, page.Geometry, l.X, pl.Width, l.Y, l.Y, l.X + pl.Format.IndentLeft / 20.0);
+                var box = new FloatBox { Object = o, Anchor = pl.Paragraph, X = x, Y = y, W = w, H = h };
+                PlaceTextBoxes(box, page.Geometry);
+                page.Floats.Add(box);
+            }
+        }
     }
 
     /// <summary>Contenu des zones de texte d'un objet (formes, groupes) placé dans leurs cadres, en points de la page.</summary>

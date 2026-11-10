@@ -1,3 +1,4 @@
+using OpenWrite.Core.Drawing;
 using System.Globalization;
 using System.Xml.Linq;
 using OpenWrite.Core.Model;
@@ -475,6 +476,73 @@ public sealed partial class DocumentLayout
             foreach (var (l, i, lx, ly) in p.Lines) line(l, i, lx, y + ly);
     }
 
+    /// <summary>
+    /// Tableau flottant : position d'après w:tblpPr (repères texte / marge / page, alignement ou décalage), rangées
+    /// posées à cet endroit, obstacle carré pour le texte (distances *FromText). Vrai s'il recouvre du texte déjà placé
+    /// sur la page (la page est à refaire).
+    /// </summary>
+    bool PlaceFloatingTable(Table t, XElement pos, Cursor c)
+    {
+        var W = t.Props.Ns;
+        var g = c.Geo;
+        var page = c.Page;
+        string? A(string n) => pos.Attribute(W + n)?.Value;
+        // horizontal : colonne (texte), marge ou page
+        var hAnchor = A("horzAnchor") ?? "text";
+        double hBase = hAnchor switch { "page" => 0, "margin" => g.Left, _ => c.ColX };
+        double hSize = hAnchor switch { "page" => g.PageWidth, "margin" => g.PageWidth - g.Left - g.Right, _ => c.ColW };
+        var probe = MeasureTable(t, 0, c.ColW);
+        double width = probe.Rows.Count == 0 ? 0 : probe.Rows.SelectMany(r => r.Cells).Select(cp => cp.X + cp.W).DefaultIfEmpty(0).Max();
+        double height = probe.Rows.Sum(r => r.Height);
+        double x = A("tblpXSpec") switch
+        {
+            "left" or "inside" => hBase,
+            "center" => hBase + (hSize - width) / 2,
+            "right" or "outside" => hBase + hSize - width,
+            _ => hBase + Twips(A("tblpX")),
+        };
+        // vertical : à la place du tableau dans le texte, marge ou page
+        var vAnchor = A("vertAnchor") ?? "margin";
+        double vBase = vAnchor switch { "page" => 0, "margin" => page.ContentTop, _ => c.Y };
+        double vSize = vAnchor switch { "page" => g.PageHeight, "margin" => page.ContentBottom - page.ContentTop, _ => 0 };
+        double y = A("tblpYSpec") switch
+        {
+            "top" or "inside" => vBase,
+            "center" => vBase + (vSize - height) / 2,
+            "bottom" or "outside" => vBase + vSize - height,
+            _ => vBase + Twips(A("tblpY")),
+        };
+        // rangées posées à leur place (mesurées depuis le bord gauche voulu)
+        var box = MeasureTable(t, x, c.ColW);
+        double yy = y;
+        foreach (var r in box.Rows)
+        {
+            PlaceRowAt(r, yy, page);
+            yy += r.Height;
+        }
+        if (page.Floats.Any(f => ReferenceEquals(f.Table, t))) return false;
+        var obj = new DrawingObject
+        {
+            Source = new DrawingContent(new XElement("tbl")), Root = new GroupVisual(), Width = width, Height = height,
+            Wrap = WrapKind.Square,
+            Distance = (Twips(A("topFromText")), Twips(A("bottomFromText")), Twips(A("leftFromText")), Twips(A("rightFromText"))),
+        };
+        var fb = new FloatBox { Object = obj, Table = t, X = x, Y = y, W = width, H = height };
+        page.Floats.Add(fb);
+        // texte déjà placé (avant le tableau) que le tableau recouvre : page à refaire
+        var (el, et, er, eb) = fb.Exclusion;
+        int own = page.Lines.Count - box.Rows.Sum(r => r.Cells.Sum(cp => cp.Lines.Count));
+        for (int k = 0; k < own; k++)
+        {
+            var l = page.Lines[k];
+            var lb = l.Paragraph.Lines[l.Line];
+            if (l.Y + lb.Height <= et + 0.01 || l.Y >= eb - 0.01) continue;
+            double lx0 = l.X + (lb.Pieces.Count > 0 ? lb.Pieces[0].X : 0), lx1 = l.X + lb.Ink;
+            if (lx1 > el + 0.01 && lx0 < er - 0.01) return true;
+        }
+        return false;
+    }
+
     static void PlaceRowAt(RowBox row, double y, Page page) =>
         EmitRow(row, y, row.Height, (l, i, x, ly) => page.Lines.Add(new PlacedLine(l, i, x, ly)), page.Cells.Add);
 
@@ -484,7 +552,7 @@ public sealed partial class DocumentLayout
         var box = MeasureTable(t, c.ColX, c.ColW);
         var rows = box.Rows;
         // tableau flottant (w:tblpPr) : il ne prend pas de place dans le flux ; ancré en bas de la marge, il réduit
-        // la hauteur du corps de la page (Syllabus, page de garde) ; les autres positions viennent avec le lot 7
+        // la hauteur du corps de la page (Syllabus, page de garde) ; ailleurs, le texte l'habille (lot 7)
         if (t.Props.Get("tblpPr") is { } pos)
         {
             var W = t.Props.Ns;
@@ -498,7 +566,9 @@ public sealed partial class DocumentLayout
                     y += r.Height;
                 }
                 c.Page.ReservedBottom += height + Twips(pos.Attribute(W + "bottomFromText")?.Value);
+                return null;
             }
+            if (PlaceFloatingTable(t, pos, c) && c.Restarts < MaxRestarts) c.Restart = true;
             return null;
         }
         // rangées d'en-tête (w:tblHeader en tête du tableau) : répétées en haut de chaque page où le tableau continue

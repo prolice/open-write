@@ -261,37 +261,47 @@ static class LayoutBench
             fonts.AltNames = pkg.FontAltNames();
             var layout = new DocumentLayout(body, new Core.Styles.StyleResolver(pkg.StyleSheet()), fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id));
             layout.LayoutAll();
-            var mine = new List<(int Page, double Top, double Left, string Text)>();
+            var mine = new List<(int Page, double Top, double Left, string Text, bool Last)>();
+            // lignes du corps seulement (Word ne compte pas celles des cellules de tableau ici)
+            var top = new HashSet<Paragraph>(body.Blocks.OfType<Paragraph>(), ReferenceEqualityComparer.Instance);
             for (int k = 0; k < layout.Pages.Count; k++)
-                foreach (var l in layout.Pages[k].Lines)
+                foreach (var l in layout.Pages[k].Lines.Where(x => top.Contains(x.Paragraph.Paragraph)))
                 {
                     var lb = l.Paragraph.Lines[l.Line];
                     var c = l.Paragraph.Content;
                     // bord gauche de la boîte de ligne, comme Word (Line.Left) : la colonne, ou le bord libre près d'un objet
                     double left = l.X + lb.BoxLeft;
-                    mine.Add((k + 1, l.Y, left, c.Text[lb.Start..Math.Min(lb.End, c.Text.Length)]));
+                    mine.Add((k + 1, l.Y, left, c.Text[lb.Start..Math.Min(lb.End, c.Text.Length)], lb.EndKind == LineEnd.Paragraph));
+                    if (Environment.GetEnvironmentVariable("OPENWRITE_LINES_ALL") == "1")
+                        Console.WriteLine($"      {k + 1} {l.Y,6:0.0} {left,6:0.0} fin {l.X + lb.Ink,6:0.0} car. {lb.End - lb.Start} « {c.Text[lb.Start..Math.Min(lb.End, c.Text.Length)][..Math.Min(30, lb.End - lb.Start)]} »");
                 }
+            if (Environment.GetEnvironmentVariable("OPENWRITE_LINES_ALL") == "1")
+                foreach (var f in layout.Pages.SelectMany(p => p.Floats))
+                    Console.WriteLine($"      objet {f.X:0.0},{f.Y:0.0} {f.W:0.0}×{f.H:0.0} exclusion {f.Exclusion}");
             using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(json));
             var word = doc.RootElement.EnumerateArray().Select(e => (Page: e.GetProperty("page").GetInt32(), Top: e.GetProperty("top").GetDouble(),
-                Left: e.GetProperty("left").GetDouble(), Text: e.GetProperty("text").GetString() ?? "")).ToList();
+                Left: e.GetProperty("left").GetDouble(), Text: e.GetProperty("text").GetString() ?? "",
+                Chars: e.TryGetProperty("chars", out var ch) ? ch.GetInt32() : -1)).ToList();
             static string K(string s) => new string(s.Where(char.IsLetterOrDigit).Take(10).ToArray());
             int same = 0, n = Math.Min(mine.Count, word.Count);
             var lines = new List<string>();
             for (int k = 0; k < n; k++)
             {
-                var (wp, wt, wl, wtext) = word[k];
-                var (mp, mt, ml, mtext) = mine[k];
-                bool textOk = K(wtext) == K(mtext);
+                var (wp, wt, wl, wtext, wchars) = word[k];
+                var (mp, mt, ml, mtext, mlast) = mine[k];
+                // longueur : Word compte la marque de paragraphe de la dernière ligne
+                bool lengthOk = wchars < 0 || wchars == mtext.Length + (mlast ? 1 : 0);
+                bool textOk = K(wtext) == K(mtext) && lengthOk;
                 bool ok = textOk && wp == mp && Math.Abs(wt - mt) <= 1.01 && Math.Abs(wl - ml) <= 1.01;
                 if (ok) same++;
-                if (detail && !ok) lines.Add($"    {k + 1,3} Word p{wp} {wt,6:0.0} {wl,6:0.0} « {K(wtext)} » / OpenWrite p{mp} {mt,6:0.0} {ml,6:0.0} « {K(mtext)} »");
+                if (detail && !ok) lines.Add($"    {k + 1,3} Word p{wp} {wt,6:0.0} {wl,6:0.0} « {K(wtext)} » ({wchars} car.) / OpenWrite p{mp} {mt,6:0.0} {ml,6:0.0} « {K(mtext)} » ({mtext.Length} car.)");
             }
             allSame += same;
             allTotal += Math.Max(mine.Count, word.Count);
             Console.WriteLine($"{Path.GetFileName(file),-24} lignes {mine.Count,3} (Word {word.Count,3})  identiques à 1 pt : {same}/{Math.Max(mine.Count, word.Count)}");
             foreach (var l in lines.Take(12)) Console.WriteLine(l);
         }
-        Console.WriteLine($"Lignes identiques à Word (texte, page, haut et bord gauche à 1 pt) : {allSame}/{allTotal}");
+        Console.WriteLine($"Lignes identiques à Word (texte et longueur, page, haut et bord gauche à 1 pt) : {allSame}/{allTotal}");
         return 0;
     }
 }

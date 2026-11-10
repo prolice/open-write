@@ -42,10 +42,14 @@ public static partial class DrawingReader
         double z = D(style.GetValueOrDefault("z-index"));
         var distance = (Len(style.GetValueOrDefault("mso-wrap-distance-top")), Len(style.GetValueOrDefault("mso-wrap-distance-bottom")),
                         Len(style.GetValueOrDefault("mso-wrap-distance-left"), 9), Len(style.GetValueOrDefault("mso-wrap-distance-right"), 9));
+        // filet horizontal (Insertion ▸ Ligne horizontale de Word 2003, pages web collées) : largeur en pour mille du
+        // texte (o:hrpct, 0 = toute la largeur)
+        double? rule = shape.Attribute(O + "hr")?.Value is "t" or "true"
+            ? (D(shape.Attribute(O + "hrpct")?.Value) is var pct && pct > 0 ? pct / 1000 : 1) : null;
         if (!absolute)
             return new DrawingObject
             {
-                Source = ctx.Source, Inline = true, Width = w, Height = h, Root = root, Vml = true,
+                Source = ctx.Source, Inline = true, Width = w, Height = h, Root = root, Vml = true, HorizontalRule = rule,
                 Name = shape.Attribute("id")?.Value, Description = shape.Attribute("alt")?.Value,
                 Hidden = style.GetValueOrDefault("visibility") == "hidden",
             };

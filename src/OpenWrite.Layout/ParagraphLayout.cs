@@ -444,6 +444,10 @@ public sealed class ParagraphLayouter
 
         var layout = new ParagraphLayout { Paragraph = p, Format = pf, Content = content, Width = width, Marker = marker, Cell = tableStyle, Wrapped = space is not null };
         if (content.Hidden) return layout;
+        // filet horizontal VML : sa largeur est une part de la largeur du texte du paragraphe
+        foreach (var (k, obj) in content.Drawings)
+            if (obj.HorizontalRule is { } part && content.Objects.TryGetValue(k, out var sz))
+                content.Objects[k] = (Math.Max(1, (limit - left) * part - 0.01), sz.H);
         var text = content.Text;
         int n = text.Length;
         int pos = 0;

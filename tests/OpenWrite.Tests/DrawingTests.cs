@@ -156,6 +156,21 @@ public class DrawingTests
     }
 
     [Fact]
+    public void Objet_ancre_dans_une_cellule_place_par_rapport_a_elle()
+    {
+        var body = Body($"<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"3000\"/><w:gridCol w:w=\"3000\"/></w:tblGrid>"
+            + $"<w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r>{TextBox.Replace("<wp:align>right</wp:align>", "<wp:posOffset>0</wp:posOffset>").Replace("relativeFrom=\"margin\"", "relativeFrom=\"column\"")}</w:r><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>");
+        var layout = new DocumentLayout(body, new StyleResolver(new StyleSheet(null)), new MonoFontProvider(ascent: 0.8, descent: 0.2));
+        layout.LayoutAll();
+        var f = Assert.Single(layout.Pages[0].Floats);
+        var cellLine = layout.Pages[0].Lines.First(l => l.Paragraph.Content.Text == "b");
+        // repère « colonne » d'un objet de cellule : le texte de la cellule (seconde colonne, marge de cellule comprise)
+        Assert.Equal(cellLine.X, f.X, 1);
+        Assert.True(f.X > 50 + 150 - 1, $"x = {f.X}");
+        Assert.Equal(cellLine.Y + 10, f.Y, 1);
+    }
+
+    [Fact]
     public void Modifications_et_image_ajoutee_valides_pour_le_SDK()
     {
         var src = RoundTripTests.Docx($"<w:document {NsDecl}><w:body><w:p><w:r><w:t>Avant</w:t></w:r></w:p><w:p/></w:body></w:document>");

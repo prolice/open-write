@@ -716,6 +716,23 @@ public static class SelfTest
                     Pump();
                     w.ShowTableTabForCapture(layout: scene == "tableau-disposition", selectCells: scene == "tableau-disposition");
                 }
+                if (scene == "objet")
+                {
+                    Pump();
+                    w.ShowObjectTabForCapture();
+                }
+                if (scene == "formes")
+                {
+                    Pump();
+                    w.ShowShapesGallery(w);
+                    Pump();
+                    Idle();
+                    var child = (FrameworkElement)w.LastPopup!.Child;
+                    Save(child, (int)Math.Ceiling(child.ActualWidth), (int)Math.Ceiling(child.ActualHeight), png);
+                    w.LastPopup.IsOpen = false;
+                    w.Close();
+                    return 0;
+                }
                 if (scene == "en-tete")
                 {
                     Pump();

@@ -443,7 +443,13 @@ public sealed class PageRenderer
                     Flush();
                     if (c.Objects.TryGetValue(k, out var size))
                     {
-                        if (c.Drawings.TryGetValue(k, out var obj))
+                        if (c.Drawings.TryGetValue(k, out var hr) && hr.HorizontalRule is not null)
+                        {
+                            // filet horizontal : trait plein de la couleur du rectangle VML
+                            var fillRgb = (hr.Root as Core.Drawing.ShapeVisual)?.Fill?.Color ?? "A0A0A0";
+                            dc.DrawRectangle(Ink(fillRgb), null, new Rect(cx, baseline - size.H, Math.Max(0.5, size.W), Math.Max(0.5, size.H)));
+                        }
+                        else if (c.Drawings.TryGetValue(k, out var obj))
                         {
                             // dessin en ligne posé sur la ligne de base ; marges d'effet autour du cadre
                             var part = _part;

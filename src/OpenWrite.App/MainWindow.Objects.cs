@@ -987,6 +987,21 @@ public partial class MainWindow
             Child = new StackPanel { Children = { new TextBlock { Text = "Formes", FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 6, 8, 0) }, wrap } },
         };
         popup.IsOpen = true;
+        LastPopup = popup;
+    }
+
+    /// <summary>Capture d'écran (aide) : premier objet de la page sélectionné, onglet Format affiché.</summary>
+    internal void ShowObjectTabForCapture(int page = 0)
+    {
+        if (_layout is null || page >= _layout.Pages.Count) return;
+        var pg = _layout.Pages[page];
+        ObjSel? s = pg.Floats.FirstOrDefault(f => f.Anchor is not null && !f.Object.BehindText) is { } f ? FromFloat(f, page) : null;
+        s ??= Src.PageLines(page).SelectMany(l => l.Paragraph.Content.Drawings.Select(kv => (l, kv.Key, kv.Value)))
+            .Select(t => InlineRect(t.l, t.Key) is { } r ? new ObjSel(t.Value.Source, t.l.Paragraph.Paragraph, page, r, 0, null, t.Value) : null).FirstOrDefault(x => x is not null);
+        if (s is null) return;
+        GoToPage(page);
+        SelectObject(s);
+        if (_objectTab is not null) _objectTab.IsChecked = true;
     }
 
     /// <summary>Insertion ▸ Images : depuis un fichier, ou l'image du presse-papiers.</summary>

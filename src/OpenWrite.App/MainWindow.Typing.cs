@@ -201,11 +201,16 @@ public partial class MainWindow
         if (_layout is null || page < 0 || page >= _layout.Pages.Count) return null;
         PlacedLine? best = null;
         double bestScore = double.MaxValue;
-        foreach (var l in Src.PageLines(page))
+        var lines = Src.PageLines(page);
+        for (int k = 0; k < lines.Count; k++)
         {
+            var l = lines[k];
             var box = l.Paragraph.Lines[l.Line];
             double dy = at.Y < l.Y ? l.Y - at.Y : at.Y > l.Y + box.Height ? at.Y - l.Y - box.Height : 0;
-            double dx = at.X < l.X ? l.X - at.X : at.X > l.X + l.Paragraph.Width ? at.X - l.X - l.Paragraph.Width : 0;
+            // ligne d'une rangée de part et d'autre d'un objet flottant : seulement son segment
+            bool row = box.SameRow || k + 1 < lines.Count && ReferenceEquals(lines[k + 1].Paragraph, l.Paragraph) && lines[k + 1].Paragraph.Lines[lines[k + 1].Line].SameRow;
+            double left = row ? l.X + box.BoxLeft : l.X, right = row && box.Pieces.Count > 0 ? l.X + box.Pieces[^1].X + box.Pieces[^1].Width : l.X + l.Paragraph.Width;
+            double dx = at.X < left ? left - at.X : at.X > right ? at.X - right : 0;
             double score = dy * 1000 + dx;
             if (score < bestScore) { bestScore = score; best = l; }
         }

@@ -931,6 +931,7 @@ public sealed partial class DocumentLayout
                 return null;
             }
             CloseRegion(c);
+            AddCellAnchors(c.Page);
             DropOrphanFloats(c.Page);
             var pos = new FlowPosition(_items[item], item, line, offset);
             c.Page.End = pos;
@@ -962,7 +963,7 @@ public sealed partial class DocumentLayout
                 // un objet ancré plus bas recouvre du texte déjà placé : la page est refaite, l'objet connu dès le départ
                 c.Restart = false;
                 c.Restarts++;
-                var known = c.Page.Floats.Where(f => f.Anchor is not null).ToList();
+                var known = c.Page.Floats.Where(f => f.Anchor is not null || f.Table is not null).ToList();
                 var s = c.Saved;
                 c.Page = new Page { Geometry = s.Geo, Start = s.Start, FirstOfSection = s.First };
                 AddHeaderFloats(c.Page);
@@ -1005,6 +1006,7 @@ public sealed partial class DocumentLayout
             if (c.Restart) i--;                 // la boucle repart du début de la page
         }
         CloseRegion(c);
+        AddCellAnchors(c.Page);
         DropOrphanFloats(c.Page);
         c.Page.End = new FlowPosition(null, _items.Count, 0);
         pages.Add(c.Page);

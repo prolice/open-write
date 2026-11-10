@@ -28,7 +28,7 @@ try {
                         try { if ($line.Range.StoryType -ne 1) { continue } } catch { }   # corps seulement (pas les zones de texte)
                         $list.Add([pscustomobject]@{
                             page = $p; top = [double]$line.Top; left = [double]$line.Left; width = [double]$line.Width
-                            text = $text.Substring(0, [Math]::Min(30, $text.Length))
+                            text = $text.Substring(0, [Math]::Min(30, $text.Length)); chars = $text.Length
                         })
                     }
                 }

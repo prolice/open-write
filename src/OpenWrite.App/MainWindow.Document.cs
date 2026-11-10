@@ -167,6 +167,8 @@ public partial class MainWindow
         {
             if (_pkg.Relationships(partName).TryGetValue(rid, out var rel) && !rel.External && _pkg.Find(rel.Target) is { } entry)
             {
+                // EMF / WMF : joués par GDI (WPF ne les décode pas)
+                if (Layout.Metafiles.IsMetafile(entry.Data)) { img = Layout.Metafiles.Render(entry.Data); _images[key] = img; return img; }
                 var bmp = new BitmapImage();
                 bmp.BeginInit();
                 bmp.CacheOption = BitmapCacheOption.OnLoad;

@@ -154,5 +154,7 @@ public sealed class DrawingObject
     public bool Vml { get; init; }
     /// <summary>Filigrane (forme WordArt de l'en-tête) : dessiné à part.</summary>
     public bool Watermark { get; init; }
+    /// <summary>Filet horizontal VML (o:hr) : part de la largeur du texte (1 = toute la largeur) ; null sinon.</summary>
+    public double? HorizontalRule { get; init; }
     public required Visual Root { get; init; }
 }

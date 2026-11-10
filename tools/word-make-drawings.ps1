@@ -87,6 +87,24 @@ try {
     Body $doc 7
     $null = AddShape $doc 2 1 0 30 110 90 0 2 0 0 18
     Save $doc 'distances.docx'
+    # tableaux flottants (w:tblpPr) : 2 × 3 à droite de la marge, et centré sous le haut du 2e paragraphe
+    foreach ($tf in @(@{ n = 'tableau-droite.docx'; h = -999996; rh = 0; v = 20; rv = 2 }, @{ n = 'tableau-centre.docx'; h = -999995; rh = 0; v = 30; rv = 2 })) {
+        $doc = $word.Documents.Add()
+        Body $doc 7
+        $r = $doc.Paragraphs.Item(2).Range
+        $r.Collapse(1)
+        $t = $doc.Tables.Add($r, 3, 2)
+        $t.Borders.Enable = $true
+        $t.PreferredWidthType = 3; $t.PreferredWidth = 160
+        for ($i = 1; $i -le 3; $i++) { for ($j = 1; $j -le 2; $j++) { $t.Cell($i, $j).Range.Text = "c$i$j" } }
+        $t.Rows.WrapAroundText = $true
+        $t.Rows.RelativeHorizontalPosition = $tf.rh
+        $t.Rows.HorizontalPosition = $tf.h
+        $t.Rows.RelativeVerticalPosition = $tf.rv
+        $t.Rows.VerticalPosition = $tf.v
+        $t.Rows.DistanceLeft = 9; $t.Rows.DistanceRight = 9
+        Save $doc $tf.n
+    }
     # zone de texte : deux paragraphes dans une zone de 160 × 90, habillage carré à droite
     $doc = $word.Documents.Add()
     Body $doc 7

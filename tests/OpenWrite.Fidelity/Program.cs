@@ -21,6 +21,9 @@ using OpenWrite.Docx;
 //                                                                    (word-modele/*.json, tools/word-inspect.ps1)
 //   OpenWrite.Fidelity --table-styles <galerie.docx>                  styles de tableau de la galerie écrits par OpenWrite
 //                                                                    (TableStyleOps) comparés à ceux de Word dans ce fichier
+//   OpenWrite.Fidelity --paste-html <doc.docx> <presse-papiers.html> <sortie.docx>
+//                                                                    colle un « HTML Format » (Excel…) à la fin du document,
+//                                                                    comme Coller dans l'application (HtmlTableReader)
 // Sorties : <sortie>/aller-retour, modif-texte, modif-gras, modif-scission (les .docx produits) et rapport.md.
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -30,6 +33,7 @@ if (args.Length >= 2 && args[0] == "--compare-word") return WordCompare.Run(args
 if (args.Length >= 3 && args[0] == "--formats") return FormatCompare.Export(args[1], args[2]);
 if (args.Length >= 3 && args[0] == "--compare-formats") return FormatCompare.Compare(args[1], args[2]);
 if (args.Length >= 2 && args[0] == "--table-styles") return TableStyleCheck.Run(args[1]);
+if (args.Length >= 4 && args[0] == "--paste-html") return PasteHtml.Run(args[1], args[2], args[3]);
 if (args.Length < 2) { Console.Error.WriteLine("Usage : OpenWrite.Fidelity <dossier .docx> <dossier de sortie> | --stress <fichier.docx> <n>"); return 2; }
 return Bench.Run(args[0], args[1]);
 
@@ -689,5 +693,28 @@ static class TableStyleCheck
         }
         Console.WriteLine($"Styles de tableau identiques à ceux de Word : {same}/{total}");
         return same == total ? 0 : 1;
+    }
+}
+
+/// <summary>Collage d'un « HTML Format » à la fin d'un document (calibrage du collage depuis Excel contre Word).</summary>
+static class PasteHtml
+{
+    public static int Run(string docx, string htmlFile, string output)
+    {
+        var pkg = DocxPackage.Open(docx);
+        var body = pkg.Main!.Stories().First();
+        var ids = FlowEdits.IdGenerator(body.Paragraphs().SelectMany(p => p.Attributes).Where(a => a.Name.LocalName is "paraId" or "textId").Select(a => a.Value));
+        var html = File.ReadAllText(htmlFile, Encoding.UTF8);
+        var w = body.Paragraphs().First().Props.Ns;
+        var fragment = OpenWrite.Core.Interop.HtmlTableReader.Read(html, w, 450, ids);
+        if (fragment is null) { Console.Error.WriteLine("Aucun tableau dans le HTML."); return 1; }
+        int last = body.Blocks.FindLastIndex(b => b is Paragraph);
+        var at = new DocPos(new[] { last }, ParagraphAtoms.Length((Paragraph)body.Blocks[last]));
+        var j = new UndoJournal();
+        Fragments.Paste(j, body, "Coller", at, at, fragment, ids);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
+        pkg.Save(output, regenerateAll: true);
+        Console.WriteLine($"Collé : {fragment.Blocks.Count} bloc(s) → {output}");
+        return 0;
     }
 }

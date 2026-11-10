@@ -161,7 +161,7 @@ public partial class MainWindow
             }
             // tableau HTML (Excel, page web, autre traitement de texte) : un vrai tableau, avant le RTF qui le met à plat
             else if (!textOnly && Clipboard.ContainsData(DataFormats.Html) && ReadString(DataFormats.Html, Encoding.UTF8) is { Length: > 0 } tableHtml
-                && HtmlTable(HtmlReader.Fragment(FixHtmlEncoding(tableHtml))) is { } pasted)
+                && HtmlTable(FixHtmlEncoding(tableHtml)) is { } pasted)
             {
                 fragment = pasted;
                 source = "tableau HTML";
@@ -199,54 +199,15 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Premier tableau d'un fragment HTML (cellules &lt;td&gt; / &lt;th&gt;, colspan) en tableau du modèle : le contenu de
-    /// chaque cellule garde sa mise en forme (lecteur HTML), traits simples d'un demi-point comme Word quand il colle
-    /// depuis Excel. Null s'il n'y a pas de tableau.
+    /// Tableaux du HTML du presse-papiers (Excel, page web, autre traitement de texte) avec leur mise en forme
+    /// (<see cref="HtmlTableReader"/>) ; null s'il n'y en a pas. Sans largeurs dans la source, la largeur du texte est
+    /// partagée entre les colonnes.
     /// </summary>
-    Fragment? HtmlTable(string html)
+    Fragment? HtmlTable(string cfHtml)
     {
-        var m = System.Text.RegularExpressions.Regex.Match(html, @"<table\b[^>]*>(.*?)</table>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (!m.Success) return null;
-        var rows = System.Text.RegularExpressions.Regex.Matches(m.Groups[1].Value, @"<tr\b[^>]*>(.*?)</tr>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-            .Select(r => System.Text.RegularExpressions.Regex.Matches(r.Groups[1].Value, @"<t[dh]\b([^>]*)>(.*?)</t[dh]>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                .Select(c => (Span: System.Text.RegularExpressions.Regex.Match(c.Groups[1].Value, @"colspan\s*=\s*""?(\d+)") is { Success: true } cs ? Math.Clamp(int.Parse(cs.Groups[1].Value), 1, 63) : 1,
-                    Html: c.Groups[2].Value, Header: c.Value.StartsWith("<th", StringComparison.OrdinalIgnoreCase))).ToList())
-            .Where(r => r.Count > 0).ToList();
-        if (rows.Count == 0) return null;
-        int cols = Math.Min(63, rows.Max(r => r.Sum(c => c.Span)));
         var w = Body?.Paragraphs().FirstOrDefault()?.Props.Ns ?? (System.Xml.Linq.XNamespace)PropertyBag.TransitionalNs;
         double width = _caret is { } cc && LayoutOf(cc.Paragraph) is { } pl ? pl.Width : 450;
-        var table = TableOps.Create(w, rows.Count, cols, width, null, null, NewParaId());
-        var line = new TableOps.Line("single", 4, "auto");
-        var borders = new System.Xml.Linq.XElement(w + "tblBorders",
-            new[] { "top", "left", "bottom", "right", "insideH", "insideV" }.Select(side => line.Element(w, side)));
-        table.Props.Set(borders);
-        var map = new TableOps.Map(table);
-        for (int r = 0; r < rows.Count; r++)
-        {
-            int col = 0;
-            foreach (var (span, cellHtml, header) in rows[r])
-            {
-                if (col >= cols || map.At(r, col) is not { } slot) break;
-                var cellParas = HtmlReader.Read(header ? $"<b>{cellHtml}</b>" : cellHtml, out _);
-                var built = Fragments.Build(cellParas, true, w);
-                slot.Cell.Content.Blocks.Clear();
-                slot.Cell.Content.Blocks.AddRange(built.Blocks.Where(b => b is Paragraph));
-                if (slot.Cell.Content.Blocks.Count == 0) slot.Cell.Content.Blocks.Add(TableOps.EmptyParagraph(w, null, NewParaId()));
-                col += span;
-            }
-        }
-        // cellules fusionnées (colspan) : fusion horizontale dans la grille
-        for (int r = rows.Count - 1; r >= 0; r--)
-        {
-            int col = 0;
-            foreach (var (span, _, _) in rows[r])
-            {
-                if (span > 1 && col + span - 1 < cols) TableOps.Merge(table, r, col, r, col + span - 1, NewParaId());
-                col += span;
-            }
-        }
-        return new Fragment(new List<Block> { table }, false);
+        return HtmlTableReader.Read(cfHtml, w, width, NewParaId());
     }
 
     /// <summary>Certains programmes déposent le HTML en UTF-8 lu comme du Latin-1 (« Ã© » pour « é ») : on le redécode.</summary>

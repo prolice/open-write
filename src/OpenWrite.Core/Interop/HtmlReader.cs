@@ -196,7 +196,7 @@ public static partial class HtmlReader
         _ => null,
     };
 
-    static string? Color(string v)
+    internal static string? Color(string v)
     {
         v = v.Trim().ToLowerInvariant();
         if (v.StartsWith('#'))

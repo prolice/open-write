@@ -255,6 +255,39 @@ public static class SelfTest
         Pump();
         Check(TextOf(w.Body!.Blocks[2]).EndsWith("Italique venu d'ailleurs") && ((Paragraph)w.Body!.Blocks[2]).Runs().Any(r => r.Text == "Italique" && r.Props.Flag("i")),
               $"Coller du RTF d'un autre programme : italique gardé ({w.StatusText.Text} ; « {TextOf(w.Body!.Blocks[2])} »)");
+        // comme Excel : HTML dont la balise <table> précède <!--StartFragment-->, mise en forme dans des classes CSS, plus
+        // un RTF qui met le tableau à plat (ne doit pas être choisi)
+        const string excelHtml = "Version:1.0\r\nStartHTML:0000000000\r\n<html><head><style><!--td {font-size:10.0pt;font-family:Arial;border:none;}"
+            + " .xl70 {color:#00B050;font-weight:700;text-align:center;vertical-align:middle;border:1.0pt solid windowtext;}--></style></head><body>"
+            + "<table border=0 cellpadding=0 cellspacing=0><!--StartFragment--><col width=80 style='width:60pt'><col width=120 style='width:90pt'>"
+            + "<tr height=37 style='height:28.35pt'><td class=xl70>Un</td><td class=xl70 style='border-left:none'>Deux</td></tr>"
+            + "<tr><td>3</td><td>4</td></tr><!--EndFragment--></table></body></html>";
+        for (int k = 0; k < 20; k++)
+        {
+            try
+            {
+                var data = new DataObject();
+                data.SetData(DataFormats.Html, excelHtml);
+                data.SetData(DataFormats.Rtf, "{\\rtf1\\ansi Un\\par Deux\\par}");
+                data.SetData(DataFormats.UnicodeText, "Un\tDeux\r\n3\t4\r\n");
+                Clipboard.SetDataObject(data, true);
+                if (Clipboard.ContainsData(DataFormats.Html) && !Clipboard.ContainsData("OpenWrite.Fragment")) break;
+            }
+            catch (System.Runtime.InteropServices.ExternalException) { }
+            System.Threading.Thread.Sleep(50);
+            Pump();
+        }
+        w.Paste();
+        Pump();
+        var excel = w.Body!.Blocks.OfType<Table>().FirstOrDefault(t => t.Items.OfType<TableRow>().FirstOrDefault()?.Items.OfType<TableCell>().FirstOrDefault() is { } c0
+            && Core.Editing.TableOps.CellText(c0) == "Un");
+        var green = excel?.Items.OfType<TableRow>().First().Items.OfType<TableCell>().First().Content.Paragraphs().First().Runs().FirstOrDefault();
+        Check(excel is not null && excel.Grid?.Elements().Count() == 2 && excel.Grid.Elements().First().Attribute(excel.Props.Ns + "w")?.Value == "1200"
+              && green?.Props.Val("color") == "00B050" && green.Props.Flag("b"),
+              $"Coller un tableau d'Excel : vrai tableau, largeurs et mise en forme gardées ({w.StatusText.Text})");
+        ApplicationCommands.Undo.Execute(null, w);
+        Pump();
+        Check(!w.Body!.Blocks.OfType<Table>().Any(t => ReferenceEquals(t, excel)) && w.Body!.Blocks.OfType<Table>().Count() == 1, "Ctrl+Z : tableau collé retiré");
         ApplicationCommands.Undo.Execute(null, w);
         ApplicationCommands.Undo.Execute(null, w);
         ApplicationCommands.Undo.Execute(null, w);

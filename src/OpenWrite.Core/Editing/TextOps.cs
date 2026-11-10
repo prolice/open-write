@@ -485,7 +485,7 @@ public static class TextOps
     }
 
     public static DocPos InsertSpecial(UndoJournal journal, Story root, DocPos pos, SpecialChar kind) =>
-        Edit(journal, root, kind switch { SpecialChar.Tab => "Tabulation", SpecialChar.PageBreak => "Saut de page", _ => "Saut de ligne" },
+        Edit(journal, root, kind switch { SpecialChar.Tab => "Tabulation", SpecialChar.PageBreak => "Saut de page", SpecialChar.ColumnBreak => "Saut de colonne", _ => "Saut de ligne" },
              pos.ContainerPath, pos.BlockIndex, 1, pos, () => InsertSpecial(root, pos, kind), p => p);
 }
 

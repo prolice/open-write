@@ -134,6 +134,11 @@ public partial class MainWindow
     Dictionary<string, (Action Run, string Tip)> LayoutCommands() => new()
     {
         ["Retraits"] = (ShowParagraphDialog, "Paragraphe… : retraits"),
+        ["Marges"] = (() => ShowMarginsMenu(_clickedButton!), "Marges de la section"),
+        ["Orientation"] = (() => ShowOrientationMenu(_clickedButton!), "Portrait ou paysage"),
+        ["Taille"] = (() => ShowSizeMenu(_clickedButton!), "Format du papier"),
+        ["Colonnes"] = (() => ShowColumnsMenu(_clickedButton!), "Colonnes de la section"),
+        ["Sauts"] = (() => ShowBreaksMenu(_clickedButton!), "Sauts de page, de colonne et de section"),
         ["Espacement"] = (ShowParagraphDialog, "Paragraphe… : espacement et interligne"),
     };
 
@@ -196,7 +201,8 @@ public partial class MainWindow
                         // le point d'insertion garde le clavier : le bouton ne prend pas le focus
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
-                        bool menu = tab == "TabDesign";        // menu sous le bouton : il garde le clavier
+                        // menu sous le bouton : il garde le clavier
+                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts";
                         button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }

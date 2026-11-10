@@ -21,8 +21,26 @@ namespace OpenWrite.Layout;
 /// </summary>
 public sealed record SectionGeometry(double PageWidth, double PageHeight, double Top, double Bottom, double Left, double Right, string Type)
 {
+    /// <summary>Largeur du texte entre les marges (toutes colonnes confondues).</summary>
     public double ColumnWidth => PageWidth - Left - Right;
     public double ContentBottom => PageHeight - Bottom;
+    /// <summary>Colonnes (w:cols) : abscisse depuis la marge de gauche et largeur, points ; une seule par défaut.</summary>
+    public IReadOnlyList<(double X, double W)> Cols { get; init; } = Array.Empty<(double, double)>();
+    /// <summary>Trait vertical entre les colonnes (w:cols w:sep).</summary>
+    public bool ColumnSeparator { get; init; }
+    /// <summary>
+    /// En-têtes et pieds de la section, hérités des sections précédentes comme dans Word : « header:default »,
+    /// « footer:first », « header:even »… → r:id de la partie.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> HeaderRefs { get; init; } = new Dictionary<string, string>();
+    /// <summary>Première page différente (w:titlePg).</summary>
+    public bool TitlePage { get; init; }
+    /// <summary>Numérotation des pages : valeur de départ (w:pgNumType w:start, null : suite de la section précédente) et format.</summary>
+    public int? NumberStart { get; init; }
+    public string NumberFormat { get; init; } = "decimal";
+    /// <summary>Colonne <paramref name="k"/> : abscisse depuis la marge de gauche et largeur.</summary>
+    public (double X, double W) Col(int k) => Cols.Count == 0 ? (0, ColumnWidth) : Cols[Math.Clamp(k, 0, Cols.Count - 1)];
+    public int ColumnCount => Math.Max(1, Cols.Count);
     public double FirstTop { get; init; } = Top;
     public double FirstBottom { get; init; } = Bottom;
     /// <summary>Propriétés de la section (en-têtes, pieds…).</summary>
@@ -37,11 +55,52 @@ public sealed record SectionGeometry(double PageWidth, double PageHeight, double
         double Get(string el, string attr, double def) =>
             sectPr?.Element(w + el)?.Attribute(w + attr)?.Value is { } v && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d / 20 : def / 20;
         // marge haute / basse négative : Word la prend en valeur absolue (le corps ne remonte pas sous l'en-tête)
-        return new SectionGeometry(Get("pgSz", "w", 11906), Get("pgSz", "h", 16838), Math.Abs(Get("pgMar", "top", 1417)), Math.Abs(Get("pgMar", "bottom", 1417)),
+        var g = new SectionGeometry(Get("pgSz", "w", 11906), Get("pgSz", "h", 16838), Math.Abs(Get("pgMar", "top", 1417)), Math.Abs(Get("pgMar", "bottom", 1417)),
             Get("pgMar", "left", 1417), Get("pgMar", "right", 1417), sectPr?.Element(w + "type")?.Attribute(w + "val")?.Value ?? "nextPage")
         {
             HeaderDistance = Get("pgMar", "header", 708), FooterDistance = Get("pgMar", "footer", 708), SectPr = sectPr,
         };
+        var pgNum = sectPr?.Element(w + "pgNumType");
+        return g with
+        {
+            Cols = Columns(sectPr?.Element(w + "cols"), w, g.ColumnWidth), ColumnSeparator = Flag(sectPr?.Element(w + "cols")?.Attribute(w + "sep")),
+            TitlePage = sectPr?.Element(w + "titlePg") is { } tp && tp.Attribute(w + "val")?.Value is null or "1" or "true" or "on",
+            NumberStart = int.TryParse(pgNum?.Attribute(w + "start")?.Value, out var st) ? st : null,
+            NumberFormat = pgNum?.Attribute(w + "fmt")?.Value ?? "decimal",
+        };
+    }
+
+    static bool Flag(XAttribute? a) => a?.Value is "1" or "true" or "on";
+
+    /// <summary>
+    /// Colonnes d'une section : w:num colonnes égales séparées de w:space (720 twips par défaut), ou les w:col explicites
+    /// si w:equalWidth vaut 0. Une colonne : liste vide.
+    /// </summary>
+    static IReadOnlyList<(double X, double W)> Columns(XElement? cols, XNamespace w, double textWidth)
+    {
+        if (cols is null) return Array.Empty<(double, double)>();
+        static double Tw(XAttribute? a, double def) => a is not null && double.TryParse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v / 20 : def;
+        var explicitCols = cols.Elements(w + "col").ToList();
+        bool equal = cols.Attribute(w + "equalWidth")?.Value is not ("0" or "false" or "off");
+        var res = new List<(double, double)>();
+        if (!equal && explicitCols.Count > 1)
+        {
+            double x = 0;
+            foreach (var c in explicitCols)
+            {
+                double cw = Tw(c.Attribute(w + "w"), textWidth / explicitCols.Count);
+                res.Add((x, cw));
+                x += cw + Tw(c.Attribute(w + "space"), 0);
+            }
+            return res;
+        }
+        int n = int.TryParse(cols.Attribute(w + "num")?.Value, out var num) ? num : 1;
+        if (n <= 1) return Array.Empty<(double, double)>();
+        double space = Tw(cols.Attribute(w + "space"), 36);
+        double width = (textWidth - (n - 1) * space) / n;
+        if (width < 10) return Array.Empty<(double, double)>();
+        for (int k = 0; k < n; k++) res.Add((k * (width + space), width));
+        return res;
     }
 }
 
@@ -89,6 +148,12 @@ public sealed class Page
     public List<CellBox> Cells { get; } = new();
     /// <summary>Notes de bas de page de la page (w:id), dans l'ordre des appels.</summary>
     public List<string> NoteIds { get; } = new();
+    /// <summary>Numéro de la page (sections qui recommencent comprises), texte affiché (format de la section), pages de la section.</summary>
+    public int Number { get; set; }
+    public string NumberText { get; set; } = "";
+    public int SectionPageCount { get; set; }
+    /// <summary>Traits entre colonnes (abscisse, haut, bas ; points), pour l'affichage.</summary>
+    public List<(double X, double Top, double Bottom)> ColumnRules { get; } = new();
     public FlowPosition End { get; set; }
 }
 
@@ -132,7 +197,13 @@ public sealed class DocumentLayout
         _lines = new ParagraphLayouter(styles, fonts);
         _related = related;
         _footnote = footnote;
+        // en-têtes pairs et impairs (paramètre du document, w:evenAndOddHeaders)
+        var settings = styles.Sheet.Settings;
+        EvenOddHeaders = settings?.Element(styles.Sheet.W + "evenAndOddHeaders") is { } eo && eo.Attribute(styles.Sheet.W + "val")?.Value is null or "1" or "true" or "on";
     }
+
+    /// <summary>Le document a des en-têtes différents pour les pages paires et impaires.</summary>
+    public bool EvenOddHeaders { get; }
 
     readonly Dictionary<string, double> _noteHeights = new();
 
@@ -204,10 +275,20 @@ public sealed class DocumentLayout
                 }
             }
         }
+        // en-têtes hérités : une section sans référence d'un type reprend celle de la section précédente
+        var inherited = new Dictionary<string, string>();
         void CloseSection(XElement? sectPr)
         {
             int index = Sections.Count;
-            Sections.Add(WithHeaders(SectionGeometry.From(sectPr), sectPr));
+            if (sectPr is not null)
+                foreach (var e in sectPr.Elements().Where(e => e.Name.LocalName is "headerReference" or "footerReference"))
+                {
+                    var kind = e.Name.LocalName == "headerReference" ? "header" : "footer";
+                    var type = e.Attributes().FirstOrDefault(a => a.Name.LocalName == "type")?.Value ?? "default";
+                    if (e.Attributes().FirstOrDefault(a => a.Name.LocalName == "id")?.Value is { } id) inherited[$"{kind}:{type}"] = id;
+                }
+            var geo = SectionGeometry.From(sectPr) with { HeaderRefs = new Dictionary<string, string>(inherited) };
+            Sections.Add(WithHeaders(geo, sectPr));
             foreach (var (b, ends) in pending) items.Add(new FlowItem { Block = b, Section = index, EndsSection = ends });
             pending.Clear();
         }
@@ -273,16 +354,10 @@ public sealed class DocumentLayout
     /// </summary>
     SectionGeometry WithHeaders(SectionGeometry g, XElement? sectPr)
     {
-        if (_related is null || sectPr is null) return g;
-        var w = sectPr.Name.Namespace;
-        XNamespace r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-        double Extent(string kind, string type)
-        {
-            var reference = sectPr.Elements(w + kind + "Reference").FirstOrDefault(e => (e.Attribute(w + "type")?.Value ?? "default") == type);
-            var id = reference?.Attributes().FirstOrDefault(a => a.Name.LocalName == "id")?.Value;
-            return id is not null && _related(id) is { } story ? StoryHeight(story, g.ColumnWidth) : 0;
-        }
-        bool titlePg = sectPr.Element(w + "titlePg") is { } tp && tp.Attribute(w + "val")?.Value is null or "1" or "true" or "on";
+        if (_related is null) return g;
+        double Extent(string kind, string type) =>
+            g.HeaderRefs.TryGetValue($"{kind}:{type}", out var id) && _related(id) is { } story ? StoryHeight(story, g.ColumnWidth) : 0;
+        bool titlePg = g.TitlePage;
         double top = Math.Max(g.Top, g.HeaderDistance + Extent("header", "default"));
         double bottom = Math.Max(g.Bottom, g.FooterDistance + Extent("footer", "default"));
         double firstTop = titlePg ? Math.Max(g.Top, g.HeaderDistance + Extent("header", "first")) : top;
@@ -310,21 +385,29 @@ public sealed class DocumentLayout
     /// En-tête et pied de la page, placés pour l'affichage : en-tête à sa distance du haut, pied terminé à sa distance
     /// du bas ; champs PAGE et NUMPAGES calculés. En-tête « première page » si w:titlePg, sinon « par défaut ».
     /// </summary>
-    public Page? HeaderFooter(Page page, int pageNumber, int pageCount)
+    /// <summary>Type d'en-tête de la page : « first » (première page, w:titlePg), « even » (page paire), sinon « default ».</summary>
+    public string HeaderType(Page page) =>
+        page.FirstOfSection && page.Geometry.TitlePage ? "first" : EvenOddHeaders && page.Number % 2 == 0 ? "even" : "default";
+
+    /// <summary>En-tête ou pied (r:id) d'une page, hérité au besoin ; null si la page n'en a pas.</summary>
+    public string? HeaderId(Page page, string kind) => page.Geometry.HeaderRefs.TryGetValue($"{kind}:{HeaderType(page)}", out var id) ? id : null;
+
+    public Page? HeaderFooter(Page page, int pageCount)
     {
         var g = page.Geometry;
-        if (_related is null || g.SectPr is not { } sect) return null;
-        var w = sect.Name.Namespace;
-        bool titlePg = sect.Element(w + "titlePg") is { } tp && tp.Attribute(w + "val")?.Value is null or "1" or "true" or "on";
-        string type = page.FirstOfSection && titlePg ? "first" : "default";
-        Story? Find(string kind) =>
-            sect.Elements(w + kind + "Reference").FirstOrDefault(e => (e.Attribute(w + "type")?.Value ?? "default") == type)
-                ?.Attributes().FirstOrDefault(a => a.Name.LocalName == "id")?.Value is { } id ? _related(id) : null;
+        if (_related is null) return null;
+        Story? Find(string kind) => HeaderId(page, kind) is { } id ? _related(id) : null;
         var result = new Page { Geometry = g, Start = page.Start };
         _lines.FieldValue = code =>
         {
             var name = code.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToUpperInvariant();
-            return name switch { "PAGE" => pageNumber.ToString(CultureInfo.InvariantCulture), "NUMPAGES" or "SECTIONPAGES" => pageCount.ToString(CultureInfo.InvariantCulture), _ => null };
+            return name switch
+            {
+                "PAGE" => page.NumberText,
+                "NUMPAGES" => pageCount.ToString(CultureInfo.InvariantCulture),
+                "SECTIONPAGES" => page.SectionPageCount.ToString(CultureInfo.InvariantCulture),
+                _ => null,
+            };
         };
         try
         {
@@ -450,6 +533,32 @@ public sealed class DocumentLayout
         Paginate(new FlowPosition(_items.Count > 0 ? _items[0] : null, 0, 0), pages, null, pageTopFromBreak: true);
         Pages = pages;
         LastPagesLaidOut = pages.Count;
+        Renumber();
+    }
+
+    /// <summary>
+    /// Numéros des pages : chaque section repart de w:pgNumType w:start si elle en a un, sinon continue ; texte au format
+    /// de la section (romain, lettres…) ; nombre de pages de chaque section (champ SECTIONPAGES).
+    /// </summary>
+    void Renumber()
+    {
+        int number = 0;
+        int sectionStart = 0;
+        for (int k = 0; k < Pages.Count; k++)
+        {
+            var pg = Pages[k];
+            bool newSection = k == 0 || pg.FirstOfSection || !ReferenceEquals(pg.Geometry, Pages[k - 1].Geometry) && pg.Geometry.SectPr != Pages[k - 1].Geometry.SectPr;
+            if (newSection)
+            {
+                for (int j = sectionStart; j < k; j++) Pages[j].SectionPageCount = k - sectionStart;
+                sectionStart = k;
+                number = pg.Geometry.NumberStart is { } st && (k == 0 || pg.FirstOfSection) ? st : number + 1;
+            }
+            else number++;
+            pg.Number = number;
+            pg.NumberText = ListNumbering.Format(number, pg.Geometry.NumberFormat);
+        }
+        for (int j = sectionStart; j < Pages.Count; j++) Pages[j].SectionPageCount = Pages.Count - sectionStart;
     }
 
     /// <summary>
@@ -524,6 +633,7 @@ public sealed class DocumentLayout
             for (int k = k0; k < old.Count; k++) pages.Add(Reindex(old[k], index));
         }
         Pages = pages;
+        Renumber();
     }
 
     /// <summary>
@@ -553,6 +663,7 @@ public sealed class DocumentLayout
         LastPagesLaidOut = pages.Count - startPage;
         if (resume is { } k0) pages.AddRange(old.Skip(k0));
         Pages = pages;
+        Renumber();
     }
 
     /// <summary>Première page dont le départ est au plus l'élément <paramref name="index"/> et qui le contient.</summary>
@@ -581,6 +692,7 @@ public sealed class DocumentLayout
         FlowPosition Fix(FlowPosition f) => f.Item is not null && index.TryGetValue(f.Item.Block, out var i) ? f with { Index = i } : f;
         var copy = new Page { Geometry = p.Geometry, Start = Fix(p.Start), End = Fix(p.End) };
         copy.Lines.AddRange(p.Lines);
+        copy.ColumnRules.AddRange(p.ColumnRules);
         copy.Cells.AddRange(p.Cells);
         copy.NoteIds.AddRange(p.NoteIds);
         copy.ReservedBottom = p.ReservedBottom;
@@ -598,6 +710,12 @@ public sealed class DocumentLayout
         /// <summary>La page a commencé par un saut explicite (ou en tête de document / de section).</summary>
         public bool TopFromBreak;
         public ParagraphLayout? Prev;
+        /// <summary>Colonne en cours, haut des colonnes de la section sur cette page, début de la zone dans Page.Lines / Cells.</summary>
+        public int Col;
+        public double ColTop;
+        public int RegionLines, RegionCells;
+        public double ColX => Geo.Left + Geo.Col(Col).X;
+        public double ColW => Geo.Col(Col).W;
     }
 
     /// <summary>
@@ -616,11 +734,23 @@ public sealed class DocumentLayout
         bool FirstOf(int item) => item == 0 || _items[item - 1].Section != _items[item].Section;
         var first0 = from.Line == 0 && FirstOf(i) && (pages.Count == 0 || pages[^1].Geometry != geo0 || pages[^1].End.Item is null);
         var page0 = new Page { Geometry = geo0, Start = from, FirstOfSection = first0 };
-        var c = new Cursor { Geo = geo0, Page = page0, Y = page0.ContentTop, TopFromBreak = pageTopFromBreak };
+        var c = new Cursor { Geo = geo0, Page = page0, Y = page0.ContentTop, TopFromBreak = pageTopFromBreak, ColTop = page0.ContentTop };
+        // reprise au milieu d'une section continue : sa zone de colonnes commence en haut de page (approximation)
 
-        // page suivante ; renvoie l'indice de l'ancienne page si la mise en page converge
-        int? NewPage(int item, int line, bool fromBreak, double offset = 0)
+        // colonne suivante (débordement, saut de colonne) ou page suivante ; renvoie l'indice de l'ancienne page si la
+        // mise en page converge
+        int? NewPage(int item, int line, bool fromBreak, double offset = 0, bool toColumn = true)
         {
+            if (toColumn && c.Col + 1 < c.Geo.ColumnCount)
+            {
+                c.Col++;
+                c.Y = c.ColTop;
+                c.Empty = true;
+                c.TopFromBreak = fromBreak;
+                c.Prev = null;
+                return null;
+            }
+            CloseRegion(c);
             var pos = new FlowPosition(_items[item], item, line, offset);
             c.Page.End = pos;
             pages.Add(c.Page);
@@ -633,6 +763,9 @@ public sealed class DocumentLayout
             c.Empty = true;
             c.TopFromBreak = fromBreak;
             c.Prev = null;
+            c.Col = 0;
+            c.ColTop = c.Y;
+            c.RegionLines = c.RegionCells = 0;
             return null;
         }
 
@@ -644,8 +777,20 @@ public sealed class DocumentLayout
             {
                 var g = Sections[item.Section];
                 bool continuous = g.Type == "continuous" && g.PageWidth == c.Geo.PageWidth && g.PageHeight == c.Geo.PageHeight;
-                if (!continuous && !c.Empty) { if (NewPage(i, 0, fromBreak: true) is { } k) return k; }
-                else c.Geo = g;
+                if (!continuous && !c.Empty) { if (NewPage(i, 0, fromBreak: true, toColumn: false) is { } k) return k; }
+                else
+                {
+                    // section continue sur la même page : les colonnes de la section précédente sont équilibrées (Word),
+                    // la nouvelle section commence en dessous
+                    if (!c.Empty || c.Col > 0) Balance(c);
+                    CloseRegion(c);
+                    c.Geo = g;
+                    c.Col = 0;
+                    c.ColTop = c.Y;
+                    c.RegionLines = c.Page.Lines.Count;
+                    c.RegionCells = c.Page.Cells.Count;
+                }
+                if (!continuous) { c.Col = 0; }
             }
             int? conv = item.Block switch
             {
@@ -655,22 +800,114 @@ public sealed class DocumentLayout
             };
             if (conv is not null) return conv;
         }
+        CloseRegion(c);
         c.Page.End = new FlowPosition(null, _items.Count, 0);
         pages.Add(c.Page);
         return null;
     }
 
-    delegate int? PageBreaker(int item, int line, bool fromBreak, double offset = 0);
+    delegate int? PageBreaker(int item, int line, bool fromBreak, double offset = 0, bool toColumn = true);
+
+    /// <summary>Fin d'une zone de colonnes (page ou section continue) : traits entre colonnes si la section en demande.</summary>
+    static void CloseRegion(Cursor c)
+    {
+        var g = c.Geo;
+        if (!g.ColumnSeparator || g.ColumnCount < 2) return;
+        double bottom = c.ColTop;
+        for (int k = c.RegionLines; k < c.Page.Lines.Count; k++)
+        {
+            var l = c.Page.Lines[k];
+            bottom = Math.Max(bottom, l.Y + l.Paragraph.Lines[l.Line].Height);
+        }
+        if (bottom <= c.ColTop) return;
+        for (int k = 1; k < g.ColumnCount; k++)
+        {
+            var (px, pw) = g.Col(k - 1);
+            var (nx, _) = g.Col(k);
+            c.Page.ColumnRules.Add((g.Left + (px + pw + nx) / 2, c.ColTop, bottom));
+        }
+    }
+
+    /// <summary>
+    /// Équilibre les colonnes d'une section continue sur la page (Word le fait avant la section suivante) : les lignes de
+    /// la zone sont réparties sur toutes les colonnes à hauteur égale, la plus petite possible. Zone avec tableau : laissée telle quelle.
+    /// </summary>
+    static void Balance(Cursor c)
+    {
+        var g = c.Geo;
+        int n = g.ColumnCount;
+        if (n < 2 || c.Page.Cells.Count > c.RegionCells) return;
+        var lines = c.Page.Lines;
+        int start = c.RegionLines, count = lines.Count - start;
+        if (count < 2) return;
+        // suite d'unités : écart au-dessus (dans la même colonne) et hauteur de chaque ligne
+        var units = new List<(double Gap, double H)>();
+        double prevBottom = c.ColTop, prevX = double.NaN;
+        for (int k = start; k < lines.Count; k++)
+        {
+            var l = lines[k];
+            double h = l.Paragraph.Lines[l.Line].Height;
+            double gap = Math.Abs(l.X - prevX) < 0.01 || double.IsNaN(prevX) ? Math.Max(0, l.Y - prevBottom) : 0;
+            units.Add((gap, h));
+            prevBottom = l.Y + h;
+            prevX = l.X;
+        }
+        double total = units.Sum(u => u.Gap + u.H);
+        double step = Math.Max(1, units.Max(u => u.H) / 4);
+        for (double target = total / n; target <= total + step; target += step)
+        {
+            // remplissage glouton : une colonne prend des lignes tant qu'elle ne dépasse pas la hauteur visée
+            var col = new int[units.Count];
+            var y = new double[units.Count];
+            int k = 0;
+            double used = 0;
+            bool ok = true;
+            for (int u = 0; u < units.Count; u++)
+            {
+                double gap = used == 0 ? 0 : units[u].Gap;
+                if (used > 0 && used + gap + units[u].H > target + 0.01)
+                {
+                    k++;
+                    used = 0;
+                    gap = 0;
+                    if (k >= n) { ok = false; break; }
+                }
+                col[u] = k;
+                y[u] = c.ColTop + used + gap;
+                used += gap + units[u].H;
+            }
+            if (!ok) continue;
+            double maxBottom = c.ColTop;
+            for (int u = 0; u < units.Count; u++)
+            {
+                var l = lines[start + u];
+                double x = l.X - (c.Geo.Left + FindCol(g, l.X - c.Geo.Left)) + c.Geo.Left + g.Col(col[u]).X;
+                lines[start + u] = l with { X = x, Y = y[u] };
+                maxBottom = Math.Max(maxBottom, y[u] + units[u].H);
+            }
+            c.Y = maxBottom;
+            c.Col = 0;
+            return;
+        }
+    }
+
+    /// <summary>Abscisse (depuis la marge) de la colonne qui contient une abscisse de ligne.</summary>
+    static double FindCol(SectionGeometry g, double x)
+    {
+        double best = 0;
+        for (int k = 0; k < g.ColumnCount; k++) if (g.Col(k).X <= x + 0.01) best = g.Col(k).X;
+        return best;
+    }
 
     int? PlaceParagraph(Paragraph p, int i, int startLine, Cursor c, PageBreaker newPage)
     {
-        var pl = LayoutOf(p, c.Geo.ColumnWidth);
+        var pl = LayoutOf(p, c.ColW);
         if (pl.Content.Hidden) return null;
         var pf = pl.Format;
         int n = pl.Lines.Count;
         double SpaceAtTop() => SuppressSpaceBeforeAtPageTop ? 0 : pl.SpaceBefore;
         if (startLine == 0 && pf.PageBreakBefore && !c.Empty)
-            if (newPage(i, 0, fromBreak: true) is { } k) return k;
+            if (newPage(i, 0, fromBreak: true, toColumn: false) is { } k) return k;
         // espacement avant : supprimé entre paragraphes de même style avec « contextual spacing », et en haut
         // d'une page commencée par le flux
         double before = startLine > 0 ? 0 : pl.SpaceBefore;
@@ -684,7 +921,7 @@ public sealed class DocumentLayout
             // solidaire du suivant : la chaîne doit tenir avec les premières lignes du paragraphe suivant
             if (!move && pf.KeepNext)
             {
-                double need = before + KeepChainHeight(i, c.Geo);
+                double need = before + KeepChainHeight(i, c.ColW);
                 move = c.Y + need > c.Page.ContentBottom + 0.01 && need <= usable;
             }
             if (move)
@@ -733,7 +970,7 @@ public sealed class DocumentLayout
                 startLine = cut;
                 continue;
             }
-            c.Page.Lines.Add(new PlacedLine(pl, line, c.Geo.Left, c.Y) { Notes = notes });
+            c.Page.Lines.Add(new PlacedLine(pl, line, c.ColX, c.Y) { Notes = notes });
             if (notes > 0)
             {
                 c.Page.ReservedBottom += notes;
@@ -746,7 +983,7 @@ public sealed class DocumentLayout
             // saut de page dans le paragraphe : la suite (au moins la marque de paragraphe) va à la page suivante
             if (lb.EndKind is LineEnd.PageBreak or LineEnd.ColumnBreak && line < n)
             {
-                if (newPage(i, line, fromBreak: true) is { } k) return k;
+                if (newPage(i, line, fromBreak: true, toColumn: lb.EndKind == LineEnd.ColumnBreak) is { } k) return k;
                 startLine = line;
             }
         }
@@ -754,7 +991,7 @@ public sealed class DocumentLayout
         c.Prev = pl;
         // saut de page à la fin du paragraphe : l'élément suivant commence sur une nouvelle page
         if (n > 0 && pl.Lines[^1].EndKind is LineEnd.PageBreak or LineEnd.ColumnBreak && i + 1 < _items.Count)
-            if (newPage(i + 1, 0, fromBreak: true) is { } k) return k;
+            if (newPage(i + 1, 0, fromBreak: true, toColumn: pl.Lines[^1].EndKind == LineEnd.ColumnBreak) is { } k) return k;
         return null;
     }
 
@@ -777,13 +1014,13 @@ public sealed class DocumentLayout
     }
 
     /// <summary>Hauteur de la chaîne de paragraphes solidaires qui commence en <paramref name="i"/>, avec les premières lignes du suivant.</summary>
-    double KeepChainHeight(int i, SectionGeometry geo)
+    double KeepChainHeight(int i, double width)
     {
         double h = 0;
         for (int k = i, guard = 0; k < _items.Count && guard < 8; k++, guard++)
         {
             if (_items[k].Block is not Paragraph p) break;
-            var pl = LayoutOf(p, geo.ColumnWidth);
+            var pl = LayoutOf(p, width);
             if (k > i) h += pl.SpaceBefore;
             if (pl.Format.KeepNext && k + 1 < _items.Count && _items[k + 1].Section == _items[k].Section)
             {
@@ -927,13 +1164,13 @@ public sealed class DocumentLayout
         if (t.Props.Get("tblpPr") is { } pos)
         {
             var W = t.Props.Ns;
-            double height = rows.Sum(r => MeasureRow(t, r, c.Geo.Left, c.Geo.ColumnWidth).Height);
+            double height = rows.Sum(r => MeasureRow(t, r, c.ColX, c.ColW).Height);
             if (pos.Attribute(W + "tblpYSpec")?.Value == "bottom" && (pos.Attribute(W + "vertAnchor")?.Value ?? "margin") == "margin")
             {
                 double y = c.Page.ContentBottom - height;
                 foreach (var r in rows)
                 {
-                    var box = MeasureRow(t, r, c.Geo.Left, c.Geo.ColumnWidth);
+                    var box = MeasureRow(t, r, c.ColX, c.ColW);
                     PlaceRowAt(box, y, c.Page);
                     y += box.Height;
                 }
@@ -948,7 +1185,7 @@ public sealed class DocumentLayout
         {
             for (int h = 0; h < headers && h < rows.Count; h++)
             {
-                var hb = MeasureRow(t, rows[h], c.Geo.Left, c.Geo.ColumnWidth);
+                var hb = MeasureRow(t, rows[h], c.ColX, c.ColW);
                 PlaceRowAt(hb, c.Y, c.Page);
                 c.Y += hb.Height;
             }
@@ -958,7 +1195,7 @@ public sealed class DocumentLayout
         double offset = startOffset;
         for (int r = startRow; r < rows.Count; r++, offset = 0)
         {
-            var box = MeasureRow(t, rows[r], c.Geo.Left, c.Geo.ColumnWidth);
+            var box = MeasureRow(t, rows[r], c.ColX, c.ColW);
             while (true)
             {
                 double remaining = RowPartHeight(box, offset, null);

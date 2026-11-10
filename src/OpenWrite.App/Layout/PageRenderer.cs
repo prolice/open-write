@@ -35,16 +35,20 @@ public sealed class PageRenderer
     /// <summary>Dessine le contenu de la page (sans le fond blanc), en points depuis le coin haut gauche.</summary>
     public void Draw(DrawingContext dc, Page page, DocumentLayout layout, int number, int count)
     {
-        if (layout.HeaderFooter(page, number, count) is { } hf) DrawContent(dc, hf, header: true);
+        if (layout.HeaderFooter(page, count) is { } hf) DrawContent(dc, hf, header: true);
         DrawContent(dc, page, header: false);
         if (layout.Notes(page) is { } notes) DrawContent(dc, notes, header: false);
     }
+
+    static readonly Pen RulePen = Freeze(new Pen(Brushes.Black, 0.5));
 
     static readonly Brush HeaderInk = Freeze(new SolidColorBrush(Color.FromArgb(0xFF, 0x60, 0x60, 0x60)));
 
     void DrawContent(DrawingContext dc, Page page, bool header)
     {
         foreach (var cell in page.Cells) DrawCell(dc, cell);
+        // traits entre colonnes (w:cols w:sep)
+        foreach (var (x, top, bottom) in page.ColumnRules) dc.DrawLine(RulePen, new Point(x, top), new Point(x, bottom));
         DrawParagraphBoxes(dc, page);
         foreach (var line in page.Lines)
         {

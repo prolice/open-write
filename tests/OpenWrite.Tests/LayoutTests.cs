@@ -236,4 +236,99 @@ public class LayoutTests
         var calibri = new FontVerticalMetrics(2048, 1950, 550, 1536, -512, 452);
         Assert.Equal(0, calibri.ExternalLeading);
     }
+
+    static string ColsSect(int num, string type = "nextPage", bool sep = false) =>
+        $"<w:sectPr><w:type w:val=\"{type}\"/><w:pgSz w:w=\"7200\" w:h=\"3200\"/><w:pgMar w:top=\"600\" w:bottom=\"600\" w:left=\"600\" w:right=\"600\"/>" +
+        $"<w:cols w:num=\"{num}\" w:space=\"400\"{(sep ? " w:sep=\"1\"" : "")}/></w:sectPr>";
+
+    static (Story Body, DocumentLayout Layout) DocWithSect(string sect, params string[] paragraphs)
+    {
+        var xml = XDocument.Parse($"<w:document {NsDecl}><w:body>{string.Concat(paragraphs)}{sect}</w:body></w:document>");
+        var body = StoryMapping.Read(xml, "word/document.xml", "document").Stories().Single();
+        var layout = new DocumentLayout(body, new StyleResolver(new StyleSheet(XElement.Parse(Styles))), new MonoFontProvider(ascent: 0.8, descent: 0.2));
+        layout.LayoutAll();
+        return (body, layout);
+    }
+
+    [Fact]
+    public void Deux_colonnes_le_texte_passe_a_la_colonne_suivante_puis_a_la_page()
+    {
+        // colonnes de (300 - 20) / 2 = 140 pt ; 10 lignes par colonne ; 25 paragraphes d'une ligne
+        var (_, l) = DocWithSect(ColsSect(2, sep: true), Enumerable.Repeat(P("x"), 25).ToArray());
+        Assert.Equal(2, l.Pages.Count);
+        var p0 = l.Pages[0];
+        Assert.Equal(20, p0.Lines.Count);
+        Assert.Equal(new[] { 30.0, 190.0 }, p0.Lines.Select(x => x.X).Distinct().OrderBy(x => x).ToArray());
+        Assert.Equal(p0.Lines[0].Y, p0.Lines[10].Y, 3);                      // la 2e colonne repart en haut
+        Assert.Equal(140, p0.Lines[0].Paragraph.Width, 3);
+        Assert.Single(p0.ColumnRules);
+        Assert.Equal(180, p0.ColumnRules[0].X, 3);                          // milieu de l'espace entre les colonnes
+    }
+
+    [Fact]
+    public void Saut_de_colonne_et_section_continue_equilibree()
+    {
+        // saut de colonne : le paragraphe suivant commence en haut de la 2e colonne
+        var (_, l) = DocWithSect(ColsSect(2), P("a"), "<w:p><w:r><w:t>b</w:t><w:br w:type=\"column\"/></w:r></w:p>", P("c"));
+        Assert.Single(l.Pages);
+        var c = l.Pages[0].Lines.Single(x => x.Paragraph.Content.Text == "c");
+        Assert.Equal(190, c.X, 3);
+        Assert.Equal(l.Pages[0].Lines[0].Y, c.Y, 3);
+        // section continue de 2 colonnes (6 lignes) suivie d'une section à une colonne : 3 lignes par colonne
+        var twoCols = "<w:p><w:pPr>" + ColsSect(2, "continuous") + "</w:pPr><w:r><w:t>6</w:t></w:r></w:p>";
+        var (_, l2) = DocWithSect("<w:sectPr><w:type w:val=\"continuous\"/><w:pgSz w:w=\"7200\" w:h=\"3200\"/><w:pgMar w:top=\"600\" w:bottom=\"600\" w:left=\"600\" w:right=\"600\"/></w:sectPr>",
+            P("1"), P("2"), P("3"), P("4"), P("5"), twoCols, P("après"));
+        var lines = l2.Pages[0].Lines;
+        Assert.Equal(3, lines.Count(x => x.X > 100));
+        var after = lines.Single(x => x.Paragraph.Content.Text == "après");
+        Assert.Equal(30, after.X, 3);
+        Assert.Equal(lines[0].Y + 30, after.Y, 3);                           // sous les colonnes équilibrées
+    }
+
+    [Fact]
+    public void Sections_orientation_marges_colonnes_et_saut()
+    {
+        var w = (XNamespace)"http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        var sect = XElement.Parse($"<w:sectPr {NsDecl}><w:headerReference w:type=\"default\" r:id=\"rId8\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"/><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1417\" w:right=\"1000\" w:bottom=\"1417\" w:left=\"2000\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr>");
+        Core.Editing.SectionOps.SetOrientation(sect, true);
+        var (pw, ph, land) = Core.Editing.SectionOps.PageSize(sect);
+        Assert.True(land);
+        Assert.Equal(16838 / 20.0, pw, 2);
+        Assert.Equal("landscape", sect.Element(w + "pgSz")!.Attribute(w + "orient")!.Value);
+        // comme Word (vérifié par COM) : haut ← gauche, bas ← droite, gauche ← bas, droite ← haut
+        Assert.Equal("2000", sect.Element(w + "pgMar")!.Attribute(w + "top")!.Value);
+        Assert.Equal("1000", sect.Element(w + "pgMar")!.Attribute(w + "bottom")!.Value);
+        Core.Editing.SectionOps.SetColumns(sect, 3, 18, separator: true);
+        Assert.Equal(3, SectionGeometry.From(sect).ColumnCount);
+        Assert.True(SectionGeometry.From(sect).ColumnSeparator);
+        // ordre du schéma : cols après pgMar
+        Assert.True(sect.Elements().Select(e => e.Name.LocalName).ToList().IndexOf("cols") > sect.Elements().Select(e => e.Name.LocalName).ToList().IndexOf("pgMar"));
+
+        // saut de section continu au milieu d'un paragraphe : avant = propriétés et en-têtes ; après = continu, en-têtes hérités
+        var xml = XDocument.Parse($"<w:document {NsDecl}><w:body>{P("abcdef")}{sect}</w:body></w:document>");
+        var body = StoryMapping.Read(xml, "word/document.xml", "document").Stories().Single();
+        Core.Editing.SectionOps.InsertBreak(body, new Core.Model.DocPos(new[] { 0 }, 3), "continuous", FlowEdits.IdGenerator(Array.Empty<string>()));
+        Assert.Equal(2, body.Blocks.Count);
+        var first = ((Paragraph)body.Blocks[0]).Props.Get("sectPr")!;
+        Assert.NotNull(first.Element(w + "headerReference"));
+        var final = body.FinalSection!.Element!;
+        Assert.Null(final.Element(w + "headerReference"));
+        Assert.Equal("continuous", final.Element(w + "type")!.Attribute(w + "val")!.Value);
+        var layout = new DocumentLayout(body, new StyleResolver(new StyleSheet(XElement.Parse(Styles))), new MonoFontProvider(), related: _ => new Story());
+        layout.LayoutAll();
+        Assert.Equal(2, layout.Sections.Count);
+        Assert.Equal("rId8", layout.Sections[1].HeaderRefs["header:default"]);      // hérité
+    }
+
+    [Fact]
+    public void Numerotation_des_pages_qui_recommence_en_romain()
+    {
+        // section 1 : 2 pages ; section 2 : départ à 1 en chiffres romains
+        var s1 = "<w:p><w:pPr><w:sectPr><w:pgSz w:w=\"7200\" w:h=\"3200\"/><w:pgMar w:top=\"600\" w:bottom=\"600\" w:left=\"600\" w:right=\"600\"/></w:sectPr></w:pPr><w:r><w:t>fin 1</w:t></w:r></w:p>";
+        var s2 = "<w:sectPr><w:pgSz w:w=\"7200\" w:h=\"3200\"/><w:pgMar w:top=\"600\" w:bottom=\"600\" w:left=\"600\" w:right=\"600\"/><w:pgNumType w:start=\"1\" w:fmt=\"upperRoman\"/></w:sectPr>";
+        var paras = Enumerable.Repeat(P("x"), 14).Append(s1).Concat(Enumerable.Repeat(P("y"), 14)).ToArray();
+        var (_, l) = DocWithSect(s2, paras);
+        Assert.Equal(new[] { "1", "2", "I", "II" }, l.Pages.Select(p => p.NumberText).ToArray());
+        Assert.Equal(new[] { 2, 2, 2, 2 }, l.Pages.Select(p => p.SectionPageCount).ToArray());
+    }
 }

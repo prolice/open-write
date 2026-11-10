@@ -662,7 +662,6 @@ public partial class MainWindow
         if (Body is not { } body || _caret is not { } c) return;
         if (HasSelection) { ReplaceSelection(kind switch { SpecialChar.Tab => "\t", SpecialChar.LineBreak => "\v", _ => "\f" }, "Saisie"); return; }
         if (ToDocPos(c) is not { } at) { NotEditable(); return; }
-        if (kind == SpecialChar.ColumnBreak) kind = SpecialChar.PageBreak;      // colonnes : plus tard (lot 5)
         AfterTyping(TextOps.InsertSpecial(_journal, body, at, kind));
     }
 

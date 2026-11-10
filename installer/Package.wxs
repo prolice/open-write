@@ -19,6 +19,14 @@
     <Property Id="ARPPRODUCTICON" Value="OpenWriteIcon" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
+    <!-- Lancement d'OpenWrite à la fin d'une installation faite à la main (double-clic sur le MSI : UILevel 5).
+         L'installeur n'a pas d'écran de fin ; sans ce lancement, rien ne se passe en apparence. Les mises à jour
+         automatiques (msiexec /passive, UILevel 3) relancent l'application elles-mêmes : pas de double lancement. -->
+    <CustomAction Id="LaunchOpenWrite" FileRef="OpenWriteExe" ExeCommand="" Return="asyncNoWait" Impersonate="yes" />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchOpenWrite" After="InstallFinalize" Condition="UILevel = 5 AND NOT REMOVE" />
+    </InstallExecuteSequence>
+
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsDir" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="OpenWrite" />

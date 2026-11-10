@@ -205,6 +205,28 @@ public class LayoutTests
     }
 
     [Fact]
+    public void Numeros_de_liste_par_niveau_avec_remise_a_zero_et_formats()
+    {
+        const string numbering = $$"""
+            <w:numbering {{NsDecl}}>
+              <w:abstractNum w:abstractNumId="0">
+                <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>
+                <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%1.%2)"/></w:lvl>
+              </w:abstractNum>
+              <w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1 -"/></w:lvl></w:abstractNum>
+              <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+              <w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>
+            </w:numbering>
+            """;
+        static string L(int num, int lvl, string t) => $"<w:p><w:pPr><w:numPr><w:ilvl w:val=\"{lvl}\"/><w:numId w:val=\"{num}\"/></w:numPr></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>";
+        var xml = XDocument.Parse($"<w:document {NsDecl}><w:body>{L(1, 0, "a")}{L(1, 1, "b")}{L(1, 1, "c")}{L(1, 0, "d")}{L(1, 1, "e")}{L(2, 0, "f")}{L(2, 0, "g")}</w:body></w:document>");
+        var body = StoryMapping.Read(xml, "word/document.xml", "document").Stories().Single();
+        var styles = new StyleResolver(new StyleSheet(XElement.Parse(Styles), XElement.Parse(numbering)));
+        var n = ListNumbering.Compute(body, styles);
+        Assert.Equal(new[] { "1.", "1.a)", "1.b)", "2.", "2.a)", "III -", "IV -" }, body.Paragraphs().Select(p => n[p]).ToArray());
+    }
+
+    [Fact]
     public void Hauteur_de_ligne_de_Word_formule_GDI()
     {
         // Times New Roman : interligne externe de 87 unités → 13,8 pt à 12 pt (valeur de Word) ; Calibri : 0 (1,2207 em)

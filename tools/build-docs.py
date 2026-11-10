@@ -54,15 +54,16 @@ PAGES = [
 ouvrent comme d'habitude.</p>
 {steps("Lancez OpenWrite depuis le menu Démarrer.",
        f"Ouvrez un document avec <strong>Fichier ▸ Ouvrir…</strong> ({k('Ctrl', 'O')}), ou glissez un fichier .docx sur la fenêtre.",
-       "Le document s'affiche avec sa mise en forme : polices, styles, listes, tableaux, résultats des champs.",
+       "Le document s'affiche page par page, mis en page comme dans Word : polices, styles, listes, tableaux, en-têtes et pieds, notes.",
        f"Enregistrez avec {k('Ctrl', 'S')}. Tout ce qu'OpenWrite ne sait pas encore modifier est conservé tel quel.")}
 {shot("accueil", "Fenêtre principale d'OpenWrite", "La fenêtre d'OpenWrite : ruban en haut, plan à gauche, mise en forme à droite.")}
 """),
         ("version-actuelle", "Ce que fait cette version", """
-<p>OpenWrite avance par versions, chacune ajoutant un pan de Word. Aujourd'hui, il <strong>affiche</strong> fidèlement
-la mise en forme d'un document, permet de <strong>cocher les cases des formulaires</strong>, d'annuler, de rétablir et
-d'<strong>enregistrer sans perte</strong>. La saisie du texte, la pagination et la mise en forme arrivent dans les
-versions suivantes : chaque groupe du ruban indique la version qui l'activera.</p>
+<p>OpenWrite avance par versions, chacune ajoutant un pan de Word. Aujourd'hui, il <strong>affiche un document page
+par page</strong>, mis en page comme Word le fait (mêmes coupures de page sur nos documents de test dans la grande
+majorité des cas), permet de <strong>cocher les cases des formulaires</strong>, d'annuler, de rétablir et
+d'<strong>enregistrer sans perte</strong>. La saisie du texte et la mise en forme arrivent avec les versions suivantes :
+chaque groupe du ruban indique la version qui l'activera.</p>
 <p>Voir la <a href="feuille-de-route.html">feuille de route</a>.</p>
 """),
         ("aide-contextuelle", "Obtenir de l'aide", f"""
@@ -98,8 +99,8 @@ l'édition du texte (version 0.4) et les styles (version 0.5).</p>
 {shot("onglet-accueil", "Onglet Accueil du ruban")}
 """),
         ("volets", "Les volets", f"""
-<p>À gauche, le volet de navigation a deux onglets : <strong>Pages</strong> (miniatures, avec la pagination de la
-version 0.3) et <strong>Titres</strong>, le plan du document. À droite, le volet
+<p>À gauche, le volet de navigation a deux onglets : <strong>Pages</strong>, les miniatures de toutes les pages (un clic
+sur une miniature affiche la page), et <strong>Titres</strong>, le plan du document. À droite, le volet
 <strong>Mise en forme</strong> décrit le paragraphe sous la souris : style, police, taille, alignement, retraits,
 espacements, liste. Les deux se masquent depuis l'onglet <strong>Affichage</strong>, qui règle aussi le zoom
 ({k('Ctrl')} + molette).</p>
@@ -135,6 +136,15 @@ disparaître.</p>
 imprévue, il propose de la récupérer au démarrage suivant. Si le fichier est modifié par un autre programme pendant
 que vous travaillez, OpenWrite vous prévient avant d'écraser ces changements.</p>
 """),
+        ("pages", "La vue des pages", f"""
+<p>Le document s'affiche page par page, avec ses marges, ses en-têtes et pieds de page (numéros de page calculés),
+ses notes de bas de page, ses tableaux (fond et bordures des cellules, rangées coupées entre deux pages, en-têtes
+répétés), ses images en ligne et la numérotation de ses listes. La barre d'état indique la page affichée et le nombre
+de pages ; le zoom se règle avec {k('Ctrl')} + molette ou le curseur en bas à droite.</p>
+<p>Une police absente de l'ordinateur est remplacée, comme Word le fait, par la police de remplacement indiquée dans le
+document ou par une police aux mêmes dimensions ; la barre d'état signale les remplacements.</p>
+{warn("Pas encore affichés : les images et formes flottantes, les zones de texte et les colonnes (versions suivantes). Le texte qu'elles contiennent n'est pas perdu : il est conservé à l'enregistrement.")}
+"""),
         ("informations", "Informations sur le document", """
 <p><strong>Fichier ▸ Informations</strong> résume le document : nombre de paragraphes, tableaux, sections, images,
 notes, commentaires, révisions, champs et contrôles de contenu, mode de compatibilité, langues et polices utilisées.</p>
@@ -144,7 +154,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
         ("versions", "Les versions", table([
             ("0.1", "Socle : fenêtre, ruban, ouverture en lecture seule, mises à jour"),
             ("0.2", "Modèle de document sans perte, mise en forme fidèle, cases à cocher, annuler, enregistrer"),
-            ("0.3", "Pagination et affichage des pages"),
+            ("0.3", "Vue des pages : pagination comme dans Word, en-têtes et pieds, notes, miniatures"),
             ("0.4", "Saisie et mise en forme directe, presse-papiers"),
             ("0.5", "Styles, listes et thèmes"),
             ("0.6", "Mise en page, sections, en-têtes et pieds de page"),

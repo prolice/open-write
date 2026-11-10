@@ -6,7 +6,7 @@
       "titre": "Vos fichiers Word, sans perte",
       "accroche": "OpenWrite n'a pas de format à lui : il ouvre et enregistre directement les documents Word, et conserve à l'identique tout ce qu'il ne sait pas encore modifier.",
       "icone": "docx",
-      "capture": { "scene": "TabHome", "alt": "Un document Word ouvert dans OpenWrite, avec sa mise en forme" },
+      "capture": { "scene": "TabHome", "alt": "Un document Word ouvert dans OpenWrite, page par page" },
       "aide": "aide/documents.html#ouvrir",
       "elements": [
         { "titre": "Ouverture des .docx, .docm, .dotx et .dotm", "texte": "Y compris les fichiers que Word juge endommagés ; le mode de compatibilité des anciens documents est signalé comme dans Word." },
@@ -23,7 +23,8 @@
       "elements": [
         { "titre": "Styles et thème du document", "texte": "Polices et couleurs du thème, styles enchaînés, listes et mise en forme directe : plus de 99 % d'accord avec Word sur nos documents de test." },
         { "titre": "Volet Mise en forme", "texte": "Survolez un paragraphe : son style, sa police, ses retraits et espacements s'affichent à droite." },
-        { "titre": "Pagination comme dans Word", "texte": "Pages, sauts, veuves et orphelines, nombre de pages identique à Word.", "depuis": "0.3.0" },
+        { "titre": "Pages comme dans Word", "texte": "Sauts de page, veuves et orphelines, paragraphes solidaires, en-têtes et pieds, notes de bas de page, tableaux coupés entre deux pages : mêmes coupures que Word sur la grande majorité de nos documents de test.", "depuis": "0.3.0" },
+        { "titre": "Miniatures et page courante", "texte": "Toutes les pages en miniature dans le volet gauche ; « Page x sur y » dans la barre d'état.", "depuis": "0.3.0" },
         { "titre": "Saisie et mise en forme directe", "texte": "Écrire, sélectionner, gras, italique, alignement, presse-papiers.", "depuis": "0.4.0" }
       ]
     },

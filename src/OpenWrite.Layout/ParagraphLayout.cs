@@ -42,6 +42,10 @@ public sealed class ParagraphContent
     public Dictionary<int, (double W, double H)> Objects { get; init; } = new();
     /// <summary>Style de la marque de paragraphe (hauteur d'une ligne vide, dernière ligne).</summary>
     public required TextStyle Mark { get; init; }
+    /// <summary>XML des objets en ligne (w:drawing…), par position, pour l'affichage.</summary>
+    public Dictionary<int, XElement> ObjectXml { get; init; } = new();
+    /// <summary>Cases à cocher de formulaire : position du glyphe ☐/☒ → caractère de début du champ.</summary>
+    public Dictionary<int, FieldChar> CheckBoxes { get; init; } = new();
     /// <summary>Appels de note de bas de page : position dans le texte → w:id de la note.</summary>
     public Dictionary<int, string> Footnotes { get; init; } = new();
     /// <summary>Le paragraphe entier est masqué (marque et texte) : il n'occupe aucune place.</summary>
@@ -112,6 +116,9 @@ public sealed class ParagraphLayouter
 
     public StyleResolver Styles => _styles;
 
+    /// <summary>Numéros des listes du document (<see cref="ListNumbering"/>) ; null : « 1 » indicatif.</summary>
+    public IReadOnlyDictionary<Paragraph, string>? ListNumbers { get; set; }
+
     /// <summary>Numéro affiché par la marque w:footnoteRef du texte d'une note (posé par l'appelant pendant sa mise en page).</summary>
     public string? NoteNumber { get; set; }
 
@@ -157,7 +164,10 @@ public sealed class ParagraphLayouter
         var index = new Dictionary<TextStyle, int>();
         var objects = new Dictionary<int, (double, double)>();
         var notes = new Dictionary<int, string>();
-        var inCode = new Stack<bool>();
+        var objectXml = new Dictionary<int, XElement>();
+        var boxes = new Dictionary<int, FieldChar>();
+        // champs en cours : code (w:instrText) masqué ; résultat affiché, ou remplacé par FieldValue (PAGE, NUMPAGES)
+        var fields = new Stack<FieldState>();
         bool anyVisible = false;
 
         void Add(string text, TextStyle st)
@@ -194,18 +204,34 @@ public sealed class ParagraphLayouter
                         var st = Style(rf);
                         foreach (var c in r.Content)
                         {
-                            bool hidden = inCode.Any(x => x) || rf.Hidden;
+                            bool hidden = fields.Any(f => f.InCode || f.Replaced) || rf.Hidden;
                             switch (c)
                             {
                                 case FieldChar { Kind: FieldCharKind.Begin } fc:
-                                    inCode.Push(true);
-                                    if (!hidden && fc.FormData?.Element(W + "checkBox") is not null) Add("☐", st);
+                                    if (!hidden && fc.FormData?.Element(W + "checkBox") is { } cb)
+                                    {
+                                        boxes[sb.Length] = fc;
+                                        Add(IsChecked(cb) ? "☒" : "☐", st);
+                                    }
+                                    fields.Push(new FieldState());
+                                    break;
+                                case FieldCode code when fields.Count > 0 && fields.Peek().InCode:
+                                    fields.Peek().Code.Append(code.Value);
                                     break;
                                 case FieldChar { Kind: FieldCharKind.Separate }:
-                                    if (inCode.Count > 0) { inCode.Pop(); inCode.Push(false); }
+                                    if (fields.Count > 0)
+                                    {
+                                        var f = fields.Peek();
+                                        f.InCode = false;
+                                        if (!fields.Skip(1).Any(x => x.InCode || x.Replaced) && FieldValue?.Invoke(f.Code.ToString().Trim()) is { } value)
+                                        {
+                                            Add(value, st);
+                                            f.Replaced = true;
+                                        }
+                                    }
                                     break;
                                 case FieldChar:
-                                    if (inCode.Count > 0) inCode.Pop();
+                                    if (fields.Count > 0) fields.Pop();
                                     break;
                                 case TextContent { Deleted: false } t when !hidden:
                                     if (rf.SmallCaps && !rf.Caps) AddSmallCaps(t.Value, rf, st);
@@ -227,6 +253,7 @@ public sealed class ParagraphLayouter
                                     break;
                                 case OpaqueRunContent o when !hidden && InlineObjectSize(o.Xml) is { } size:
                                     objects[sb.Length] = size;
+                                    objectXml[sb.Length] = o.Xml;
                                     Add("￼", st);
                                     break;
                             }
@@ -247,8 +274,30 @@ public sealed class ParagraphLayouter
         return new ParagraphContent
         {
             Text = sb.ToString(), StyleOf = styleOf.ToArray(), Styles = styles, Objects = objects, Mark = mark, Footnotes = notes,
+            ObjectXml = objectXml, CheckBoxes = boxes,
             Hidden = !anyVisible && mark.Format.Hidden,
         };
+    }
+
+    sealed class FieldState
+    {
+        public readonly System.Text.StringBuilder Code = new();
+        public bool InCode = true;
+        public bool Replaced;
+    }
+
+    /// <summary>
+    /// Valeur d'un champ calculé par la mise en page (code → texte affiché à la place du résultat enregistré) :
+    /// numéros de page des en-têtes et pieds. Null : résultats enregistrés.
+    /// </summary>
+    public Func<string, string?>? FieldValue { get; set; }
+
+    /// <summary>État d'une case à cocher de formulaire : w:checked, sinon w:default.</summary>
+    bool IsChecked(XElement checkBox)
+    {
+        static bool On(XElement? e, XNamespace W) => e is not null && (e.Attribute(W + "val")?.Value is null or "1" or "true" or "on");
+        var chk = checkBox.Element(W + "checked");
+        return chk is not null ? On(chk, W) : checkBox.Element(W + "default")?.Attribute(W + "val")?.Value is "1" or "true" or "on";
     }
 
     /// <summary>Taille (points) d'un dessin en ligne (wp:inline/wp:extent, EMU) ; null pour un objet flottant (lot 7).</summary>
@@ -286,7 +335,8 @@ public sealed class ParagraphLayouter
         {
             var fmt = lvl.Element(W + "numFmt")?.Attribute(W + "val")?.Value;
             var mtext = lvl.Element(W + "lvlText")?.Attribute(W + "val")?.Value ?? "";
-            if (fmt != "bullet") mtext = System.Text.RegularExpressions.Regex.Replace(mtext, "%[1-9]", "1");
+            if (fmt != "bullet") mtext = ListNumbers is not null && ListNumbers.TryGetValue(p, out var number) ? number
+                : System.Text.RegularExpressions.Regex.Replace(mtext, "%[1-9]", "1");
             if (fmt == "none") mtext = "";
             var ms = Style(lmf);
             double mx = left + first, mw = ms.Face.Width(mtext, ms.Size);

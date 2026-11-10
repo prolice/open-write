@@ -10,7 +10,7 @@ namespace OpenWrite.App;
 
 /// <summary>
 /// Fenêtre principale. Ruban aux onglets de Word (MainWindow.Ribbon.cs) ; document chargé dans le modèle en flux,
-/// aperçu mis en forme par le résolveur de styles, sans pagination (MainWindow.Document.cs) ; cases à cocher, annuler,
+/// vue des pages mises en page par OpenWrite.Layout (MainWindow.Document.cs, depuis la 0.3) ; cases à cocher, annuler,
 /// enregistrer sans perte (MainWindow.Editing.cs) ; copies de secours (MainWindow.Recovery.cs) ; infrastructure d'OpenPub
 /// (mises à jour, documents récents, À propos, signalement des erreurs).
 /// </summary>
@@ -87,7 +87,8 @@ public partial class MainWindow : Window
         if (TrackRecent && remember) RecentFiles.Add(_path);
         ShowDocument();
         UpdateStatus();
-        StatusText.Text = HasCheckBoxes ? "Cliquez sur une case pour la cocher ; Ctrl+S pour enregistrer." : "Aperçu mis en forme, sans pagination (version 0.3).";
+        StatusText.Text = (HasCheckBoxes ? "Cliquez sur une case pour la cocher ; Ctrl+S pour enregistrer. " : "")
+            + $"Mis en page en {LastLayoutMs:0} ms" + (_fonts.Substitutions.Count > 0 ? $" · polices remplacées : {string.Join(", ", _fonts.Substitutions.Select(kv => $"{kv.Key} → {kv.Value}"))}" : "") + ".";
     }
 
     void CloseDocument()
@@ -97,6 +98,9 @@ public partial class MainWindow : Window
         _path = null;
         _pkg = null;
         _styles = null;
+        _layout = null;
+        _drawings = null;
+        _pagesView = null;
         _journal.Clear();
         _recovered = false;
         ShowWelcome();
@@ -154,8 +158,8 @@ public partial class MainWindow : Window
             Title = $"{(IsModified ? "• " : "")}{Path.GetFileName(_path)}{compat} — OpenWrite";
             DocTitle.Text = Path.GetFileName(_path) + (IsModified ? " · modifié" : "");
             DocTitle.ToolTip = _path;
-            PageStatus.Text = i.SavedPages is { } p ? $"{p} page{(p > 1 ? "s" : "")}" : "Pages : non calculées";
-            PageStatus.ToolTip = "Nombre de pages enregistré par Word ; OpenWrite paginera lui-même à partir de la version 0.3.";
+            PageStatus.Text = i.SavedPages is { } p ? $"{p} page{(p > 1 ? "s" : "")}" : "";
+            PageStatus.ToolTip = null;
             WordStatus.Text = $"{i.Words:N0} mot{(i.Words > 1 ? "s" : "")}".Replace(' ', ' ');
             LangStatus.Text = LanguageLabel(i.Languages);
         }
@@ -170,6 +174,7 @@ public partial class MainWindow : Window
         }
         PaneDocInfo.Text = DocSummary();
         RefreshPanes();
+        UpdatePageStatus();
     }
 
     /// <summary>Langue principale affichée dans la barre d'état (la première langue de rédaction trouvée).</summary>

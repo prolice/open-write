@@ -16,7 +16,7 @@ namespace OpenWrite.App;
 /// <summary>
 /// Captures d'écran de la vraie fenêtre, hors écran (documentation, portail, vérification visuelle) :
 /// OpenWrite.exe --screenshot document.docx|- image.png [largeur hauteur] [scène].
-/// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about ».
+/// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about », « page-N » (vue défilée à la page N).
 /// Auto-test de bout en bout (OpenWrite.exe --selftest dossier) : la vraie fenêtre, hors écran, sur un document fabriqué.
 /// </summary>
 public static class SelfTest
@@ -79,7 +79,7 @@ public static class SelfTest
         enc.Save(fs);
     }
 
-    // ================================================================ auto-test (version 0.2)
+    // ================================================================ auto-test (versions 0.2 et 0.3)
 
     static int _ok, _ko;
 
@@ -132,9 +132,26 @@ public static class SelfTest
         Check(!w.IsModified && !w.Title.StartsWith("•"), "document non modifié à l'ouverture");
         Check(Box().CheckBox!.Checked == false, "case décochée à l'ouverture");
 
-        w.ToggleCheckBox(BoxParagraph(), Box());
+        // vue des pages (0.3) : le document est paginé, la case est cliquée là où elle est dessinée
+        var layout = w.CurrentLayout;
+        Check(layout is { Pages.Count: 1 }, $"vue des pages : {layout?.Pages.Count ?? 0} page(s), mise en page en {w.LastLayoutMs:0} ms");
+        (int, Point)? boxAt = null;
+        if (layout is not null)
+            foreach (var l in layout.Pages[0].Lines)
+                foreach (var (pos, _) in l.Paragraph.Content.CheckBoxes)
+                {
+                    var box = l.Paragraph.Lines[l.Line];
+                    if (pos < box.Start || pos >= box.End) continue;
+                    var piece = box.Pieces.First(p => pos >= p.Start && pos < p.Start + p.Length);
+                    var st = l.Paragraph.Content.Styles[piece.Style];
+                    double x = l.X + piece.X;
+                    for (int k = piece.Start; k < pos; k++) x += st.Face.Advance(l.Paragraph.Content.Text[k]) * st.Size;
+                    boxAt = (0, new Point(x + 2, l.Y + box.Height / 2));
+                }
+        Check(boxAt is not null, "case dessinée sur la page");
+        if (boxAt is { } at) w.ClickAt(at); else w.ToggleCheckBox(BoxParagraph(), Box());
         Pump();
-        Check(Box().CheckBox!.Checked, "clic : case cochée");
+        Check(Box().CheckBox!.Checked, "clic sur la page : case cochée");
         Check(w.IsModified && w.Title.StartsWith("•"), "titre : document modifié");
         Check(ApplicationCommands.Undo.CanExecute(null, w), "Annuler disponible");
 
@@ -202,6 +219,12 @@ public static class SelfTest
             }
             default:
                 if (scene is not null && w.FindName(scene) is RadioButton rb) rb.IsChecked = true;
+                // « page-N » : vue des pages défilée jusqu'à la page N
+                if (scene is not null && scene.StartsWith("page-") && int.TryParse(scene[5..], out var n))
+                {
+                    Pump();
+                    w.GoToPage(n - 1);
+                }
                 break;
         }
         Pump();

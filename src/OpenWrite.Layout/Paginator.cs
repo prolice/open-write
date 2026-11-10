@@ -25,6 +25,8 @@ public sealed record SectionGeometry(double PageWidth, double PageHeight, double
     public double ContentBottom => PageHeight - Bottom;
     public double FirstTop { get; init; } = Top;
     public double FirstBottom { get; init; } = Bottom;
+    /// <summary>Propriétés de la section (en-têtes, pieds…).</summary>
+    public XElement? SectPr { get; init; }
     /// <summary>Distance du haut de la page à l'en-tête (w:header) et du bas au pied (w:footer), points.</summary>
     public double HeaderDistance { get; init; } = 35.4;
     public double FooterDistance { get; init; } = 35.4;
@@ -38,7 +40,7 @@ public sealed record SectionGeometry(double PageWidth, double PageHeight, double
         return new SectionGeometry(Get("pgSz", "w", 11906), Get("pgSz", "h", 16838), Math.Abs(Get("pgMar", "top", 1417)), Math.Abs(Get("pgMar", "bottom", 1417)),
             Get("pgMar", "left", 1417), Get("pgMar", "right", 1417), sectPr?.Element(w + "type")?.Attribute(w + "val")?.Value ?? "nextPage")
         {
-            HeaderDistance = Get("pgMar", "header", 708), FooterDistance = Get("pgMar", "footer", 708),
+            HeaderDistance = Get("pgMar", "header", 708), FooterDistance = Get("pgMar", "footer", 708), SectPr = sectPr,
         };
     }
 }
@@ -59,6 +61,9 @@ public readonly record struct PlacedLine(ParagraphLayout Paragraph, int Line, do
     /// <summary>Place réservée en bas de page pour les notes appelées sur cette ligne.</summary>
     public double Notes { get; init; }
 }
+
+/// <summary>Cellule de tableau placée : rectangle (points), fond (RRGGBB) et bordures (épaisseur en points, 0 = aucune).</summary>
+public readonly record struct CellBox(double X, double Y, double W, double H, string? Fill, double Top, double Bottom, double Left, double Right);
 
 /// <summary>Point de départ d'une page : élément de flux et ligne (ou rangée de tableau) où elle commence.</summary>
 /// <remarks>
@@ -81,7 +86,9 @@ public sealed class Page
     public required FlowPosition Start { get; init; }
     public List<PlacedLine> Lines { get; } = new();
     /// <summary>Bordures des cellules de tableau (rectangles en points), pour l'affichage.</summary>
-    public List<(double X, double Y, double W, double H)> Cells { get; } = new();
+    public List<CellBox> Cells { get; } = new();
+    /// <summary>Notes de bas de page de la page (w:id), dans l'ordre des appels.</summary>
+    public List<string> NoteIds { get; } = new();
     public FlowPosition End { get; set; }
 }
 
@@ -163,6 +170,13 @@ public sealed class DocumentLayout
 
     void BuildItems()
     {
+        // numéros de liste : recalculés à chaque reconstruction du flux (paragraphes insérés ou supprimés) ; les
+        // paragraphes dont le numéro change sont remis en page
+        var numbers = ListNumbering.Compute(_body, _lines.Styles);
+        if (_lines.ListNumbers is { } old)
+            foreach (var (p, n) in numbers)
+                if (!old.TryGetValue(p, out var o) || o != n) _cache.Remove(p);
+        _lines.ListNumbers = numbers;
         Sections.Clear();
         var items = new List<FlowItem>();
         var pending = new List<(Block, bool)>();
@@ -237,6 +251,95 @@ public sealed class DocumentLayout
         double sz = double.TryParse(b.Attribute(W + "sz")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v / 8 : 0.5;
         double space = double.TryParse(b.Attribute(W + "space")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var sp) ? sp : 0;
         return sz + space;
+    }
+
+    // ------------------------------------------------------------------ affichage : en-têtes, pieds, notes
+
+    /// <summary>
+    /// En-tête et pied de la page, placés pour l'affichage : en-tête à sa distance du haut, pied terminé à sa distance
+    /// du bas ; champs PAGE et NUMPAGES calculés. En-tête « première page » si w:titlePg, sinon « par défaut ».
+    /// </summary>
+    public Page? HeaderFooter(Page page, int pageNumber, int pageCount)
+    {
+        var g = page.Geometry;
+        if (_related is null || g.SectPr is not { } sect) return null;
+        var w = sect.Name.Namespace;
+        bool titlePg = sect.Element(w + "titlePg") is { } tp && tp.Attribute(w + "val")?.Value is null or "1" or "true" or "on";
+        string type = page.FirstOfSection && titlePg ? "first" : "default";
+        Story? Find(string kind) =>
+            sect.Elements(w + kind + "Reference").FirstOrDefault(e => (e.Attribute(w + "type")?.Value ?? "default") == type)
+                ?.Attributes().FirstOrDefault(a => a.Name.LocalName == "id")?.Value is { } id ? _related(id) : null;
+        var result = new Page { Geometry = g, Start = page.Start };
+        _lines.FieldValue = code =>
+        {
+            var name = code.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToUpperInvariant();
+            return name switch { "PAGE" => pageNumber.ToString(CultureInfo.InvariantCulture), "NUMPAGES" or "SECTIONPAGES" => pageCount.ToString(CultureInfo.InvariantCulture), _ => null };
+        };
+        try
+        {
+            if (Find("header") is { } header) PlaceStory(header, g.HeaderDistance, g, result, cache: false);
+            if (Find("footer") is { } footer) PlaceStory(footer, g.PageHeight - g.FooterDistance - StoryHeight(footer, g.ColumnWidth), g, result, cache: false);
+        }
+        finally { _lines.FieldValue = null; }
+        return result;
+    }
+
+    /// <summary>Notes de bas de page de la page, placées pour l'affichage (séparateur puis texte des notes).</summary>
+    public Page? Notes(Page page)
+    {
+        if (page.NoteIds.Count == 0 || _footnote is null) return null;
+        var g = page.Geometry;
+        double height = page.NoteIds.Sum(id => _noteHeights.TryGetValue(id, out var h) ? h : 0) + (_noteHeights.TryGetValue("separator", out var sep) ? sep : 0);
+        double y = page.Geometry.PageHeight - (page.FirstOfSection ? g.FirstBottom : g.Bottom) - height;
+        var result = new Page { Geometry = g, Start = page.Start };
+        if (_footnote("separator") is { } s)
+        {
+            result.Cells.Add(new CellBox(g.Left, y + sep / 2, g.ColumnWidth / 3, 0, null, 0.5, 0, 0, 0));
+            y += sep;
+        }
+        foreach (var id in page.NoteIds)
+        {
+            if (_footnote(id) is not { } note) continue;
+            _lines.NoteNumber = id;
+            try { y = PlaceStory(note, y, g, result, cache: false); }
+            finally { _lines.NoteNumber = null; }
+        }
+        return result;
+    }
+
+    /// <summary>Empile les paragraphes et tableaux d'une histoire à partir de <paramref name="top"/> ; renvoie le bas.</summary>
+    double PlaceStory(Story story, double top, SectionGeometry g, Page into, bool cache)
+    {
+        double y = top;
+        foreach (var b in story.Blocks)
+        {
+            switch (b)
+            {
+                case Paragraph p:
+                    var pl = cache ? LayoutOf(p, g.ColumnWidth) : _lines.Layout(p, g.ColumnWidth);
+                    if (pl.Content.Hidden) break;
+                    y += pl.SpaceBefore + BorderOf(pl, "top");
+                    for (int l = 0; l < pl.Lines.Count; l++)
+                    {
+                        into.Lines.Add(new PlacedLine(pl, l, g.Left, y));
+                        y += pl.Lines[l].Height;
+                    }
+                    y += BorderOf(pl, "bottom") + pl.SpaceAfter;
+                    break;
+                case Table t:
+                    foreach (var row in t.Items.OfType<TableRow>())
+                    {
+                        var box = MeasureRow(t, row, g.Left, g.ColumnWidth);
+                        PlaceRowAt(box, y, into);
+                        y += box.Height;
+                    }
+                    break;
+                case BlockContentControl sdt:
+                    y = PlaceStory(sdt.Content, y, g, into, cache);
+                    break;
+            }
+        }
+        return y;
     }
 
     /// <summary>Hauteur d'une histoire (en-tête, pied) : paragraphes et rangées de tableau empilés.</summary>
@@ -425,6 +528,9 @@ public sealed class DocumentLayout
         var copy = new Page { Geometry = p.Geometry, Start = Fix(p.Start), End = Fix(p.End) };
         copy.Lines.AddRange(p.Lines);
         copy.Cells.AddRange(p.Cells);
+        copy.NoteIds.AddRange(p.NoteIds);
+        copy.ReservedBottom = p.ReservedBottom;
+        copy.NotesCount = p.NotesCount;
         return copy;
     }
 
@@ -563,6 +669,7 @@ public sealed class DocumentLayout
                     {
                         c.Page.ReservedBottom -= gone.Notes;
                         c.Page.NotesCount -= gone.Paragraph.Lines[gone.Line].Footnotes?.Count ?? 0;
+                        foreach (var id in gone.Paragraph.Lines[gone.Line].Footnotes ?? new()) c.Page.NoteIds.Remove(id);
                     }
                     c.Page.Lines.RemoveRange(c.Page.Lines.Count - remove, remove);
                 }
@@ -577,6 +684,7 @@ public sealed class DocumentLayout
             {
                 c.Page.ReservedBottom += notes;
                 c.Page.NotesCount += lb.Footnotes!.Count;
+                c.Page.NoteIds.AddRange(lb.Footnotes!);
             }
             c.Y += lb.Height;
             c.Empty = false;
@@ -640,6 +748,8 @@ public sealed class DocumentLayout
     /// <summary>Rangée de tableau mesurée : hauteur, et lignes des cellules (abscisse de la cellule, lignes et leur décalage vertical).</summary>
     sealed record RowBox(double Height, List<(double X, double W, List<(ParagraphLayout L, double Y)> Lines)> Cells)
     {
+        /// <summary>Fond et bordures de chaque cellule (même ordre que <see cref="Cells"/>).</summary>
+        public List<(string? Fill, double Top, double Bottom, double Left, double Right)> Looks { get; init; } = new();
         /// <summary>Hauteur sans les bordures horizontales.</summary>
         public double Content { get; init; }
     }
@@ -677,6 +787,22 @@ public sealed class DocumentLayout
         return null;
     }
 
+    /// <summary>Fond (w:shd/@fill) et bordures d'une cellule : w:tcBorders, sinon celles du tableau (bords et intérieures confondus).</summary>
+    static (string?, double, double, double, double) CellLook(Table t, TableCell cell, XElement? tableBorders, bool continued)
+    {
+        var W = t.Props.Ns;
+        var fill = cell.Props.Get("shd")?.Attribute(W + "fill")?.Value;
+        if (fill is null or "auto" || fill.Length != 6) fill = null;
+        var own = cell.Props.Get("tcBorders");
+        double Side(string side, string inner)
+        {
+            var b = own?.Element(W + side) ?? tableBorders?.Element(W + side) ?? tableBorders?.Element(W + inner);
+            if (b is null || b.Attribute(W + "val")?.Value is null or "none" or "nil") return 0;
+            return double.TryParse(b.Attribute(W + "sz")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? Math.Max(0.25, v / 8) : 0.5;
+        }
+        return (fill, continued ? 0 : Side("top", "insideH"), Side("bottom", "insideH"), Side("left", "insideV"), Side("right", "insideV"));
+    }
+
     RowBox MeasureRow(Table t, TableRow row, double left, double columnWidth)
     {
         var W = t.Props.Ns;
@@ -685,6 +811,8 @@ public sealed class DocumentLayout
         double x = left + Twips(t.Props.Get("tblInd")?.Attribute(W + "w")?.Value) - CellPadding;
         var cells = row.Items.OfType<TableCell>().ToList();
         var placed = new List<(double, double, List<(ParagraphLayout, double)>)>();
+        var looks = new List<(string?, double, double, double, double)>();
+        var tableBorders = t.Props.Get("tblBorders") ?? TableStyleBorders(t);
         int col = 0;
         double rowH = 0;
         foreach (var cell in cells)
@@ -712,8 +840,10 @@ public sealed class DocumentLayout
                         + string.Join(" | ", pl.Lines.Select(l => pl.Content.Text[l.Start..l.End])));
             }
             // fusion verticale (w:vMerge sans valeur = suite) : la cellule n'impose pas de hauteur
-            if (cell.Props.Get("vMerge") is { } vm && vm.Attribute(W + "val")?.Value is null or "continue") cy = 0;
+            bool continued = cell.Props.Get("vMerge") is { } vm && vm.Attribute(W + "val")?.Value is null or "continue";
+            if (continued) cy = 0;
             placed.Add((x, w, lines));
+            looks.Add(CellLook(t, cell, tableBorders, continued));
             rowH = Math.Max(rowH, cy);
             x += w;
         }
@@ -731,7 +861,7 @@ public sealed class DocumentLayout
         double top = index == 0 ? RowBorder(t, row, "top", edge: true)
             : Math.Max(0, RowBorder(t, row, "top", edge: false) - RowBorder(t, rows[index - 1], "bottom", edge: false));
         double borders = RowBorder(t, row, "bottom", edge: index == rows.Count - 1) + top;
-        return new RowBox(rowH + borders, placed) { Content = rowH };
+        return new RowBox(rowH + borders, placed) { Content = rowH, Looks = looks };
     }
 
     /// <summary>Tableau : rangées entières, une rangée trop haute pour la place restante passe à la page suivante.</summary>
@@ -880,7 +1010,7 @@ public sealed class DocumentLayout
         if (from <= 0 && to is null) { PlaceRowAt(box, y, page); return; }
         var shift = CellShift(box, from);
         double h = RowPartHeight(box, from, to);
-        foreach (var (cx, cw, _) in box.Cells) page.Cells.Add((cx, y, cw, h));
+        for (int ci = 0; ci < box.Cells.Count; ci++) page.Cells.Add(Cell(box, ci, y, h));
         foreach (var x in RowLines(box))
         {
             if (x.Bottom <= from + 0.01 || to is { } t && x.Bottom > t + 0.01) continue;
@@ -888,11 +1018,19 @@ public sealed class DocumentLayout
         }
     }
 
+    static CellBox Cell(RowBox box, int ci, double y, double h)
+    {
+        var (cx, cw, _) = box.Cells[ci];
+        var (fill, top, bottom, left, right) = ci < box.Looks.Count ? box.Looks[ci] : (null, 0, 0, 0, 0);
+        return new CellBox(cx, y, cw, h, fill, top, bottom, left, right);
+    }
+
     static void PlaceRowAt(RowBox box, double y, Page page)
     {
-        foreach (var (cx, cw, lines) in box.Cells)
+        for (int ci = 0; ci < box.Cells.Count; ci++)
         {
-            page.Cells.Add((cx, y, cw, box.Height));
+            var (cx, cw, lines) = box.Cells[ci];
+            page.Cells.Add(Cell(box, ci, y, box.Height));
             foreach (var (pl, ly) in lines)
             {
                 double yy = y + ly;

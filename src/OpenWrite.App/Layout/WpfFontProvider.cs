@@ -131,8 +131,15 @@ public sealed class WpfFontProvider : IFontProvider
         return face;
     }
 
-    sealed class GlyphFace : FontFace
+    /// <summary>Police WPF : avances pour la mise en page, glyphes pour l'affichage (PageRenderer).</summary>
+    public sealed class GlyphFace : FontFace
     {
+        public GlyphTypeface Typeface { get; }
+
+        /// <summary>Glyphe du caractère (polices de symboles : plage F000–F0FF) ; null s'il manque à la police.</summary>
+        public ushort? Glyph(char c) =>
+            _map.TryGetValue(c, out var g) || c < 0x100 && _map.TryGetValue(0xF000 + c, out g) ? g : null;
+
         readonly IDictionary<int, ushort> _map;
         readonly IDictionary<ushort, double> _advances;
         readonly double[] _fast = new double[0x500];
@@ -143,6 +150,7 @@ public sealed class WpfFontProvider : IFontProvider
         {
             Name = name;
             Substituted = substituted;
+            Typeface = gt;
             _map = gt.CharacterToGlyphMap;
             _advances = gt.AdvanceWidths;
             Array.Fill(_fast, double.NaN);

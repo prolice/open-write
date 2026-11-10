@@ -634,3 +634,12 @@ Tolérances essayées et écartées : dépassement en fin de ligne (sans effet),
 
 **Suite du lot 2** : colonnes (remplissage, saut de colonne, équilibrage en fin de section continue), écarts restants du Syllabus, puis la vue des pages dans l'application.
 
+### 10.9 Version 0.3 — vue des pages (2026-11-10)
+
+- **Vue des pages** (`App/Layout/PagesView.cs`) : les pages du moteur (§10.7, §10.8) les unes sous les autres, **seules les pages visibles sont dessinées** (à chaque défilement, d'après la zone visible du ScrollViewer) ; dessins gardés par page (`PageDrawings`, partagés avec les miniatures). Zoom (transformation de la zone de travail), **miniatures** dans le volet gauche (clic = aller à la page, page affichée en évidence), **« Page x sur y »** dans la barre d'état, durée de la mise en page et polices remplacées dans le message d'état.
+- **Rendu** (`App/Layout/PageRenderer.cs`) : texte posé glyphe par glyphe (`GlyphRun`) avec **exactement les avances de la mise en page** — l'écran montre la coupure calculée ; police de secours pour les caractères absents (☐ ☒, symboles). Justification, couleurs, surlignage, soulignés et barrés, exposant et indice, petites capitales, puces et **numéros de liste** (compteurs par liste et niveau, valeurs de départ, formats décimal, lettres, romains : `Layout/ListNumbering.cs`, premier pas du lot 4), **images en ligne** (a:blip du paquet ; EMF/WMF : cadre gris), **fond et bordures des cellules**, **bordures et trame des paragraphes** (groupes comme Word), **en-têtes et pieds** (numéros PAGE / NUMPAGES calculés), **notes de bas de page** (séparateur et texte).
+- **Interactions** : clic sur une case à cocher dans la page (repérage du caractère sous le pointeur), volet de droite qui décrit le paragraphe et le caractère survolés ; après une modification ou une annulation, nouvelle mise en page et position de défilement gardée.
+- **Installeur** : OpenWrite se lance à la fin d'une installation faite à la main (double-clic : `UILevel = 5`) — l'installeur n'a pas d'écran de fin et, en 0.2, rien ne semblait se passer ; pas de lancement pendant les mises à jour automatiques (`/passive`), qui relancent l'application elles-mêmes.
+- **Auto-test** : 15 vérifications (nombre de pages, case trouvée sur la page et cochée par un vrai clic sur sa position) ; scène de capture `page-N`.
+- Pas encore affichés : objets flottants et zones de texte (lot 7), colonnes (suite du lot 2) ; mise en page sur le fil de l'interface (0,8 s pour 700 pages ; en arrière-plan plus tard).
+

@@ -103,6 +103,8 @@ public sealed class LineBox
     /// sa hauteur est comptée par la première ligne de la rangée.
     /// </summary>
     public bool SameRow { get; init; }
+    /// <summary>Bord gauche de la boîte de la ligne depuis la colonne : 0, ou le bord du segment libre d'une ligne habillée.</summary>
+    public double BoxLeft { get; internal set; }
     /// <summary>Hauteur de la rangée (première ligne d'une rangée de part et d'autre d'un objet), sinon <see cref="Height"/>.</summary>
     public double RowHeight { get; internal set; }
     /// <summary>Place verticale prise par la ligne dans le paragraphe : saut au-dessus et hauteur de sa rangée (0 pour une suite de rangée).</summary>
@@ -514,27 +516,28 @@ public sealed class ParagraphLayouter
         for (int attempt = 0; ; attempt++)
         {
             var (segments, down) = space(y + gap, guess);
-            var usable = segments.Select(s => (L: Math.Max(x0, s.Left), R: Math.Min(limit, s.Right)))
+            var usable = segments.Select(s => (L: Math.Max(x0, s.Left), R: Math.Min(limit, s.Right), Box: s.Left))
                 .Where(s => s.R - s.L > Math.Max(MinWrapSegment, 0.5)).ToList();
             if (usable.Count == 0 && ++guard < 400)
             {
                 gap += down > 0.01 ? down : Math.Max(1, guess);
                 continue;
             }
-            if (usable.Count == 0) usable.Add((x0, limit));             // garde-fou : toute la largeur
+            if (usable.Count == 0) usable.Add((x0, limit, 0));          // garde-fou : toute la largeur
             var row = new List<LineBox>();
             int p0 = pos, end = pos;
             LineEnd kind = LineEnd.Wrap;
             bool done = false;
             for (int k = 0; k < usable.Count; k++)
             {
-                var (sl, sr) = usable[k];
+                var (sl, sr, box) = usable[k];
                 double lx = sl;
                 var (e, kd) = FillLine(content, pf, p0, lx, sr);
                 // mot coupé faute de place dans un segment étroit : on passe au segment suivant (s'il y en a)
                 if (kd == LineEnd.Wrap && e < n && e > p0 && content.Text[e - 1] is not (' ' or Atom.Tab) && k + 1 < usable.Count)
                     continue;
                 var line = MakeLine(content, pf, p0, e, kd, lx, sr, last: e >= n, gap: row.Count == 0 ? gap : 0, sameRow: row.Count > 0);
+                line.BoxLeft = Math.Max(0, box);
                 row.Add(line);
                 end = e;
                 kind = kd;

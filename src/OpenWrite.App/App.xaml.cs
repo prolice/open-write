@@ -92,6 +92,11 @@ public partial class App : Application
                 Shutdown(r.Manifest is null ? 1 : 0);
                 return;
             }
+            if (args.Length >= 3 && args[0] == "--lines")
+            {
+                Shutdown(Layout.LayoutBench.Lines(args[1], args[2], args.Contains("--detail")));
+                return;
+            }
             if (args.Length >= 2 && args[0] == "--layout")
             {
                 Shutdown(Layout.LayoutBench.Run(args));

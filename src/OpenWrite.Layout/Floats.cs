@@ -76,6 +76,9 @@ public sealed class FloatBox
 
 public sealed partial class DocumentLayout
 {
+    /// <summary>Arrondi des bords d'un objet pour l'habillage (calibrage : OPENWRITE_WRAP_ROUND).</summary>
+    public static int WrapRound { get; set; } = int.TryParse(Environment.GetEnvironmentVariable("OPENWRITE_WRAP_ROUND"), out var wr) ? wr : 2;
+
     /// <summary>
     /// Segments libres d'une colonne [<paramref name="colL"/>, <paramref name="colR"/>] (repère de la page) pour une bande
     /// verticale, autour des objets qui habillent ; aucun segment et la hauteur à descendre si un objet « haut et bas »
@@ -90,6 +93,11 @@ public sealed partial class DocumentLayout
             if (!f.Wraps) continue;
             if (f.Blocked(top, bottom) is not { } blocked) continue;
             var (bl, br) = blocked;
+            // bords arrondis au point (calibrage par COM, tools/word-lines.ps1 : un mot de plus tient à droite d'un objet
+            // dont le bord tombe à 372,3 pt ; arrondi au plus près, par excès ou par défaut : 396/421 lignes identiques)
+            if (WrapRound == 1) { bl = Math.Ceiling(bl); br = Math.Floor(br); }
+            else if (WrapRound == 2) { bl = Math.Round(bl); br = Math.Round(br); }
+            else if (WrapRound == 3) { bl = Math.Floor(bl); br = Math.Floor(br); }
             if (br <= colL || bl >= colR) continue;                     // objet hors de la colonne
             double objBottom = f.Exclusion.B;
             if (f.Object.Wrap == WrapKind.TopAndBottom)

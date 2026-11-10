@@ -241,4 +241,57 @@ static class LayoutBench
         }
         return d;
     }
+
+    /// <summary>
+    /// Mode --lines : lignes d'OpenWrite comparées à celles de Word (tools/word-lines.ps1 : page, haut, gauche, largeur et
+    /// début du texte de chaque ligne du corps). Lignes appariées dans l'ordre par leur texte ; écarts de position du
+    /// haut et du bord gauche (habillage autour des objets flottants).
+    ///   OpenWrite --lines &lt;dossier .docx&gt; &lt;dossier JSON de Word&gt; [--detail]
+    /// </summary>
+    public static int Lines(string dir, string wordDir, bool detail)
+    {
+        var fonts = new WpfFontProvider();
+        int allSame = 0, allTotal = 0;
+        foreach (var file in Directory.GetFiles(dir, "*.docx").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+        {
+            var json = Path.Combine(wordDir, Path.GetFileNameWithoutExtension(file) + ".lignes.json");
+            if (!File.Exists(json)) continue;
+            var pkg = DocxPackage.Open(file);
+            var body = pkg.Main!.Stories().First();
+            fonts.AltNames = pkg.FontAltNames();
+            var layout = new DocumentLayout(body, new Core.Styles.StyleResolver(pkg.StyleSheet()), fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id));
+            layout.LayoutAll();
+            var mine = new List<(int Page, double Top, double Left, string Text)>();
+            for (int k = 0; k < layout.Pages.Count; k++)
+                foreach (var l in layout.Pages[k].Lines)
+                {
+                    var lb = l.Paragraph.Lines[l.Line];
+                    var c = l.Paragraph.Content;
+                    // bord gauche de la boîte de ligne, comme Word (Line.Left) : la colonne, ou le bord libre près d'un objet
+                    double left = l.X + lb.BoxLeft;
+                    mine.Add((k + 1, l.Y, left, c.Text[lb.Start..Math.Min(lb.End, c.Text.Length)]));
+                }
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(json));
+            var word = doc.RootElement.EnumerateArray().Select(e => (Page: e.GetProperty("page").GetInt32(), Top: e.GetProperty("top").GetDouble(),
+                Left: e.GetProperty("left").GetDouble(), Text: e.GetProperty("text").GetString() ?? "")).ToList();
+            static string K(string s) => new string(s.Where(char.IsLetterOrDigit).Take(10).ToArray());
+            int same = 0, n = Math.Min(mine.Count, word.Count);
+            var lines = new List<string>();
+            for (int k = 0; k < n; k++)
+            {
+                var (wp, wt, wl, wtext) = word[k];
+                var (mp, mt, ml, mtext) = mine[k];
+                bool textOk = K(wtext) == K(mtext);
+                bool ok = textOk && wp == mp && Math.Abs(wt - mt) <= 1.01 && Math.Abs(wl - ml) <= 1.01;
+                if (ok) same++;
+                if (detail && !ok) lines.Add($"    {k + 1,3} Word p{wp} {wt,6:0.0} {wl,6:0.0} « {K(wtext)} » / OpenWrite p{mp} {mt,6:0.0} {ml,6:0.0} « {K(mtext)} »");
+            }
+            allSame += same;
+            allTotal += Math.Max(mine.Count, word.Count);
+            Console.WriteLine($"{Path.GetFileName(file),-24} lignes {mine.Count,3} (Word {word.Count,3})  identiques à 1 pt : {same}/{Math.Max(mine.Count, word.Count)}");
+            foreach (var l in lines.Take(12)) Console.WriteLine(l);
+        }
+        Console.WriteLine($"Lignes identiques à Word (texte, page, haut et bord gauche à 1 pt) : {allSame}/{allTotal}");
+        return 0;
+    }
 }

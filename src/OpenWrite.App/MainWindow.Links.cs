@@ -195,4 +195,19 @@ public partial class MainWindow
             if (c.ModelStart[k] >= modelStart && c.ModelEnd[k] <= modelEnd) sb.Append(c.Text[k]);
         return sb.ToString();
     }
+
+    SymbolWindow? _symbols;
+
+    /// <summary>Insertion ▸ Symbole : fenêtre non modale, chaque clic insère le caractère au point d'insertion.</summary>
+    internal void ShowSymbols()
+    {
+        if (_layout is null) return;
+        if (_symbols is null)
+        {
+            _symbols = new SymbolWindow(ch => ReplaceSelection(ch, "Symbole")) { Owner = this };
+            _symbols.Closed += (_, _) => _symbols = null;
+        }
+        _symbols.Show();
+        _symbols.Activate();
+    }
 }

@@ -402,7 +402,13 @@ public partial class MainWindow
                 else if (shift) InsertSpecial(SpecialChar.LineBreak);
                 else NewParagraph();
                 break;
-            case Key.Tab when !ctrl: InsertSpecial(SpecialChar.Tab); break;
+            // dans un tableau : cellule suivante (Maj : précédente) ; Ctrl+Tab y insère une vraie tabulation
+            case Key.Tab when !ctrl && InTableCell() && !alt: MoveToCell(shift ? -1 : 1); break;
+            case Key.Tab: InsertSpecial(SpecialChar.Tab); break;
+            // Ctrl+Maj+Espace : espace insécable ; Ctrl+Maj+- : trait d'union insécable (Word)
+            case Key.Space when ctrl && shift: ReplaceSelection("\u00A0", "Espace insécable"); break;
+            case Key.OemMinus when ctrl && shift:
+            case Key.Subtract when ctrl && shift: ReplaceSelection("\u2011", "Trait d'union insécable"); break;
             case Key.Escape when HasSelection: MoveTo(c, extend: false); break;
             case Key.A when ctrl: SelectAll(); break;
             case Key.C when ctrl:
@@ -594,15 +600,60 @@ public partial class MainWindow
     void InsertSpecial(SpecialChar kind)
     {
         if (Body is not { } body || _caret is not { } c) return;
-        if (kind == SpecialChar.Tab && ToDocPos(c) is { } p && p.Path.Count > 1 && body.Blocks[p.Path[0]] is Table)
-        {
-            StatusText.Text = "Tab dans un tableau : passage à la cellule suivante dans une prochaine version (Ctrl+Tab n'est pas encore disponible).";
-            return;
-        }
         if (HasSelection) { ReplaceSelection(kind switch { SpecialChar.Tab => "\t", SpecialChar.LineBreak => "\v", _ => "\f" }, "Saisie"); return; }
         if (ToDocPos(c) is not { } at) { NotEditable(); return; }
         if (kind == SpecialChar.ColumnBreak) kind = SpecialChar.PageBreak;      // colonnes : plus tard (lot 5)
         AfterTyping(TextOps.InsertSpecial(_journal, body, at, kind));
+    }
+
+    // ================================================================ tableaux
+
+    /// <summary>Le point d'insertion est-il dans une cellule de tableau ?</summary>
+    bool InTableCell() => CellOf(_caret) is not null;
+
+    /// <summary>Tableau, ligne et cellule qui contiennent un point (chemin : …, tableau, ligne, cellule, paragraphe).</summary>
+    (Table Table, int Row, int Cell, int[] TablePath)? CellOf(TextPoint? t)
+    {
+        if (Body is not { } body || t is null || ToDocPos(t.Value) is not { } pos || pos.Path.Count < 4) return null;
+        var path = pos.Path;
+        var prefix = path.Take(path.Count - 4).ToArray();
+        Story parent;
+        try { parent = DocPos.ResolveContainer(body, prefix); }
+        catch (ArgumentException) { return null; }
+        return parent.Blocks[path[^4]] is Table table ? (table, path[^3], path[^2], prefix.Append(path[^4]).ToArray()) : null;
+    }
+
+    /// <summary>
+    /// Tab / Maj+Tab dans un tableau : sélectionne le contenu de la cellule suivante ou précédente (ligne suivante au bout
+    /// de la ligne), comme Word. Après la dernière cellule, l'ajout d'une ligne viendra avec les tableaux (version 0.7).
+    /// </summary>
+    void MoveToCell(int direction)
+    {
+        if (Body is not { } body || CellOf(_caret) is not { } at) return;
+        // cellules du tableau dans l'ordre : (ligne, élément)
+        var cells = new List<(int Row, int Item, TableCell Cell)>();
+        for (int r = 0; r < at.Table.Items.Count; r++)
+            if (at.Table.Items[r] is TableRow row)
+                for (int c = 0; c < row.Items.Count; c++)
+                    if (row.Items[c] is TableCell cell) cells.Add((r, c, cell));
+        int k = cells.FindIndex(x => x.Row == at.Row && x.Item == at.Cell) + direction;
+        if (k < 0 || k >= cells.Count)
+        {
+            StatusText.Text = direction > 0 ? "Dernière cellule du tableau (l'ajout d'une ligne par Tab viendra avec la version 0.7)." : "Première cellule du tableau.";
+            return;
+        }
+        var target = cells[k];
+        var paras = target.Cell.Content.Paragraphs().ToList();
+        if (paras.Count == 0) return;
+        var first = FromDocPos(DocPos.Of(body, paras[0]));
+        var lastP = paras[^1];
+        var last = LayoutOf(lastP) is { } pl ? new TextPoint(lastP, pl.Content.Text.Length) : (TextPoint?)null;
+        if (first is null || last is null) return;
+        _anchor = first;
+        _caret = last;
+        _goalX = null;
+        _pendingFormat.Clear();
+        UpdateCaret();
     }
 
     // ================================================================ après une modification

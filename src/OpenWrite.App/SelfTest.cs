@@ -17,7 +17,8 @@ namespace OpenWrite.App;
 /// Captures d'écran de la vraie fenêtre, hors écran (documentation, portail, vérification visuelle) :
 /// OpenWrite.exe --screenshot document.docx|- image.png [largeur hauteur] [scène].
 /// Scènes : nom d'un onglet (TabInsert, TabReview…), « file-menu », « about », « page-N » (vue défilée à la page N),
-/// « selection » (quelques mots sélectionnés sur la première page), « marques » (idem, marques de mise en forme affichées).
+/// « selection » (quelques mots sélectionnés sur la première page), « marques » (idem, marques de mise en forme affichées),
+/// boîtes « symbole », « police », « paragraphe ».
 /// Auto-test de bout en bout (OpenWrite.exe --selftest dossier) : la vraie fenêtre, hors écran, sur un document fabriqué.
 /// </summary>
 public static class SelfTest
@@ -265,6 +266,11 @@ public static class SelfTest
         var link = linkPara.Inlines.OfType<InlineContainer>().FirstOrDefault(c => c.Name.LocalName == "hyperlink");
         Check(link is not null && string.Concat(link.Runs().Select(r => r.Text)) == "conditions" && TextOf(linkPara) == " J'accepte les conditions.",
               "Ctrl+K : lien posé sur le mot, texte inchangé");
+        // tableau : Tab passe à la cellule suivante (contenu sélectionné), Maj+Tab revient… sans modifier le document
+        w.FindNext("A1", true, true);
+        Key(System.Windows.Input.Key.Right);
+        Key(System.Windows.Input.Key.Tab);
+        Check(w.SelectedText() == "B1", $"Tab dans un tableau : cellule suivante sélectionnée (« {w.SelectedText()} »)");
         Check(w.Save(saveAs: false), "Ctrl+S après la frappe : enregistré");
         var reread = DocxPackage.Open(file).Main!.Stories().First();
         Check(TextOf(reread.Blocks[0]) == "Formulaire d'essai complet" && TextOf(reread.Blocks[1]) == "Deuxième ligne"
@@ -357,6 +363,27 @@ public static class SelfTest
                 var c = (FrameworkElement)about.Content;
                 Save(c, (int)c.ActualWidth, (int)c.ActualHeight, png);
                 about.Close();
+                w.Close();
+                return 0;
+            }
+            case "symbole" or "police" or "paragraphe":
+            {
+                Window dlg = scene switch
+                {
+                    "symbole" => new SymbolWindow(_ => { }),
+                    "police" => new FontWindow(new Core.Styles.RunFormat { FontAscii = "Calibri", Size = 11, Bold = true, Effective = new System.Xml.Linq.XElement("rPr") }),
+                    _ => new ParagraphWindow(new Core.Styles.ParagraphFormat { Alignment = "both", IndentFirstLine = 709, SpacingAfter = 160, Line = 276, KeepNext = true, Effective = new System.Xml.Linq.XElement("pPr") }),
+                };
+                dlg.Owner = w;
+                dlg.Left = -6000;
+                dlg.ShowActivated = false;
+                dlg.WindowStartupLocation = WindowStartupLocation.Manual;
+                dlg.Show();
+                Pump();
+                Idle();
+                var c = (FrameworkElement)dlg.Content;
+                Save(c, (int)c.ActualWidth, (int)c.ActualHeight, png);
+                dlg.Close();
                 w.Close();
                 return 0;
             }

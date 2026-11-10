@@ -110,6 +110,7 @@ public partial class MainWindow
     Dictionary<string, (Action Run, string Tip)> InsertCommands() => new()
     {
         ["Lien"] = (ShowLinkDialog, "Lien hypertexte… (Ctrl+K)"),
+        ["Symbole"] = (ShowSymbols, "Symbole… : caractères spéciaux, espaces et tirets insécables"),
         ["Saut de page"] = (() => InsertSpecial(Core.Editing.SpecialChar.PageBreak), "Saut de page (Ctrl+Entrée)"),
     };
 

@@ -799,3 +799,11 @@ pages, livret, recto verso manuel) — 155 tests.
 
 Publiée par la pipeline (tag `v1.0.2`) : impression et export PDF (§10.25). Auto-test passé sur l'exécutable publié
 (export PDF compris dans le fichier unique), MSI de 62 Mo, `latest.json` signé sur le portail.
+
+### 10.27 Version 1.0.3 (2026-11-11)
+
+Retour utilisateur : dans les boîtes Imprimer et Exporter en PDF, choisir « Pages : » laissait « Toutes les pages » coché
+à côté, et c'est ce choix qui l'emportait. « Pages : » est dans une autre ligne (autre parent) : WPF en faisait un
+groupe de boutons à part. Nom de groupe commun dans `PageChooser` ; l'auto-test choisit « Pages : 1 » par
+l'automatisation de l'interface et vérifie qu'un seul bouton est coché (échoue sans le correctif) — 102 vérifications.
+Même correction dans OpenPub 2.1.5, d'où vient ce code.

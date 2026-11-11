@@ -88,7 +88,7 @@ d'OpenWrite</strong> qui l'activera ; les groupes déjà actifs n'en ont pas.</p
 {shot("onglet-insertion", "Onglet Insertion du ruban", "Les groupes à venir indiquent leur version.")}
 """),
         ("fichier", "Le menu Fichier", f"""
-<p>Le bouton <strong>Fichier</strong> ouvre les commandes du document (ouvrir, enregistrer, informations), les
+<p>Le bouton <strong>Fichier</strong> ouvre les commandes du document (nouveau, ouvrir, enregistrer, informations), les
 documents récents et les réglages : mises à jour automatiques, copies de secours, version précédente (.bak) et
 rapports d'erreur anonymes.</p>
 {shot("menu-fichier", "Menu Fichier d'OpenWrite")}
@@ -111,7 +111,13 @@ cliquez pour poser un taquet de tabulation, tirez un taquet hors de la règle po
 {shot("onglet-affichage", "Onglet Affichage du ruban")}
 """),
     ]),
-    ("documents.html", "Documents", "Ouvrir, enregistrer, annuler et récupérer vos documents.", "📄", [
+    ("documents.html", "Documents", "Créer, ouvrir, enregistrer, annuler et récupérer vos documents.", "📄", [
+        ("nouveau", "Nouveau document", f"""
+<p><strong>Fichier ▸ Nouveau document</strong> ({k('Ctrl', 'N')}), ou le bouton <strong>Nouveau document</strong> de
+l'écran d'accueil, ouvre une page blanche comme celle de Word : format A4 (Letter aux États-Unis), marges de 2,54 cm,
+police Calibri 11, thème Office, et la langue de rédaction de Windows pour l'orthographe. Le document s'appelle
+« Document1 » tant qu'il n'est pas enregistré : le premier {k('Ctrl', 'S')} demande son nom et son dossier.</p>
+"""),
         ("ouvrir", "Ouvrir un document", f"""
 <p><strong>Fichier ▸ Ouvrir…</strong> ({k('Ctrl', 'O')}) accepte les documents Word <code>.docx</code>,
 <code>.docm</code>, <code>.dotx</code> et <code>.dotm</code>. Vous pouvez aussi glisser un fichier sur la fenêtre ou
@@ -401,7 +407,7 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
     ]),
     ("raccourcis.html", "Raccourcis clavier", "Tous les raccourcis d'OpenWrite.", "⌨️", [
         ("general", "Général", table([
-            ("Ouvrir", k("Ctrl", "O")), ("Enregistrer", k("Ctrl", "S")),
+            ("Nouveau document", k("Ctrl", "N")), ("Ouvrir", k("Ctrl", "O")), ("Enregistrer", k("Ctrl", "S")),
             ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")), ("Imprimer", k("Ctrl", "P")), ("Orthographe", k("F7")), ("Nouveau commentaire", k("Ctrl", "Alt", "M")), ("Suivi des modifications", k("Ctrl", "Maj", "E")),
             ("Annuler", k("Ctrl", "Z")), ("Rétablir", k("Ctrl", "Y")),
             ("Zoom", k("Ctrl") + " + molette"), ("Aide", k("F1")), ("Quitter", k("Alt", "F4")),

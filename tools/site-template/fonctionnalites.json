@@ -9,6 +9,7 @@
       "capture": { "scene": "TabHome", "alt": "Un document Word ouvert dans OpenWrite, page par page" },
       "aide": "aide/documents.html#ouvrir",
       "elements": [
+        { "titre": "Nouveau document", "texte": "Ctrl+N ouvre une page blanche comme celle de Word (A4, Calibri 11, thème Office, langue de Windows), enregistrée en .docx au premier Ctrl+S.", "depuis": "1.1.1" },
         { "titre": "Ouverture des .docx, .docm, .dotx et .dotm", "texte": "Y compris les fichiers que Word juge endommagés ; le mode de compatibilité des anciens documents est signalé comme dans Word." },
         { "titre": "Enregistrement sans perte", "texte": "Seules les parties modifiées sont réécrites ; images, objets et réglages inconnus sont recopiés octet pour octet. Un document enregistré sans modification reste identique." },
         { "titre": "Champs, signets et formulaires préservés", "texte": "Les résultats des champs s'affichent, les codes restent intacts, et les cases à cocher des formulaires se cochent d'un clic." }

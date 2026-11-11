@@ -570,7 +570,7 @@ Restent hors du résolveur : mise en forme conditionnelle des styles de tableau 
 ### 10.6 Lot 0 — publication : pipelines, installeur, portail Azure (2026-11-10)
 
 - **Dépôt public** https://github.com/prolice/open-write (premier commit : lots 0 et 1, version 0.2.0 ; `samples/` et `work/` exclus, vérifiés).
-- **Azure** (abonnement « Azure Noise2Quite », coût 0 €) : groupe de ressources `rg-openwrite-updates` (Europe de l'Ouest) et Static Web App **`openwrite-updates`, offre Free** : https://gentle-glacier-0e0efdd03.3.azurestaticapps.net. Quotas vérifiés : groupes de ressources gratuits, 980 par abonnement (4 utilisés) ; **10 Static Web Apps Free par abonnement** (3 utilisées : noise2quite, openpub, openwrite) ; 250 Mo par site, 100 Go de bande passante par mois.
+- **Azure** (abonnement « Azure Noise2Quite », coût 0 €) : groupe de ressources `rg-openwrite-updates` (Europe de l'Ouest) et Static Web App **`openwrite-updates`, offre Free** : https://gentle-glacier-0e0efdd03.3.azurestaticapps.net.  Domaine personnalisé depuis la 1.1.1 : https://open-write.prolice.net (§10.31). Quotas vérifiés : groupes de ressources gratuits, 980 par abonnement (4 utilisés) ; **10 Static Web Apps Free par abonnement** (3 utilisées : noise2quite, openpub, openwrite) ; 250 Mo par site, 100 Go de bande passante par mois.
 - **Pipelines GitHub Actions** reprises d'OpenPub : `ci.yml` (nouveau : compilation et tests à chaque envoi), `release-app.yml` (étiquette `vX.Y.Z` → tests, exécutable autonome, MSI, `latest.json` signé, portail, release GitHub, Azure), `publish-portal.yml` (sans release : simple avertissement, rien n'est publié).
 - **Installeur WiX** par utilisateur, GUID propres ; OpenWrite s'ajoute à « Ouvrir avec » des `.docx/.docm/.dotx/.dotm` (`OpenWithProgids`) **sans devenir le programme par défaut** (Word reste associé).
 - **Portail** : charte OpenWrite (styles d'OpenPub recolorés bleu/cyan/orange), page de téléchargement, page Fonctionnalités (4 domaines, éléments à venir masqués jusqu'à leur version), **aide en ligne** (7 pages, 21 sections ; les 10 liens contextuels de l'application vérifiés). Captures sur un **document de démonstration fictif** fabriqué par `build-site.py` (jamais le corpus). Construction locale vérifiée : site de 59 Mo (MSI 58 Mo) pour 230 Mo autorisés.
@@ -909,3 +909,22 @@ créés (ceux de Word sont lus, acceptés et refusés), volet Vérifications, co
 Publiée par la pipeline (tag `v1.1.0`) : orthographe (§10.28), commentaires et suivi des modifications (§10.29), choix des
 pages corrigé (§10.27). Restent du lot 8 : comparer / combiner, protection, rechercher / remplacer avancé, grammaire
 (facultative). « Prochaines versions » de l'accueil : 1.2 à 1.4.
+
+### 10.31 Version 1.1.1 — nouveau document, adresse du portail (2026-11-11)
+
+- **Nouveau document** : l'entrée « Nouveau document » du menu Fichier était restée un emplacement grisé depuis la 0.4
+  (prévue au lot « Aperçu et fin », oubliée). Fichier ▸ Nouveau document, `Ctrl+N` (`ApplicationCommands.New`) et un
+  bouton de l'écran d'accueil ouvrent « Document*n* » : `Docx/BlankDocument` assemble le paquet à partir de parties
+  relevées sur un document vierge de Word (COM, `Documents.Add` + `WordOpenXML`, rien d'enregistré) : thème Office
+  (Calibri / Calibri Light), styles par défaut et styles latents (rsid retirés ; les styles intégrés s'ajoutent à la
+  première utilisation), paramètres compat 15, A4 et marges de 1440 twips. Langue de rédaction = `SpellService.DefaultTag`,
+  Letter hors système métrique, séparateurs décimal/liste selon la langue, `w14:paraId` / `w14:docId` / `w15:docId`
+  nouveaux, auteur = nom d'utilisateur de la révision. Pas de fichier (`_withoutFile`, ex-`_recoveredWithoutTarget`) :
+  « Enregistrer » demande un nom (dossier Documents), copie de secours « sans titre ». Correction au passage : ouvrir un
+  fichier après une copie récupérée sans fichier d'origine gardait l'indicateur.
+- Vérifié : 3 tests xUnit (SDK sans erreur avant et après frappe, A4/Letter, langue, styles), auto-test (menu, frappe,
+  copie `nouveau.docx`, Ctrl+N ; 138 vérifications) ; Word ouvre la copie (1 page, 1 mot, mode 15).
+- **Portail** : domaine personnalisé **https://open-write.prolice.net** (même Static Web App) pour le flux de mises à
+  jour, les rapports d'erreur et l'aide. L'adresse par défaut répond toujours : les versions ≤ 1.1.0 continuent de
+  recevoir les mises à jour, puis passent au nouveau domaine. (Relais d'erreurs : 503 « relais non configuré » sur les
+  deux adresses — `GITHUB_TOKEN` manquant dans les réglages de la Static Web App, indépendant de ce changement.)

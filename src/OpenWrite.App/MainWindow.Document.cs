@@ -66,7 +66,18 @@ public partial class MainWindow
         open.Content = openContent;
         open.ToolTip = "Ctrl+O — ou faites glisser un fichier .docx dans la fenêtre";
         open.Click += (_, _) => OpenDialog();
-        sp.Children.Add(open);
+        // nouveau document vierge, à côté de « Ouvrir »
+        var create = new Button { Style = (Style)FindResource("PillButton"), HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(22, 11, 24, 11), Margin = new Thickness(12, 0, 0, 0) };
+        var createContent = new StackPanel { Orientation = Orientation.Horizontal };
+        createContent.Children.Add(new TextBlock { Text = "\uE8A5", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 16, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+        createContent.Children.Add(new TextBlock { Text = "Nouveau document", FontSize = 15 });
+        create.Content = createContent;
+        create.ToolTip = "Ctrl+N — page blanche";
+        create.Click += (_, _) => NewDocument();
+        var actions = new WrapPanel { Orientation = Orientation.Horizontal };
+        actions.Children.Add(open);
+        actions.Children.Add(create);
+        sp.Children.Add(actions);
 
         if (Recent.Count > 0)
         {

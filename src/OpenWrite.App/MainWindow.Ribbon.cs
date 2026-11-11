@@ -330,7 +330,7 @@ public partial class MainWindow
             return it;
         }
         bool has = _info is not null;
-        Add("Nouveau document", "Ctrl+N", () => { }, false, "").ToolTip = "Version 0.4";
+        Add("Nouveau document", "Ctrl+N", NewDocument, glyph: "");
         Add("Ouvrir…", "Ctrl+O", OpenDialog, glyph: "");
         AddRecent(menu);
         Add("Enregistrer", "Ctrl+S", () => Save(saveAs: false), has, "\uE74E");

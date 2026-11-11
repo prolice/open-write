@@ -20,7 +20,7 @@
     <AssemblyName>OpenWrite</AssemblyName>
     <RootNamespace>OpenWrite.App</RootNamespace>
     <ApplicationIcon>Assets\openwrite.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Product>OpenWrite</Product>
     <Description>Traitement de texte (remplacement de Microsoft Word, format .docx)</Description>
   </PropertyGroup>
@@ -38,9 +38,9 @@
        La cle privee de signature est dans %APPDATA%\OpenWrite\update-signing-key.pem (hors du depot)
        et dans le secret GitHub UPDATE_SIGNING_KEY. -->
   <ItemGroup>
-    <AssemblyMetadata Include="UpdateFeed" Value="https://gentle-glacier-0e0efdd03.3.azurestaticapps.net/latest.json" />
-    <AssemblyMetadata Include="CrashReportUrl" Value="https://gentle-glacier-0e0efdd03.3.azurestaticapps.net/api/crash" />
-    <AssemblyMetadata Include="HelpBase" Value="https://gentle-glacier-0e0efdd03.3.azurestaticapps.net/aide/" />
+    <AssemblyMetadata Include="UpdateFeed" Value="https://open-write.prolice.net/latest.json" />
+    <AssemblyMetadata Include="CrashReportUrl" Value="https://open-write.prolice.net/api/crash" />
+    <AssemblyMetadata Include="HelpBase" Value="https://open-write.prolice.net/aide/" />
     <AssemblyMetadata Include="UpdatePublicKey" Value="MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAtGut60nWt5y5C9NvE+t2q6sa8GaBVCipsyS3q4MRkaGPhx2i1zkUwtMqg3vZEpTQPow0TTRS+MdpaFVrr4g8PrL5wpq0foMIjeOfx16nu7404Mq7fPyxo8TB2y1msu1YwWoLvXciBQPCTEyYLbGMs1z9qtZXhfPVhwyLFPQWPneehS5lYsnv93OqgIr0D10uXynqvnQayMtjiK+qR7jivOLmbxz6huUtkmWArPFHBoFYlb1eDpQKZNPVgoO/qeiE5nvkSsBplybxUJ80Gwl2/QNmgEQI7/Q7/LIf0ZLfFkhFRINGBQcM7bd3o5OXHbcFX3H1bY9CO1EIjujxEt2K6p8qHK9Q0+Bp/PgrrOIwY2Xlh3X0u+aBZta2LH741nRDE3872FCdMnIg1NsKFA/oxGdNQv3rsG2mKswD/KXd6hsoJsYj9wI2xQBJRT+y75TgsWzI2Ef8QaumSNe2elFpTWv30sQSMDRl0O+H7PsrNJwWcbTafd6OOrQW6gHxdPdRAgMBAAE=" />
   </ItemGroup>
 

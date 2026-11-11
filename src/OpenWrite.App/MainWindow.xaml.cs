@@ -96,9 +96,43 @@ public partial class MainWindow : Window
             + $"Mis en page en {LastLayoutMs:0} ms" + (_fonts.Substitutions.Count > 0 ? $" · polices remplacées : {string.Join(", ", _fonts.Substitutions.Select(kv => $"{kv.Key} → {kv.Value}"))}" : "") + ".";
     }
 
+    /// <summary>Numéro du prochain document vierge (« Document1 », « Document2 »… comme Word, pour la session).</summary>
+    static int _untitledCount;
+
+    /// <summary>
+    /// Fichier ▸ Nouveau document (Ctrl+N) : document vierge comme celui de Word (<see cref="BlankDocument"/>), dans la
+    /// langue de rédaction par défaut. Il n'a pas encore de fichier : « Enregistrer » demande un nom (dossier Documents).
+    /// </summary>
+    internal void NewDocument()
+    {
+        if (!ConfirmDiscard()) return;
+        var bytes = BlankDocument.Create(Spelling.SpellService.DefaultTag, UserName);
+        DocxInfo info;
+        try { info = DocxInfo.Read(new MemoryStream(bytes)); }
+        catch (DocxReadException ex)
+        {
+            MessageBox.Show(this, "Impossible de créer le document :\n\n" + ex.Message, "OpenWrite", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        var name = $"Document{++_untitledCount}.docx";
+        var docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var path = Path.Combine(docs.Length > 0 ? docs : Path.GetTempPath(), name);
+        if (!LoadPackage(() => DocxPackage.Open(new MemoryStream(bytes)), path)) return;
+        DiscardRecovery();
+        _info = info;
+        _path = path;
+        _withoutFile = true;
+        _fileStamp = null;                       // un « Document1.docx » existant n'est pas ce document
+        _externalChangeWarned = false;
+        ShowDocument();
+        UpdateStatus();
+        StatusText.Text = "Nouveau document : écrivez ; Ctrl+S pour l'enregistrer.";
+    }
+
     void CloseDocument()
     {
         if (!ConfirmDiscard()) return;
+        _withoutFile = false;
         StopTracking();
         _reviewPkg = null;
         _comments = null;

@@ -17,6 +17,7 @@ public static class HelpService
     public const string FileMenu = "interface.html#fichier";
     public const string HomeTab = "interface.html#accueil";
     public const string Panels = "interface.html#volets";
+    public const string NewDocument = "documents.html#nouveau";
     public const string OpenDocument = "documents.html#ouvrir";
     public const string Info = "documents.html#informations";
     public const string Roadmap = "feuille-de-route.html#versions";

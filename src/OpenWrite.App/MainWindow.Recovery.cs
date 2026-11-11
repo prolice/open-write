@@ -20,8 +20,9 @@ public partial class MainWindow
     string _sessionId = Guid.NewGuid().ToString("N")[..8];
     string? _recoveryId;
     DispatcherTimer? _autoSaveTimer;
-    /// <summary>Copie récupérée dont le fichier d'origine a disparu : « Enregistrer » demande un nom.</summary>
-    bool _recoveredWithoutTarget;
+    /// <summary>Pas de fichier : nouveau document, ou copie récupérée dont le fichier d'origine a disparu — « Enregistrer » demande un nom.</summary>
+    bool _withoutFile;
+    internal bool WithoutFileForTest => _withoutFile;
 
     void EnsureAutoSaveTimer()
     {
@@ -37,10 +38,10 @@ public partial class MainWindow
         if (!EnableRecovery || !IsModified || _pkg is null || !AppSettings.Load().AutoSave) return false;
         try
         {
-            var id = RecoveryStore.IdFor(_recoveredWithoutTarget ? null : _path, _sessionId);
+            var id = RecoveryStore.IdFor(_withoutFile ? null : _path, _sessionId);
             if (_recoveryId is not null && _recoveryId != id) Recovery.Delete(_recoveryId);
             var pkg = _pkg;
-            Recovery.Save(id, _recoveredWithoutTarget ? null : _path, Path.GetFileName(_path) ?? "Sans titre", tmp =>
+            Recovery.Save(id, _withoutFile ? null : _path, Path.GetFileName(_path) ?? "Sans titre", tmp =>
             {
                 using var fs = File.Create(tmp);
                 pkg.Save(fs);                      // copie : l'état du document (parties modifiées) ne change pas
@@ -88,7 +89,7 @@ public partial class MainWindow
         if (_pkg is null) return;
         bool hasTarget = entry.OriginalPath is { } o && Directory.Exists(Path.GetDirectoryName(o));
         _path = hasTarget ? entry.OriginalPath : entry.CopyPath;
-        _recoveredWithoutTarget = !hasTarget;
+        _withoutFile = !hasTarget;
         if (entry.Id.StartsWith("sans-titre-")) _sessionId = entry.Id["sans-titre-".Length..];
         _recoveryId = entry.Id;
         _recovered = true;

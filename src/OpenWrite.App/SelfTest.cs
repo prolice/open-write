@@ -526,6 +526,7 @@ public static partial class SelfTest
         OutputChecks(w, outDir);
         SpellingChecks(w);
         ReviewChecks(w, outDir);
+        NewDocumentChecks(w, outDir);
 
         Idle();
         var content = (FrameworkElement)w.Content;

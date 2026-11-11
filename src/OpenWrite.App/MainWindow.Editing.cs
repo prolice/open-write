@@ -29,11 +29,15 @@ public partial class MainWindow
     internal Story? Body => _pkg?.Main?.Stories().FirstOrDefault();
 
     /// <summary>Charge le modèle du document (en plus du résumé DocxInfo) ; faux si le fichier est illisible.</summary>
-    bool LoadPackage(string path)
+    bool LoadPackage(string path) => LoadPackage(() => DocxPackage.Open(path), path);
+
+    /// <param name="open">Lecture du package (fichier, ou document vierge en mémoire).</param>
+    bool LoadPackage(Func<DocxPackage> open, string path)
     {
+        _withoutFile = false;
         try
         {
-            _pkg = DocxPackage.Open(path);
+            _pkg = open();
             _styles = new StyleResolver(_pkg.StyleSheet());
         }
         catch (Exception ex) when (ex is DocxReadException or IOException or UnauthorizedAccessException or System.Xml.XmlException)
@@ -58,6 +62,8 @@ public partial class MainWindow
         InputBindings.Add(new KeyBinding(ApplicationCommands.SaveAs, Key.S, ModifierKeys.Control | ModifierKeys.Shift));
         InputBindings.Add(new KeyBinding(ApplicationCommands.SaveAs, Key.F12, ModifierKeys.None));
         InputBindings.Add(new KeyBinding(ApplicationCommands.Redo, Key.Y, ModifierKeys.Control));
+        // Ctrl+N (geste par défaut de ApplicationCommands.New)
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.New, (_, _) => NewDocument()));
         // toute modification marque la partie à régénérer et met à jour l'affichage
         _journal.Changed += root =>
         {
@@ -129,7 +135,7 @@ public partial class MainWindow
     {
         if (_pkg is null || _path is null) return false;
         var target = _path;
-        if (saveAs || _recoveredWithoutTarget)
+        if (saveAs || _withoutFile)
         {
             // même famille de format : un .docm garde ses macros, un modèle reste un modèle
             var ext = Path.GetExtension(_path).ToLowerInvariant();
@@ -172,7 +178,7 @@ public partial class MainWindow
         _path = Path.GetFullPath(target);
         _journal.MarkSaved();
         _recovered = false;
-        _recoveredWithoutTarget = false;
+        _withoutFile = false;
         DiscardRecovery();
         RecordFileStamp();
         if (TrackRecent) RecentFiles.Add(_path);

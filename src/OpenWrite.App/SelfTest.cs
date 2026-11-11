@@ -520,6 +520,7 @@ public static partial class SelfTest
               "fichier relu : zone de texte flottante avec son texte");
 
         InterfaceChecks(w);
+        OutputChecks(w, outDir);
 
         Idle();
         var content = (FrameworkElement)w.Content;
@@ -635,6 +636,43 @@ public static partial class SelfTest
                           $"(remise en page seule : médiane {updates[updates.Count / 2]:0.00} ms, max {updates[^1]:0.00} ms) ; {layout.Pages.Count} → {w.CurrentLayout!.Pages.Count} pages");
         w.Close();
         return 0;
+    }
+
+    /// <summary>
+    /// --pdf &lt;docx|dossier&gt; &lt;pdf|dossier&gt; : export PDF comme Fichier ▸ Exporter en PDF (toutes les pages), dans la
+    /// vraie fenêtre hors écran ; un dossier = chaque .docx du dossier. Affiche pages, polices, images et liens.
+    /// </summary>
+    public static int ExportPdf(string input, string output)
+    {
+        var files = Directory.Exists(input)
+            ? Directory.GetFiles(input, "*.docx").Where(f => !Path.GetFileName(f).StartsWith("~$")).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
+            : new List<string> { input };
+        bool toDir = files.Count > 1 || Directory.Exists(output) || !output.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+        if (toDir) Directory.CreateDirectory(output);
+        int failures = 0;
+        foreach (var file in files)
+        {
+            var target = toDir ? Path.Combine(output, Path.GetFileNameWithoutExtension(file) + ".pdf") : output;
+            var w = new MainWindow { Left = -6000, Top = 0, Width = 1402, Height = 948, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual, SkipConfirm = true };
+            try
+            {
+                w.Show();
+                w.OpenFile(file, remember: false);
+                Pump();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var stats = w.ExportPdfTo(target);
+                var sum = Output.PdfExporter.Inspect(target);
+                Console.WriteLine($"{Path.GetFileName(file)} : {sum.Pages} page(s), {sw.ElapsedMilliseconds} ms, {new FileInfo(target).Length / 1024} Ko — {stats}" +
+                                  (sum.MissingFonts.Count > 0 ? $" ; polices non incorporées : {string.Join(", ", sum.MissingFonts)}" : ""));
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.WriteLine($"{Path.GetFileName(file)} : ÉCHEC — {ex.Message}");
+            }
+            finally { w.Close(); }
+        }
+        return failures == 0 ? 0 : 1;
     }
 
     public static int Screenshot(string? file, string png, int width = 1402, int height = 948, string? scene = null)

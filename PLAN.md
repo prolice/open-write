@@ -360,7 +360,7 @@ Estimations en jours de développement pour une personne, tests et aide compris,
 | Fonction Word | Mise en œuvre | Jours |
 |---|---|---|
 | PDF complet | Signets depuis les titres, liens internes (renvois, table des matières), propriétés, **PDF balisé** (structure, texte de remplacement), PDF/A-2b | 4 |
-| Impression | Reprise de `PrintService` : plages, pages par feuille, recto verso manuel, livret ; aperçu dans Fichier ▸ Imprimer | 1,5 |
+| Impression | ~~Reprise de `PrintService` : plages, pages par feuille, recto verso manuel, livret ; aperçu dans Fichier ▸ Imprimer~~ fait en 1.0.2 (§10.25) ; reste : pages par feuille | 1,5 → 0,5 |
 | RTF | Lecture / écriture complètes (au-delà du presse-papiers du lot 3) | 2,5 |
 | ODT | Lecture / écriture (texte, styles, listes, tableaux, images, en-têtes) | 4 |
 | HTML, TXT, Markdown | Import / export | 2 |
@@ -763,3 +763,34 @@ Retour utilisateur : clic droit dans un tableau ▸ Supprimer ne faisait rien. C
 ### 10.24 Version 1.0.1 (2026-11-10)
 
 Publiée par la pipeline (tag `v1.0.1`) : sous-menus des menus contextuels (§10.23).
+
+### 10.25 Impression et export PDF (2026-11-11) — version 1.0.2
+
+Le jalon 1.0 (§8.8) promettait l'impression et l'export PDF repris d'OpenPub ; ils manquaient. Ajoutés avant le lot 8.
+
+**Reprise d'OpenPub 2.1.4** : `Core/Output` (`SfntFont`, `PageRange`, `Booklet`, `ManualDuplex`), `App/Output`
+(`DrawingToPdf`, `PdfFonts`, `PrintService`, `PrintWindow`, `PdfExportWindow`, `OutputUi`), PDFsharp 6.2.4 (MIT). Sans
+fond perdu, traits de coupe ni PDF/X-4 (propres à la PAO). `OutputPages` donne les pages d'OpenWrite aux sorties : même
+`PageRenderer` que l'écran avec `ForOutput` (en-têtes et pieds dans leurs vraies couleurs, pas estompés), sans marques
+de mise en forme ni quadrillage des tableaux, découpées au bord de la page ; la couleur de page n'est pas imprimée
+(comme Word, réglage « Imprimer les couleurs et images d'arrière-plan » désactivé par défaut). Chaque page garde son
+format (section en paysage). Liens hypertextes externes reportés en annotations cliquables (zones calculées ligne par
+ligne avec `CaretGeometry.X`) ; liens internes et signets du PDF : lot 12.
+
+**Corrections trouvées en route** : `PageRenderer` créait ses `GlyphRun` sans les caractères — le PDF n'avait aucun
+texte (DrawingToPdf écrit le texte à partir des caractères) : les caractères sont passés un pour un (texte copiable
+dans le PDF). Souligné : seuls les espaces de fin de ligne ne sont plus soulignés (avant : l'espace final de chaque
+morceau, d'où un souligné coupé entre les mots, aussi à l'écran). Images : `PdfImageCache.Original` donne les octets
+d'origine lus dans le paquet (JPEG / PNG incorporés tels quels, plus de réencodage en PNG).
+
+**Mesures.** `OpenWrite --pdf <docx|dossier> <pdf|dossier>` : les 25 documents du corpus exportés sans erreur (Syllabus,
+37 pages : 0,3 s ; 2 831 morceaux de texte dont 77 en contours — gras simulé ou police non incorporable). Comparaison
+visuelle avec les PDF de Word (`tools/pdf-to-png.ps1`) : Annexe et Horaires identiques à l'œil. Écarts vus sur le
+Syllabus page 3, **les mêmes qu'à l'écran** (mise en page, à reprendre au lot 13) : le titre numéroté
+« 3 Aspects pratiques » s'affiche sans son numéro ni le filet du dessus, et un « 4 » seul avec un filet reste en bas de
+la page, là où Word ne met rien.
+
+**Auto-test** (101 vérifications) : Fichier ▸ Imprimer… par l'automatisation de l'interface (aperçu : une feuille par
+page, livret : faces de 2 pages), Ctrl+P, Fichier ▸ Exporter en PDF…, puis PDF relu : pages A4, polices incorporées
+avec table Unicode, image JPEG incorporée sans recompression, lien cliquable, titre. xUnit : `OutputTests` (choix des
+pages, livret, recto verso manuel) — 155 tests.

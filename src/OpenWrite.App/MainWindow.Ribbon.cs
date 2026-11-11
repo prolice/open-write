@@ -315,6 +315,10 @@ public partial class MainWindow
         AddRecent(menu);
         Add("Enregistrer", "Ctrl+S", () => Save(saveAs: false), has, "\uE74E");
         Add("Enregistrer sous…", "F12", () => Save(saveAs: true), has, "\uE792");
+        menu.Items.Add(new Separator());
+        Add("Imprimer…", "Ctrl+P", ShowPrintWindow, has, "\uE749");
+        Add("Exporter en PDF…", "", ExportPdf, has, "\uEA90");
+        menu.Items.Add(new Separator());
         Add("Informations sur le document", "", ShowDocInfo, has, "");
         Add("Fermer le document", "Ctrl+W", CloseDocument, has, "");
         menu.Items.Add(new Separator());

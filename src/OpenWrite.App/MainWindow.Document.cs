@@ -177,6 +177,7 @@ public partial class MainWindow
                 bmp.StreamSource = new MemoryStream(entry.Data);
                 bmp.EndInit();
                 bmp.Freeze();
+                _imageBytes.AddOrUpdate(bmp, entry.Data);
                 img = bmp;
             }
         }

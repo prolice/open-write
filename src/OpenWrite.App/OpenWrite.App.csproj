@@ -6,6 +6,11 @@
     <ProjectReference Include="..\OpenWrite.Layout\OpenWrite.Layout.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Export PDF (licence MIT), comme OpenPub -->
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -15,7 +20,7 @@
     <AssemblyName>OpenWrite</AssemblyName>
     <RootNamespace>OpenWrite.App</RootNamespace>
     <ApplicationIcon>Assets\openwrite.ico</ApplicationIcon>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>OpenWrite</Product>
     <Description>Traitement de texte (remplacement de Microsoft Word, format .docx)</Description>
   </PropertyGroup>

@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitEditing();
+        InitOutput();
         InitFormatPane();
         InitRuler();
         BuildRibbon();

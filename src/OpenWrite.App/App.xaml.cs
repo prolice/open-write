@@ -130,6 +130,12 @@ public partial class App : Application
                 Shutdown(code);
                 return;
             }
+            if (args.Length >= 3 && args[0] == "--pdf")
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                Shutdown(SelfTest.ExportPdf(args[1], args[2]));
+                return;
+            }
             if (args.Length >= 3 && args[0] == "--screenshot")
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;

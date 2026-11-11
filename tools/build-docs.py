@@ -126,6 +126,28 @@ reste celui du document : un <code>.docm</code> reste un <code>.docm</code>.</p>
 qu'il ne connaît pas encore) est recopié <strong>à l'identique</strong>. La version précédente est gardée à côté,
 avec l'extension <code>.bak</code> (réglage dans le menu Fichier).</p>
 """),
+        ("imprimer", "Imprimer", f"""
+<p><strong>Fichier ▸ Imprimer…</strong> ou {k('Ctrl', 'P')} ouvre la boîte d'impression avec un <strong>aperçu</strong>
+des feuilles telles qu'elles sortiront, dans l'ordre d'impression. Choisissez les pages (toutes, la page du point
+d'insertion, ou une liste comme <code>1-3; 5</code>), le nombre d'exemplaires (assemblés) et la disposition :</p>
+<ul>
+<li><strong>Une page par feuille</strong> ; chaque page garde son format, une section en paysage sort en paysage ;</li>
+<li><strong>Recto verso manuel</strong> pour une imprimante qui n'imprime que d'un côté : OpenWrite imprime les rectos,
+vous demande de retourner la pile, puis imprime les versos ;</li>
+<li><strong>Livret</strong> : deux pages par face d'une feuille en paysage, dans l'ordre de pliage (pages blanches
+ajoutées jusqu'à un multiple de 4), sur une imprimante recto verso ou en recto verso manuel.</li>
+</ul>
+<p>Le bouton <strong>Imprimer…</strong> ouvre ensuite la boîte de Windows pour choisir l'imprimante et ses réglages.
+Comme dans Word avec les réglages par défaut, la couleur de page, les marques de mise en forme et le quadrillage des
+tableaux ne sont pas imprimés.</p>
+"""),
+        ("pdf", "Exporter en PDF", f"""
+<p><strong>Fichier ▸ Exporter en PDF…</strong> crée un PDF des pages choisies, sans imprimante virtuelle : le texte
+garde ses polices (incorporées dans le fichier, il reste sélectionnable et copiable), les traits et les formes restent
+nets à tous les agrandissements, les photos JPEG sont reprises telles quelles, sans perte de qualité, et les
+<strong>liens hypertextes</strong> restent cliquables. Le PDF s'ouvre ensuite dans votre lecteur (case à décocher).</p>
+{warn("Pas encore (version 1.5) : signets du PDF depuis les titres, liens internes (table des matières, renvois), PDF balisé pour l'accessibilité, PDF/A.")}
+"""),
         ("ecrire", "Écrire et mettre en forme", f"""
 <p>Cliquez dans la page pour placer le point d'insertion, puis tapez. {k('Entrée')} commence un nouveau paragraphe
 (après un titre, le paragraphe suivant prend le style prévu, en général « Normal »), {k('Maj', 'Entrée')} passe à la
@@ -301,11 +323,12 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.6", "Mise en page, sections, colonnes, en-têtes et pieds de page modifiables, numéros de page, filigrane, bordures et couleur de page"),
             ("0.7", "Tableaux : insérer, sélectionner des cellules, fusionner, fractionner, styles de tableau, trier, formules, largeurs automatiques"),
             ("1.0", "Images, formes et zones de texte : objets flottants et habillage du texte comme Word, insérer, déplacer, redimensionner, faire pivoter, rogner"),
+            ("1.0.2", "Impression (aperçu, recto verso manuel, livret) et export PDF avec polices incorporées et liens"),
             ("1.1", "Orthographe, commentaires, suivi des modifications"),
             ("1.2", "Notes, table des matières, renvois, index"),
             ("1.3", "Champs, blocs de construction, contrôles de contenu"),
             ("1.4", "Publipostage"),
-            ("1.5", "PDF, impression, RTF, ODT, HTML"),
+            ("1.5", "PDF complet (signets, liens internes, PDF balisé), RTF, ODT, HTML"),
         ], head=("Version", "Contenu"))),
     ]),
     ("mises-a-jour.html", "Mises à jour", "Recevoir automatiquement les nouvelles versions.", "🔄", [
@@ -324,7 +347,7 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
     ("raccourcis.html", "Raccourcis clavier", "Tous les raccourcis d'OpenWrite.", "⌨️", [
         ("general", "Général", table([
             ("Ouvrir", k("Ctrl", "O")), ("Enregistrer", k("Ctrl", "S")),
-            ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")),
+            ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")), ("Imprimer", k("Ctrl", "P")),
             ("Annuler", k("Ctrl", "Z")), ("Rétablir", k("Ctrl", "Y")),
             ("Zoom", k("Ctrl") + " + molette"), ("Aide", k("F1")), ("Quitter", k("Alt", "F4")),
         ])),

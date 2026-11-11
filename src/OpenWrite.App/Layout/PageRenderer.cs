@@ -52,7 +52,7 @@ public sealed class PageRenderer
             foreach (var (first, n, part) in hf.Parts)
             {
                 _part = part;
-                DrawContent(dc, hf, header: !HeaderMode, first, n);
+                DrawContent(dc, hf, header: !HeaderMode && !ForOutput, first, n);
             }
             _part = null;
         }
@@ -165,6 +165,9 @@ public sealed class PageRenderer
 
     /// <summary>Édition des en-têtes et pieds : en-têtes à l'encre normale, corps grisé.</summary>
     public bool HeaderMode { get; set; }
+
+    /// <summary>Impression, PDF : en-têtes et pieds dans leurs vraies couleurs (à l'écran, ils sont estompés).</summary>
+    public bool ForOutput { get; set; }
 
     static readonly Pen BoundaryPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x08, 0x7C, 0xFF))), 0.6) { DashStyle = DashStyles.Dash });
     static readonly Brush LabelBack = Freeze(new SolidColorBrush(Color.FromRgb(0xE1, 0xE9, 0xFF)));
@@ -413,6 +416,9 @@ public sealed class PageRenderer
             DrawText(dc, m.Text, m.Style, placed.X + m.X, baseline, 0, ink);
         // justification : chaque espace s'élargit ; les morceaux suivants se décalent d'autant
         double shift = 0;
+        // espaces de fin de ligne : jamais soulignés (ceux entre les mots le sont, comme dans Word)
+        int lastInk = line.End - 1;
+        while (lastInk >= line.Start && lastInk < c.Text.Length && c.Text[lastInk] is ' ' or Atom.LineBreak or Atom.PageBreak or Atom.ColumnBreak) lastInk--;
         foreach (var piece in line.Pieces)
         {
             var st = c.Styles[piece.Style];
@@ -470,7 +476,9 @@ public sealed class PageRenderer
             if (rf.Underline is not null and not "none")
             {
                 double uy = baseline + size0 * 0.12;
-                dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, uy), new Point(x + width - (text.EndsWith(" ") ? st.Width(' ') + extra : 0), uy));
+                int trailing = 0;
+                for (int t = piece.Start + piece.Length - 1; t > lastInk && t >= piece.Start; t--) if (c.Text[t] == ' ') trailing++;
+                dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, uy), new Point(x + width - trailing * (st.Width(' ') + extra), uy));
                 if (rf.Underline == "double") dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, uy + size0 * 0.1), new Point(x + width, uy + size0 * 0.1));
             }
             if (rf.Strike || rf.DoubleStrike)
@@ -490,6 +498,8 @@ public sealed class PageRenderer
         var face = st.Face as WpfFontProvider.GlyphFace;
         var glyphs = new List<ushort>();
         var advances = new List<double>();
+        // caractères de chaque glyphe (un pour un) : l'export PDF en a besoin pour écrire le texte (copier, rechercher)
+        var chars = new List<char>();
         double runStart = x;
         void Flush()
         {
@@ -499,11 +509,12 @@ public sealed class PageRenderer
                 bool scaled = Math.Abs(st.Scale - 1) > 1e-6;
                 if (scaled) dc.PushTransform(new ScaleTransform(st.Scale, 1, runStart, 0));
                 dc.DrawGlyphRun(brush, new GlyphRun(face.Typeface, 0, false, st.Size, 1.0f, glyphs.ToArray(), new Point(runStart, baseline),
-                    scaled ? advances.Select(a => a / st.Scale).ToArray() : advances.ToArray(), null, null, null, null, null, null));
+                    scaled ? advances.Select(a => a / st.Scale).ToArray() : advances.ToArray(), null, chars.ToArray(), null, null, null, null));
                 if (scaled) dc.Pop();
             }
             glyphs.Clear();
             advances.Clear();
+            chars.Clear();
         }
         foreach (var ch in text)
         {
@@ -513,13 +524,14 @@ public sealed class PageRenderer
                 if (glyphs.Count == 0) runStart = x;
                 glyphs.Add(g);
                 advances.Add(adv);
+                chars.Add(ch);
             }
             else
             {
                 // caractère absent de la police : police de secours (☐, ☒, symboles…)
                 Flush();
                 if (Fallback is { } fb && fb.CharacterToGlyphMap.TryGetValue(ch, out var fg))
-                    dc.DrawGlyphRun(brush, new GlyphRun(fb, 0, false, st.Size, 1.0f, new[] { fg }, new Point(x, baseline), new[] { adv }, null, null, null, null, null, null));
+                    dc.DrawGlyphRun(brush, new GlyphRun(fb, 0, false, st.Size, 1.0f, new[] { fg }, new Point(x, baseline), new[] { adv }, null, new[] { ch }, null, null, null, null));
             }
             x += adv;
         }

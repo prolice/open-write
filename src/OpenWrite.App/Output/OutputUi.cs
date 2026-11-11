@@ -94,6 +94,10 @@ sealed class PageChooser : StackPanel
         _count = pageCount;
         _activeNumber = Math.Clamp(activeNumber, 1, Math.Max(1, pageCount));
         _active = new RadioButton { Content = $"Page active ({_activeNumber})", Margin = new Thickness(0, 2, 0, 2) };
+        // « Pages : » est dans une autre ligne (autre parent) : sans nom de groupe commun, WPF en ferait un groupe à part
+        // et « Toutes les pages » resterait coché à côté de lui
+        var group = "pages-" + Guid.NewGuid().ToString("N");
+        _all.GroupName = _active.GroupName = _range.GroupName = group;
         Children.Add(_all);
         Children.Add(_active);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };

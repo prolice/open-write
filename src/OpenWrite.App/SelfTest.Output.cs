@@ -69,8 +69,22 @@ public static partial class SelfTest
 
         // Fichier ▸ Exporter en PDF… : la boîte s'ouvre sur toutes les pages
         List<int>? chosen = null;
-        Check(FileMenuDialog(w, "Exporter en PDF…", dlg => chosen = ((Output.PdfExportWindow)dlg).Chooser.Pages(out _)),
-              $"Fichier ▸ Exporter en PDF… : boîte ouverte, {chosen?.Count ?? 0} page(s) choisies");
+        // puis « Pages : » choisi d'un clic et « 1 » saisi : un seul bouton coché, la liste l'emporte sur « Toutes les pages »
+        int checkedRadios = -1;
+        List<int>? custom = null;
+        Check(FileMenuDialog(w, "Exporter en PDF…", dlg =>
+        {
+            var chooser = ((Output.PdfExportWindow)dlg).Chooser;
+            chosen = chooser.Pages(out _);
+            var range = Descendants<RadioButton>(chooser).First(r => r.Content as string == "Pages :");
+            ((ISelectionItemProvider)UIElementAutomationPeer.CreatePeerForElement(range).GetPattern(PatternInterface.SelectionItem)).Select();
+            var box = Descendants<TextBox>(chooser).First();
+            ((IValueProvider)UIElementAutomationPeer.CreatePeerForElement(box).GetPattern(PatternInterface.Value)).SetValue("1");
+            Pump();
+            checkedRadios = Descendants<RadioButton>(chooser).Count(r => r.IsChecked == true);
+            custom = chooser.Pages(out _);
+        }) && chosen?.Count == pages, $"Fichier ▸ Exporter en PDF… : boîte ouverte, {chosen?.Count ?? 0} page(s) choisies");
+        Check(checkedRadios == 1 && custom is [1], $"choix des pages : « Pages : 1 » seul coché ({checkedRadios} bouton(s) coché(s), pages {string.Join(",", custom ?? new List<int>())})");
 
         // le PDF lui-même (la boîte d'enregistrement de Windows n'est pas pilotable : même code que le bouton), avec une
         // photo JPEG qui doit être incorporée telle quelle

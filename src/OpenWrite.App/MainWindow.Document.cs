@@ -129,11 +129,12 @@ public partial class MainWindow
         _fonts.AltNames = pkg.FontAltNames();
         _images.Clear();
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        _layout = new DocumentLayout(body, styles, _fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id));
+        ReadReviewSettings();
+        _layout = new DocumentLayout(body, styles, _fonts, pkg.RelatedStory, id => pkg.NoteStory("footnote", id)) { View = _view };
         _layout.LayoutAll();
         LastLayoutMs = sw.Elapsed.TotalMilliseconds;
         ReadSpellingSettings();
-        _drawings = new Layout.PageDrawings(_layout, new Layout.PageRenderer(ImageOf) { ShowMarks = _showMarks, HeaderMode = _hf is not null, Misspellings = MisspellingsForDrawing });
+        _drawings = new Layout.PageDrawings(_layout, new Layout.PageRenderer(ImageOf) { ShowMarks = _showMarks, HeaderMode = _hf is not null, Misspellings = MisspellingsForDrawing, RevisionBar = RevisionBarBrush });
         RefreshHeaderLines();
         _pagesView = new Layout.PagesView(_drawings, PtToDip, 24);
         _pagesView.MouseMove += PagesView_MouseMove;

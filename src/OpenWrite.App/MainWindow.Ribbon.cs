@@ -66,9 +66,9 @@ public partial class MainWindow
         ("TabReview", new RibbonGroup[]
         {
             new("Vérification", "1.1", ("", "Orthographe"), ("\uE774", "Langue"), ("", "Synonymes"), ("", "Statistiques")),
-            new("Commentaires", "1.1", ("", "Nouveau"), ("", "Afficher")),
-            new("Suivi", "1.1", ("", "Suivi des modifications")),
-            new("Modifications", "1.1", ("", "Accepter"), ("", "Refuser")),
+            new("Commentaires", "1.1", ("\uE90A", "Nouveau"), ("\uE74D", "Supprimer"), ("\uE76B", "Précédent"), ("\uE76C", "Suivant"), ("\uE8BD", "Afficher")),
+            new("Suivi", "1.1", ("\uE70F", "Suivi des modifications"), ("\uE7B3", "Marques")),
+            new("Modifications", "1.1", ("\uE8FB", "Accepter"), ("\uE711", "Refuser"), ("\uE892", "Précédente"), ("\uE893", "Suivante")),
             new("Comparer", "1.1", ("", "Comparer")),
             new("Protéger", "1.1", ("", "Restreindre")),
         }),
@@ -135,6 +135,7 @@ public partial class MainWindow
         ["Images"] = (() => ShowPicturesMenu(_clickedButton!), "Insérer une image : depuis un fichier ou le presse-papiers"),
         ["Formes"] = (() => ShowShapesGallery(_clickedButton!), "Insérer une forme (devant le texte, près du point d'insertion)"),
         ["Zone de texte"] = (InsertTextBox, "Insérer une zone de texte (habillage carré) et y écrire"),
+        ["Commentaire"] = (NewComment, "Nouveau commentaire sur la sélection (Ctrl+Alt+M)"),
     };
 
     /// <summary>Commandes de l'onglet Mise en page déjà disponibles.</summary>
@@ -159,6 +160,17 @@ public partial class MainWindow
     {
         ["Orthographe"] = (ShowSpelling, "Vérifier l'orthographe du document (F7)"),
         ["Langue"] = (() => ShowLanguageMenu(_clickedButton!), "Langue de vérification du texte sélectionné ; vérification pendant la frappe"),
+        ["Nouveau"] = (NewComment, "Nouveau commentaire sur la sélection (Ctrl+Alt+M)"),
+        ["Supprimer"] = (() => { if (CommentAtCaret() is { } id) DeleteComment(id); else StatusText.Text = "Placez le point d'insertion dans un texte commenté pour supprimer son commentaire."; }, "Supprimer le commentaire du point d'insertion"),
+        ["Précédent"] = (() => GoToNextComment(next: false), "Commentaire précédent"),
+        ["Suivant"] = (() => GoToNextComment(next: true), "Commentaire suivant"),
+        ["Afficher"] = (() => ShowCommentsPane(!CommentsPaneShown), "Volet Commentaires : fils, réponses, résolus"),
+        ["Suivi des modifications"] = (ToggleTracking, "Suivre les modifications (Ctrl+Maj+E) : insertions, suppressions et mise en forme enregistrées à votre nom"),
+        ["Marques"] = (() => ShowViewMenu(_clickedButton!), "Affichage des modifications : marques simples, toutes les marques, aucune marque, original"),
+        ["Accepter"] = (() => ShowResolveMenu(_clickedButton!, accept: true), "Accepter la modification, toutes les modifications, celles d'un auteur"),
+        ["Refuser"] = (() => ShowResolveMenu(_clickedButton!, accept: false), "Refuser la modification, toutes les modifications, celles d'un auteur"),
+        ["Précédente"] = (() => GoToRevision(next: false), "Modification précédente"),
+        ["Suivante"] = (() => GoToRevision(next: true), "Modification suivante"),
     };
 
     /// <summary>Active les commandes disponibles quand un document est affiché.</summary>
@@ -222,7 +234,7 @@ public partial class MainWindow
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
                         // menu sous le bouton : il garde le clavier
-                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau" or "Images" or "Formes" or "Position" or "Habillage" or "Langue";
+                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau" or "Images" or "Formes" or "Position" or "Habillage" or "Langue" or "Marques" or "Accepter" or "Refuser";
                         button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }

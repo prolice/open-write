@@ -26,6 +26,11 @@ public static class AppSettings
         public bool KeepBackup { get; set; } = true;
         /// <summary>Envoi automatique des rapports d'erreur anonymes (issue GitHub via le relais du site).</summary>
         public bool CrashReports { get; set; } = true;
+        /// <summary>Nom et initiales de l'auteur des commentaires et des révisions (null : le compte Windows).</summary>
+        public string? UserName { get; set; }
+        public string? UserInitials { get; set; }
+        /// <summary>Affichage des révisions : Simple, All, Final, Original.</summary>
+        public string RevisionView { get; set; } = "Simple";
     }
 
     static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenWrite", "settings.json");

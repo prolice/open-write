@@ -130,6 +130,23 @@ public partial class App : Application
                 Shutdown(code);
                 return;
             }
+            if (args.Length >= 2 && args[0] == "--revisions")
+            {
+                // diagnostic du lot 8 : révisions et commentaires lus par OpenWrite (à comparer avec tools/word-make-review.ps1)
+                var pkg = DocxPackage.Open(args[1]);
+                foreach (var part in pkg.Stories.Values)
+                    foreach (var story in part.Stories())
+                        foreach (var r in Core.Review.Revisions.List(story))
+                        {
+                            var text = r.Paragraph is { } p ? string.Concat(Core.Model.ParagraphAtoms.Of(p).Where(a => a.Start >= r.Start && a.End <= r.End)
+                                .Select(a => a.Content switch { Core.Model.TextContent t => t.Value, _ => "" })) : "";
+                            Console.WriteLine($"révision {r.Kind} | {r.Author} | {text} | {part.Kind}");
+                        }
+                foreach (var c in new CommentStore(pkg).All())
+                    Console.WriteLine($"commentaire | {c.Author} | {c.Text} | résolu={c.Done} | réponse={(c.ParentParaId is not null)}");
+                Shutdown(0);
+                return;
+            }
             if (args.Length >= 1 && args[0] == "--spell")
             {
                 // diagnostic du correcteur de Windows : langues installées, fautes et suggestions d'un texte

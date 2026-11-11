@@ -83,7 +83,8 @@ public partial class MainWindow
         for (int i = 0; i < text.Length; i++)
         {
             var f = c.Styles[c.StyleOf[i]].Format;
-            var lang = f.NoProof ? null : string.IsNullOrEmpty(f.Language) ? SpellService.DefaultTag : f.Language;
+            // texte supprimé (suivi des modifications) ou marqué « ne pas vérifier » : pas de vérification
+            var lang = f.NoProof || c.Revisions?[i] == 2 ? null : string.IsNullOrEmpty(f.Language) ? SpellService.DefaultTag : f.Language;
             langs[i] = lang;
             if (lang is not null && !distinct.Contains(lang, StringComparer.OrdinalIgnoreCase)) distinct.Add(lang);
         }

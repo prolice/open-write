@@ -39,8 +39,15 @@ public sealed class PageRenderer
     }
 
     /// <summary>Dessine le contenu de la page (sans le fond blanc), en points depuis le coin haut gauche.</summary>
+    /// <summary>Barres de modification dans la marge de gauche (null : aucune) : rouge en marques simples, grise avec toutes les marques.</summary>
+    public Brush? RevisionBar { get; set; }
+
+    /// <summary>Abscisse de la barre de modification de la page en cours de dessin.</summary>
+    double _barX;
+
     public void Draw(DrawingContext dc, Page page, DocumentLayout layout, int number, int count)
     {
+        _barX = Math.Max(4, page.Geometry.Left - 14);
         // filigrane (derrière le texte), bordure de page, numéros de ligne
         if (layout.Watermark(page) is { } wm) DrawWatermark(dc, page, wm);
         DrawPageBorders(dc, page);
@@ -173,6 +180,13 @@ public sealed class PageRenderer
     public Func<ParagraphContent, IReadOnlyList<(int Start, int Length)>>? Misspellings { get; set; }
 
     static readonly Pen SpellPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x1B, 0x24))), 0.75) { LineJoin = PenLineJoin.Round });
+
+    static bool Revised(byte[]? revs, int a, int b)
+    {
+        if (revs is null) return false;
+        for (int i = Math.Max(0, a); i < b && i < revs.Length; i++) if (revs[i] != 0) return true;
+        return false;
+    }
 
     /// <summary>Trait ondulé de x1 à x2 (points), comme Word sous une faute.</summary>
     static void DrawSquiggle(DrawingContext dc, double x1, double x2, double y)
@@ -514,6 +528,9 @@ public sealed class PageRenderer
             }
             shift += spaces * extra;
         }
+        // révisions : barre dans la marge de gauche, à la hauteur de la ligne (comme Word)
+        if (RevisionBar is { } bar && (Revised(c.Revisions, line.Start, line.End) || (c.MarkRevised && line.End >= c.Text.Length)))
+            dc.DrawRectangle(bar, null, new Rect(_barX, placed.Y, 1.2, line.Height));
         // fautes d'orthographe : sous les caractères de la ligne, sans les espaces qui la terminent
         if (Misspellings?.Invoke(c) is { Count: > 0 } errors)
         {
@@ -588,7 +605,7 @@ public sealed class PageRenderer
         rgb.Length == 6 && int.TryParse(rgb, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var v)
             ? System.Windows.Media.Color.FromRgb((byte)(v >> 16), (byte)(v >> 8), (byte)v) : null;
 
-    static Color? Highlight(string name) => name switch
+    static Color? Highlight(string name) => name.Length == 7 && name[0] == '#' ? ParseColor(name[1..]) : name switch
     {
         "yellow" => Colors.Yellow, "green" => Colors.Lime, "cyan" => Colors.Cyan, "magenta" => Colors.Magenta, "blue" => Colors.Blue,
         "red" => Colors.Red, "darkBlue" => Colors.DarkBlue, "darkCyan" => Colors.DarkCyan, "darkGreen" => Colors.DarkGreen,

@@ -109,9 +109,12 @@ public static partial class SelfTest
             using var sw = new StreamWriter(zip.CreateEntry(name).Open(), new System.Text.UTF8Encoding(false));
             sw.Write(content);
         }
-        Add("[Content_Types].xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>");
+        Add("[Content_Types].xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/></Types>");
         Add("_rels/.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>");
         Add("word/document.xml", doc);
+        // réglages du document (suivi des modifications : w:trackRevisions y est écrit à sa place, avant w:defaultTabStop)
+        Add("word/_rels/document.xml.rels", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdSettings\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/></Relationships>");
+        Add("word/settings.xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:zoom w:percent=\"100\"/><w:defaultTabStop w:val=\"708\"/><w:characterSpacingControl w:val=\"doNotCompress\"/></w:settings>");
     }
 
     public static int Run(string outDir)
@@ -522,6 +525,7 @@ public static partial class SelfTest
         InterfaceChecks(w);
         OutputChecks(w, outDir);
         SpellingChecks(w);
+        ReviewChecks(w, outDir);
 
         Idle();
         var content = (FrameworkElement)w.Content;
@@ -698,6 +702,19 @@ public static partial class SelfTest
                 var c = (FrameworkElement)about.Content;
                 Save(c, (int)c.ActualWidth, (int)c.ActualHeight, png);
                 about.Close();
+                w.Close();
+                return 0;
+            }
+            case "revision" or "revision-simple":
+            {
+                // révisions et commentaires d'un document : toutes les marques (ou marques simples), volet Commentaires
+                Pump();
+                w.SetRevisionView(scene == "revision" ? global::OpenWrite.Layout.RevisionView.All : global::OpenWrite.Layout.RevisionView.Simple, persist: false);
+                w.ShowCommentsPane(true);
+                Pump();
+                Idle();
+                var page = (FrameworkElement)w.Content;
+                Save(page, (int)page.ActualWidth, (int)page.ActualHeight, png);
                 w.Close();
                 return 0;
             }

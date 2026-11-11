@@ -456,6 +456,7 @@ public partial class MainWindow
         var menu = new System.Windows.Controls.ContextMenu();
         if (AddObjectContextItems(menu)) return menu;
         AddSpellingItems(menu);
+        AddReviewItems(menu);
         void Item(string header, string? gesture, Action act, bool enabled = true)
         {
             var mi = new System.Windows.Controls.MenuItem { Header = header, InputGestureText = gesture ?? "", IsEnabled = enabled };

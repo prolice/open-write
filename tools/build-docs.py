@@ -297,6 +297,38 @@ frappe</strong> masque ou affiche les traits ondulés ({k('F7')} vérifie toujou
 choisi de masquer les fautes reste ainsi.</p>
 {warn("Pas encore : la grammaire, les synonymes et la correction automatique pendant la frappe.")}
 """),
+        ("commentaires", "Commentaires", f"""
+<p>Sélectionnez le texte à commenter, puis <strong>Révision ▸ Nouveau</strong> (ou {k('Ctrl', 'Alt', 'M')}, ou
+<strong>Insertion ▸ Commentaire</strong>, ou le clic droit) : le volet <strong>Commentaires</strong> s'ouvre à droite
+sur une carte à remplir ; <strong>Publier</strong> (ou {k('Ctrl', 'Entrée')}) l'ajoute au document. Sans sélection, le
+commentaire porte sur le mot du point d'insertion. Le texte commenté est ombré dans la page.</p>
+<p>Le volet montre un <strong>fil</strong> par commentaire, dans l'ordre du texte : auteur, date, texte et réponses.
+<strong>Répondre</strong> ajoute une réponse au fil, <strong>Résoudre</strong> le marque comme réglé (il reste dans le
+document, grisé ; <strong>Rouvrir</strong> le réactive), <strong>Modifier</strong> change son texte,
+<strong>Supprimer</strong> retire le fil entier. Un clic sur une carte sélectionne le texte commenté ;
+<strong>Révision ▸ Précédent / Suivant</strong> passent d'un commentaire à l'autre, <strong>Révision ▸ Afficher</strong>
+ouvre ou ferme le volet. Tout s'annule avec {k('Ctrl', 'Z')}.</p>
+<p>Les commentaires sont ceux de Word : Word affiche les réponses et les fils résolus d'un document commenté avec
+OpenWrite, et inversement. Ils sont signés du nom d'utilisateur choisi dans <strong>Révision ▸ Marques ▸ Changer le nom
+d'utilisateur</strong> (le compte Windows par défaut).</p>
+{warn("Pas encore : les bulles dans la marge de la page (le volet en tient lieu), les mentions @, un commentaire dans un en-tête ou une note.")}
+"""),
+        ("suivi", "Suivi des modifications", f"""
+<p><strong>Révision ▸ Suivi des modifications</strong> (ou {k('Ctrl', 'Maj', 'E')}) enregistre vos modifications au
+lieu de les appliquer : le texte tapé ou collé est marqué comme inséré, le texte effacé reste dans le document comme
+supprimé, une marque de paragraphe ajoutée (Entrée) ou retirée l'est aussi, et un changement de mise en forme garde
+l'ancienne. Effacer ce que vous venez vous-même d'ajouter le retire vraiment, comme dans Word. Le réglage est enregistré
+dans le document : Word et OpenWrite le retrouvent à l'ouverture.</p>
+<p><strong>Révision ▸ Marques</strong> choisit l'affichage : <strong>marques simples</strong> (le texte final, une barre
+rouge dans la marge signale les lignes modifiées), <strong>toutes les marques</strong> (insertions soulignées et
+suppressions barrées, dans la couleur de chaque auteur, barre grise), <strong>aucune marque</strong> (le texte final)
+ou <strong>original</strong> (le texte d'avant les modifications).</p>
+<p><strong>Révision ▸ Accepter</strong> et <strong>Refuser</strong> : la modification sous le point d'insertion (ou
+celles de la sélection), puis la suivante, toutes les modifications, toutes celles d'un auteur, ou toutes en arrêtant
+le suivi. <strong>Précédente</strong> et <strong>Suivante</strong> sélectionnent les modifications une à une ; la barre
+d'état indique leur sorte, leur auteur et leur date. Le clic droit propose aussi d'accepter ou de refuser.</p>
+{warn("Pas encore : le suivi de la suppression d'un tableau, des lignes et colonnes de tableau, des styles et des listes ; la comparaison de deux documents.")}
+"""),
         ("rechercher", "Rechercher et remplacer", f"""
 <p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
 Options : respecter la casse et les accents, mot entier. Le texte remplacé garde sa mise en forme ;
@@ -347,7 +379,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.7", "Tableaux : insérer, sélectionner des cellules, fusionner, fractionner, styles de tableau, trier, formules, largeurs automatiques"),
             ("1.0", "Images, formes et zones de texte : objets flottants et habillage du texte comme Word, insérer, déplacer, redimensionner, faire pivoter, rogner"),
             ("1.0.2", "Impression (aperçu, recto verso manuel, livret) et export PDF avec polices incorporées et liens"),
-            ("1.1", "Orthographe (soulignement pendant la frappe, F7, langue de chaque passage), commentaires, suivi des modifications"),
+            ("1.1", "Orthographe (soulignement pendant la frappe, F7, langue de chaque passage), commentaires (réponses, fils résolus), suivi des modifications (marques, accepter, refuser)"),
             ("1.2", "Notes, table des matières, renvois, index"),
             ("1.3", "Champs, blocs de construction, contrôles de contenu"),
             ("1.4", "Publipostage"),
@@ -370,7 +402,7 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
     ("raccourcis.html", "Raccourcis clavier", "Tous les raccourcis d'OpenWrite.", "⌨️", [
         ("general", "Général", table([
             ("Ouvrir", k("Ctrl", "O")), ("Enregistrer", k("Ctrl", "S")),
-            ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")), ("Imprimer", k("Ctrl", "P")), ("Orthographe", k("F7")),
+            ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")), ("Imprimer", k("Ctrl", "P")), ("Orthographe", k("F7")), ("Nouveau commentaire", k("Ctrl", "Alt", "M")), ("Suivi des modifications", k("Ctrl", "Maj", "E")),
             ("Annuler", k("Ctrl", "Z")), ("Rétablir", k("Ctrl", "Y")),
             ("Zoom", k("Ctrl") + " + molette"), ("Aide", k("F1")), ("Quitter", k("Alt", "F4")),
         ])),

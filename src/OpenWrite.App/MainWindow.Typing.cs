@@ -664,20 +664,26 @@ public partial class MainWindow
         if (c.Index < content.Text.Length)
         {
             int end = word ? CaretGeometry.ModelOffset(content, CaretGeometry.NextWord(content.Text, c.Index)) : CaretGeometry.ModelRange(content, c.Index).End;
-            Delete(at, at.WithOffset(end));
+            Delete(at, at.WithOffset(end), forward: true);
             return;
         }
         // fin de paragraphe : le paragraphe suivant (même conteneur) remonte
         var container = DocPos.ResolveContainer(body, at.ContainerPath);
         if (at.BlockIndex + 1 >= container.Blocks.Count || container.Blocks[at.BlockIndex + 1] is not Paragraph) return;
         var cur = at.Paragraph(body);
-        Delete(at.WithOffset(ParagraphAtoms.Length(cur)), new DocPos(at.ContainerPath.Append(at.BlockIndex + 1).ToArray(), 0));
+        Delete(at.WithOffset(ParagraphAtoms.Length(cur)), new DocPos(at.ContainerPath.Append(at.BlockIndex + 1).ToArray(), 0), forward: true);
     }
 
-    void Delete(DocPos from, DocPos to)
+    void Delete(DocPos from, DocPos to, bool forward = false)
     {
         if (EditRoot is not { } body || from.Equals(to)) return;
-        try { AfterTyping(TextOps.DeleteRange(_journal, body, from, to)); }
+        try
+        {
+            var pos = TextOps.DeleteRange(_journal, body, from, to);
+            // suivi des modifications : Suppr place le point d'insertion après le texte qu'elle vient de barrer
+            if (forward && Core.Review.TrackContext.Current?.LastDeletionEnd is { } end) pos = end;
+            AfterTyping(pos);
+        }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or InvalidOperationException)
         {
             StatusText.Text = $"Suppression impossible ici : {ex.Message}";

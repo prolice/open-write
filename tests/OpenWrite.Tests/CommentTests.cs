@@ -99,6 +99,21 @@ public class CommentTests
     }
 
     [Fact]
+    public void Commentaire_au_point_d_insertion_marques_dans_l_ordre()
+    {
+        var s = new Session(Source());
+        var id = s.Store.Add(s.Journal, s.Body, At(0, 0), At(0, 0), "Alice", "A", "Ici", s.Ids);
+        var names = ((Paragraph)s.Body.Blocks[0]).Inlines.Select(i => i switch
+        {
+            OpaqueInline o => o.Xml.Name.LocalName,
+            Run r when r.Content.Any(c => c is OpaqueRunContent) => "appel",
+            _ => "texte",
+        }).ToList();
+        Assert.Equal(new[] { "commentRangeStart", "commentRangeEnd", "appel", "texte" }, names);
+        Assert.Equal((0, 0), (CommentStore.Anchor(s.Body, id)!.Start, CommentStore.Anchor(s.Body, id)!.End));
+    }
+
+    [Fact]
     public void Annuler_l_ajout_et_supprimer_un_fil()
     {
         var s = new Session(Source());

@@ -20,10 +20,11 @@ public sealed class OutputPages
 
     /// <param name="image">Images des relations (comme pour la vue des pages).</param>
     /// <param name="linkTarget">Adresse d'un lien hypertexte (null : lien sans adresse externe, non reporté dans le PDF).</param>
-    public OutputPages(DocumentLayout layout, Func<string?, string, ImageSource?> image, Func<InlineContainer, string?>? linkTarget = null)
+    public OutputPages(DocumentLayout layout, Func<string?, string, ImageSource?> image, Func<InlineContainer, string?>? linkTarget = null, Brush? revisionBar = null)
     {
         _layout = layout;
-        _renderer = new OpenWrite.App.Layout.PageRenderer(image) { ShowMarks = false, HeaderMode = false, ForOutput = true };
+        // marques de révision comme à l'écran (Word imprime le document avec ses marques)
+        _renderer = new OpenWrite.App.Layout.PageRenderer(image) { ShowMarks = false, HeaderMode = false, ForOutput = true, RevisionBar = revisionBar };
         _linkTarget = linkTarget;
     }
 

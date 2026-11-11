@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         InitEditing();
         InitOutput();
         InitSpelling();
+        InitReview();
         InitFormatPane();
         InitRuler();
         BuildRibbon();
@@ -98,6 +99,10 @@ public partial class MainWindow : Window
     void CloseDocument()
     {
         if (!ConfirmDiscard()) return;
+        StopTracking();
+        _reviewPkg = null;
+        _comments = null;
+        ShowCommentsPane(false);
         _info = null;
         _path = null;
         _pkg = null;

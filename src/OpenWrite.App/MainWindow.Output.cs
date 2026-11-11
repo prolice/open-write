@@ -25,7 +25,7 @@ public partial class MainWindow
 
     /// <summary>Pages du document pour l'impression et le PDF (null sans document).</summary>
     internal OutputPages? Output() =>
-        _layout is { Pages.Count: > 0 } layout ? new OutputPages(layout, ImageOf, l => LinkTarget(l) is { } u && !u.StartsWith('#') ? u : null) : null;
+        _layout is { Pages.Count: > 0 } layout ? new OutputPages(layout, ImageOf, l => LinkTarget(l) is { } u && !u.StartsWith('#') ? u : null, RevisionBarBrush) : null;
 
     /// <summary>Page du point d'insertion (Word : « page active »), à défaut la page affichée ; à partir de 1.</summary>
     int ActivePageNumber

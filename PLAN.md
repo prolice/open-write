@@ -320,8 +320,8 @@ Estimations en jours de développement pour une personne, tests et aide compris,
 | Fonction Word | Mise en œuvre | Jours |
 |---|---|---|
 | Orthographe | `SpellService` repris : vérification en arrière-plan par paragraphe, langue par segment, F7, dictionnaire personnel, options — **fait** (§10.28) | 2 |
-| Commentaires | Plages ancrées, fils de réponses, résolu (`commentsExtended`), bulles dans une marge de révision ajoutée à droite de la page, volet Commentaires, navigation | 5 |
-| Suivi des modifications | Opérations enregistrées comme révisions (insertions, suppressions, mise en forme, marque de paragraphe, lignes de tableau, déplacements) ; couleurs par auteur ; affichages Simple / Toutes / Aucune / Original ; accepter / refuser (une, toutes, par auteur) ; volet Vérifications | 9 |
+| Commentaires | Plages ancrées, fils de réponses, résolu (`commentsExtended`), bulles dans une marge de révision ajoutée à droite de la page, volet Commentaires, navigation — **fait** (§10.29), volet à la place des bulles | 5 |
+| Suivi des modifications | Opérations enregistrées comme révisions (insertions, suppressions, mise en forme, marque de paragraphe, lignes de tableau, déplacements) ; couleurs par auteur ; affichages Simple / Toutes / Aucune / Original ; accepter / refuser (une, toutes, par auteur) ; volet Vérifications — **fait** (§10.29), sauf lignes de tableau suivies, déplacements créés et volet Vérifications | 9 |
 | Comparer / combiner | Différence par paragraphes puis par mots (Myers) → révisions | 4 |
 | Protection | Restreindre la modification (`documentProtection`, hachage SHA-512 avec itérations), plages d'exception ; chiffrement par mot de passe ([MS-OFFCRYPTO]) ; marquer comme final | 3 |
 | Rechercher / remplacer avancé | Caractères génériques, mises en forme, caractères spéciaux (^p, ^t…) | 2 |
@@ -843,3 +843,63 @@ l'utilisateur). Captures : scènes `orthographe` (sur un document) et `langue`.
 
 **Pas encore** : grammaire, synonymes (facultatifs au lot 8), correction automatique (lot 14), « Ignorer » d'une
 occurrence mémorisé, mot en cours de frappe non souligné (Word attend que le mot soit fini).
+
+### 10.29 Lot 8 — commentaires et suivi des modifications (2026-11-11)
+
+**Modèle** (`Core/Review`). `TrackContext` : contexte ambiant (par fil) que les opérations existantes consultent — rien à
+changer chez leurs appelants. `TextOps.Insert/InsertSpecial` marquent le texte inséré (w:ins de l'auteur, fusionné avec un
+w:ins voisin du même auteur) ; `Delete` passe le texte dans un w:del (w:t → w:delText, w:instrText → w:delInstrText) et
+marque les marques de paragraphe fusionnées (pPr/rPr/w:del) ; son propre ajout est retiré vraiment, sa propre marque
+insérée refusionne les paragraphes (comme Word) ; `LastDeletionEnd` place Suppr après le texte barré. `Split` marque la
+marque insérée ; `ReplaceText` = suppression puis insertion ; `Fragments.Insert` colle sans suivi puis marque toute la
+plage ; `FormatOps` garde l'ancienne mise en forme (w:rPrChange en dernier dans w:rPr, w:pPrChange), sauf dans son
+propre ajout. Identifiants : un de plus que le plus grand w:id des révisions et commentaires. `Revisions` : liste dans
+l'ordre du document (texte, marques de paragraphe, mise en forme, lignes de tableau, propriétés de tableau / cellule /
+section), accepter / refuser une révision ou toutes (filtre par auteur), de la dernière à la première ; une marque
+supprimée acceptée (ou insérée refusée) fait rejoindre le paragraphe suivant, **dont la marque et les propriétés
+restent** ; repères de déplacement retirés quand il n'y a plus de déplacement. Approximations : refuser un
+w:sectPrChange / w:tblGridChange retire seulement la marque ; supprimer un tableau avec le suivi est refusé (message).
+
+**Commentaires** (`Docx/CommentStore`). Lecture de comments.xml et de commentsExtended.xml (w15:paraIdParent = réponse,
+w15:done = résolu, reliés par le w14:paraId du dernier paragraphe du commentaire), place dans le texte (marques de
+plage, sinon l'appel). Ajout (marque de début, de fin puis appel w:commentReference ; au point d'insertion : les trois
+côte à côte), réponse (marques juste après celles du parent, rattachée au premier commentaire du fil), résolu, texte
+modifié (w14:paraId du dernier paragraphe gardé : les réponses restent reliées), suppression d'un fil (marques, entrées
+de commentsExtended, commentsIds et commentsExtensible). Parties créées si besoin (`DocxPackage.CommentsPart`,
+`XmlPartOf("commentsExtended", create)`), styles intégrés « Commentaire » et « Marque de commentaire » ajoutés à la
+première utilisation. Journal : `EditTransaction.TrackList` (liste des commentaires de la partie, événement
+`ListChanged` → partie à réécrire), en plus de `TrackStory` et `TrackXml` : tout s'annule.
+
+**Affichage** (`ParagraphLayouter.View`, `DocumentLayout.View`). Marques simples (texte final, barre rouge), toutes les
+marques (insertions soulignées, suppressions barrées, couleur par auteur dans l'ordre d'apparition, barre grise), aucune
+marque, original (insertions masquées). Le contenu d'un w:del est entièrement masqué hors « toutes les marques » et
+« original » (avant : les tabulations d'un passage supprimé restaient affichées). `ParagraphContent.Revisions` (révision
+de chaque caractère) et `MarkRevised` → barre de modification dans la marge (`PageRenderer.RevisionBar`, aussi à
+l'impression et dans le PDF, comme Word) ; texte supprimé non vérifié par l'orthographe. Texte commenté ombré
+(`#FBE9B7`) : seulement à l'intérieur d'un paragraphe (une plage commentée sur plusieurs paragraphes n'ombre que ses
+deux bouts).
+
+**Interface** (`MainWindow.Review.cs`, `CommentsPane.cs`). Révision ▸ Nouveau / Supprimer / Précédent / Suivant /
+Afficher (commentaires), Suivi des modifications (w:trackRevisions écrit dans settings.xml à sa place du schéma, annulable,
+Ctrl+Maj+E), Marques (quatre affichages, nom d'utilisateur), Accepter / Refuser (et passer à la suivante, cette
+modification, toutes, toutes d'un auteur, toutes et arrêter le suivi ; tout le document, en-têtes et notes compris),
+Précédente / Suivante (barre d'état : sorte, auteur, date) ; Insertion ▸ Commentaire, Ctrl+Alt+M, clic droit. Volet
+Commentaires à la place des bulles de Word (comme la liste de Word 365) : fils dans l'ordre du texte, réponses,
+Répondre, Résoudre / Rouvrir, Modifier (commentaires en texte simple), Supprimer, clic = texte commenté sélectionné.
+Auteur : `AppSettings.UserName/UserInitials` (compte Windows par défaut).
+
+**Calibrage avec Word** : `tools/word-make-review.ps1` fait écrire par Word un document neutre (deux relecteurs :
+insertion, suppression, gras, paragraphe inséré, marque supprimée ; fil avec réponse, fil résolu) et ce que Word en voit
+(`revisions.txt`) ; `OpenWrite --revisions <docx>` liste ce qu'OpenWrite lit : mêmes révisions (Word regroupe le
+paragraphe inséré et son texte en une révision), mêmes commentaires, réponse et résolu. Aller-retour identique, validateur
+SDK sans erreur. Dans l'autre sens, la copie écrite par l'auto-test (`revision.docx` : insertion, suppression, fil avec
+réponse résolu, suivi actif) est ouverte par Word (COM, lecture seule) : il voit la suppression, l'insertion, le texte
+commenté, la réponse reliée, le fil résolu et le suivi actif. Défaut trouvé ainsi : commentaire au point d'insertion
+avec la marque de fin avant celle de début (corrigé, test).
+
+**Tests** : `ReviewTests` (10), `CommentTests` (4, dont validation SDK du document écrit) — 169 tests ; auto-test
+**134 vérifications** (`SelfTest.Review.cs` : par les boutons du ruban et le volet ; jamais l'affichage par le menu,
+gardé dans les réglages de l'utilisateur). Corpus : aucun document à révisions ; pages identiques à Word inchangées.
+
+**Pas encore** : bulles dans la marge, suivi des lignes et colonnes de tableau, des styles et des listes, déplacements
+créés (ceux de Word sont lus, acceptés et refusés), volet Vérifications, comparer / combiner, protection, grammaire.

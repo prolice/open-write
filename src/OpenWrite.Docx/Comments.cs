@@ -229,6 +229,14 @@ public sealed class CommentStore
         var holder = NewHolder(w, id, author, initials, text, newParaId);
         part.Items.Add(holder);
         ext.Add(new XElement(W15 + "commentEx", new XAttribute(W15 + "paraId", LastParaId(holder)!), new XAttribute(W15 + "done", "0")));
+        if (from.Equals(to))
+        {
+            // commentaire au point d'insertion : début, fin et appel côte à côte, dans cet ordre
+            var (o, i) = Place(from.Paragraph(root), from.Offset, start: true);
+            o.InsertRange(i, new Inline[] { Marker(w, "commentRangeStart", id), Marker(w, "commentRangeEnd", id), ReferenceRun(w, id) });
+            tx.Commit(to);
+            return id;
+        }
         // fin d'abord : les positions du début restent valables
         var endP = to.Paragraph(root);
         var (eo, ei) = Place(endP, to.Offset, start: false);

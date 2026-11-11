@@ -63,6 +63,11 @@ public partial class MainWindow
         {
             if (_pkg?.Stories.Values.FirstOrDefault(p => p.Stories().Contains(root)) is { } part) part.Dirty = true;
         };
+        // commentaires ajoutés ou supprimés (liste de comments.xml) : partie à réécrire
+        _journal.ListChanged += list =>
+        {
+            if (_pkg?.Stories.Values.FirstOrDefault(p => ReferenceEquals(p.Items, list)) is { } part) part.Dirty = true;
+        };
         // styles, numérotation : partie à réécrire
         _journal.XmlChanged += root =>
         {
@@ -103,6 +108,7 @@ public partial class MainWindow
     /// <summary>Après une modification hors frappe (case, annuler, rétablir) : remise en page incrémentale, point d'insertion.</summary>
     void AfterEdit(string status, DocPos? caret = null)
     {
+        SyncTracking();
         Relayout();
         _anchor = null;
         if (caret is not null && FromDocPos(caret) is { } t) _caret = t;
@@ -111,6 +117,7 @@ public partial class MainWindow
         UpdateCaret(scroll: caret is not null);
         UpdateModifiedMarker();
         StatusText.Text = status;
+        RefreshCommentsPane();
         EnsureAutoSaveTimer();
         CommandManager.InvalidateRequerySuggested();
     }

@@ -794,3 +794,8 @@ la page, là où Word ne met rien.
 page, livret : faces de 2 pages), Ctrl+P, Fichier ▸ Exporter en PDF…, puis PDF relu : pages A4, polices incorporées
 avec table Unicode, image JPEG incorporée sans recompression, lien cliquable, titre. xUnit : `OutputTests` (choix des
 pages, livret, recto verso manuel) — 155 tests.
+
+### 10.26 Version 1.0.2 (2026-11-11)
+
+Publiée par la pipeline (tag `v1.0.2`) : impression et export PDF (§10.25). Auto-test passé sur l'exécutable publié
+(export PDF compris dans le fichier unique), MSI de 62 Mo, `latest.json` signé sur le portail.

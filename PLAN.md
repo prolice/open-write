@@ -319,7 +319,7 @@ Estimations en jours de développement pour une personne, tests et aide compris,
 
 | Fonction Word | Mise en œuvre | Jours |
 |---|---|---|
-| Orthographe | `SpellService` repris : vérification en arrière-plan par paragraphe, langue par segment, F7, dictionnaire personnel, options | 2 |
+| Orthographe | `SpellService` repris : vérification en arrière-plan par paragraphe, langue par segment, F7, dictionnaire personnel, options — **fait** (§10.28) | 2 |
 | Commentaires | Plages ancrées, fils de réponses, résolu (`commentsExtended`), bulles dans une marge de révision ajoutée à droite de la page, volet Commentaires, navigation | 5 |
 | Suivi des modifications | Opérations enregistrées comme révisions (insertions, suppressions, mise en forme, marque de paragraphe, lignes de tableau, déplacements) ; couleurs par auteur ; affichages Simple / Toutes / Aucune / Original ; accepter / refuser (une, toutes, par auteur) ; volet Vérifications | 9 |
 | Comparer / combiner | Différence par paragraphes puis par mots (Myers) → révisions | 4 |
@@ -807,3 +807,39 @@ Retour utilisateur : dans les boîtes Imprimer et Exporter en PDF, choisir « Pa
 groupe de boutons à part. Nom de groupe commun dans `PageChooser` ; l'auto-test choisit « Pages : 1 » par
 l'automatisation de l'interface et vérifie qu'un seul bouton est coché (échoue sans le correctif) — 102 vérifications.
 Même correction dans OpenPub 2.1.5, d'où vient ce code.
+
+### 10.28 Lot 8 — orthographe (2026-11-11)
+
+**Correcteur** : `App/Spelling/SpellService` repris d'OpenPub (API de Windows `ISpellCheckerFactory`, aucun dictionnaire
+embarqué, dictionnaire personnel de Windows). Changements : langue par défaut = celle de Windows ; une langue sans
+dictionnaire n'est **pas vérifiée** (OpenPub retombait sur le français, ce qui soulignerait tout un passage anglais) ;
+variante voisine (`nl-BE` → `nl-NL` s'il n'y a que lui) ; liste des langues installées. Sur ce PC : 35 variantes
+d'anglais et de français (dont `fr-BE`), pas de néerlandais. Diagnostic : `OpenWrite --spell "texte" [langue]`.
+
+**Langue de chaque passage** : `RunFormat.NoProof` (w:noProof) ajouté au résolveur ; `RunFormat.Language` (w:lang, déjà
+résolu avec les valeurs par défaut du document). Un paragraphe est vérifié une fois par langue présente, les caractères
+des autres langues (et ceux en noProof) remplacés par des espaces : positions inchangées. Comme Word avec ses options
+par défaut, pas de faute signalée pour un mot en majuscules, avec des chiffres, une adresse Internet, de courriel ou de
+fichier. Résultats gardés par `ParagraphContent` (`ConditionalWeakTable`) : un paragraphe n'est revérifié que
+lorsqu'il est remis en page ; le service garde aussi les résultats par (langue, texte).
+
+**Affichage** : `PageRenderer.Misspellings` (trait ondulé rouge sous les caractères de la ligne, espaces de fin
+exclus) — donné seulement au rendu de l'écran : ni impression, ni PDF (`OutputPages` ne le pose pas). Réglage du
+document `w:hideSpellingErrors` respecté ; réglage de l'utilisateur `AppSettings.SpellCheck` (Révision ▸ Langue ▸
+Vérifier l'orthographe pendant la frappe). Coût mesuré (`--typing-bench`, Syllabus ×3, 111 pages) : médiane 12,8 ms
+par touche avec la vérification, 12,1 ms sans.
+
+**Commandes** : clic droit sur une faute (suggestions en gras — un clic remplace le mot en gardant sa mise en forme,
+une étape annulable —, Ignorer tout, Ajouter au dictionnaire, Orthographe…) ; F7 ou Révision ▸ Orthographe
+(`SpellingWindow` non modale : faute sélectionnée dans le texte, Remplacer, Remplacer tout, Ignorer, Ignorer tout,
+Ajouter ; reprend au début du document jusqu'au point de départ) ; Révision ▸ Langue et clic sur la langue de la barre
+d'état (`LanguageWindow` : langues de Windows ✓ et langues courantes, « Ne pas vérifier l'orthographe » ; pose
+w:lang w:val en gardant eastAsia/bidi, et w:noProof).
+
+**Auto-test** (114 vérifications) : mot inventé signalé, trait ondulé à l'écran et absent du rendu PDF, noProof et
+Ctrl+Z, menu Langue, F7 par le bouton du ruban (mot proposé, sélectionné, Remplacer par le bouton), clic droit ▸
+Ignorer tout. Jamais « Ajouter au dictionnaire » ni le réglage de frappe (dictionnaire de Windows et réglages de
+l'utilisateur). Captures : scènes `orthographe` (sur un document) et `langue`.
+
+**Pas encore** : grammaire, synonymes (facultatifs au lot 8), correction automatique (lot 14), « Ignorer » d'une
+occurrence mémorisé, mot en cours de frappe non souligné (Word attend que le mot soit fini).

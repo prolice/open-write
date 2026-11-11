@@ -93,7 +93,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock x:Name="PageStatus" FontWeight="SemiBold" Margin="0,0,18,0"/>
                     <TextBlock x:Name="WordStatus" Foreground="{StaticResource Muted}" Margin="0,0,18,0"/>
-                    <TextBlock x:Name="LangStatus" Foreground="{StaticResource Muted}" Margin="0,0,18,0"/>
+                    <TextBlock x:Name="LangStatus" Foreground="{StaticResource Muted}" Margin="0,0,18,0" Cursor="Hand" ToolTip="Langue de vérification du texte sélectionné…" MouseLeftButtonUp="LangStatus_Click"/>
                     <TextBlock x:Name="StatusText" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
             </DockPanel>

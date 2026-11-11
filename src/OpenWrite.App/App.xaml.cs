@@ -130,6 +130,25 @@ public partial class App : Application
                 Shutdown(code);
                 return;
             }
+            if (args.Length >= 1 && args[0] == "--spell")
+            {
+                // diagnostic du correcteur de Windows : langues installées, fautes et suggestions d'un texte
+                var spell = Spelling.SpellService.Shared.Value;
+                if (spell is null) { Console.WriteLine("Correcteur orthographique de Windows indisponible."); Shutdown(1); return; }
+                Console.WriteLine("Dictionnaires de Windows : " + string.Join(", ", spell.SupportedLanguages) + " ; langue par défaut : " + Spelling.SpellService.DefaultTag);
+                if (args.Length >= 2)
+                {
+                    var lang = args.Length >= 3 ? args[2] : null;
+                    Console.WriteLine($"Langue vérifiée : {spell.Resolve(lang) ?? "(aucun dictionnaire)"}");
+                    foreach (var (st, len) in spell.Check(args[1], lang))
+                    {
+                        var word = args[1].Substring(st, len);
+                        Console.WriteLine($"  « {word} » → {string.Join(", ", spell.Suggest(word, lang))}");
+                    }
+                }
+                Shutdown(0);
+                return;
+            }
             if (args.Length >= 3 && args[0] == "--pdf")
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;

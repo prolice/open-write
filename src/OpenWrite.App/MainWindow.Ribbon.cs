@@ -65,7 +65,7 @@ public partial class MainWindow
         }),
         ("TabReview", new RibbonGroup[]
         {
-            new("Vérification", "1.1", ("", "Orthographe"), ("", "Synonymes"), ("", "Statistiques")),
+            new("Vérification", "1.1", ("", "Orthographe"), ("\uE774", "Langue"), ("", "Synonymes"), ("", "Statistiques")),
             new("Commentaires", "1.1", ("", "Nouveau"), ("", "Afficher")),
             new("Suivi", "1.1", ("", "Suivi des modifications")),
             new("Modifications", "1.1", ("", "Accepter"), ("", "Refuser")),
@@ -154,6 +154,13 @@ public partial class MainWindow
             "Habillage du texte autour de l'image ou de la forme sélectionnée"),
     };
 
+    /// <summary>Commandes de l'onglet Révision déjà disponibles.</summary>
+    Dictionary<string, (Action Run, string Tip)> ReviewCommands() => new()
+    {
+        ["Orthographe"] = (ShowSpelling, "Vérifier l'orthographe du document (F7)"),
+        ["Langue"] = (() => ShowLanguageMenu(_clickedButton!), "Langue de vérification du texte sélectionné ; vérification pendant la frappe"),
+    };
+
     /// <summary>Active les commandes disponibles quand un document est affiché.</summary>
     void UpdateRibbonState()
     {
@@ -199,6 +206,7 @@ public partial class MainWindow
         var layoutCmds = LayoutCommands();
         var insertCmds = InsertCommands();
         var designCmds = DesignCommands();
+        var reviewCmds = ReviewCommands();
         foreach (var (tab, groups) in Roadmap)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal, Visibility = tab == "TabHome" ? Visibility.Visible : Visibility.Collapsed };
@@ -208,13 +216,13 @@ public partial class MainWindow
                 foreach (var (glyph, label) in g.Buttons)
                 {
                     var button = new Button { Style = (Style)FindResource("RBig"), Tag = glyph, Content = label, IsEnabled = false };
-                    if ((tab switch { "TabHome" => home, "TabLayout" => layoutCmds, "TabInsert" => insertCmds, "TabDesign" => designCmds, _ => null })?.TryGetValue(label, out var cmd) == true)
+                    if ((tab switch { "TabHome" => home, "TabLayout" => layoutCmds, "TabInsert" => insertCmds, "TabDesign" => designCmds, "TabReview" => reviewCmds, _ => null })?.TryGetValue(label, out var cmd) == true)
                     {
                         // le point d'insertion garde le clavier : le bouton ne prend pas le focus
                         button.Focusable = false;
                         button.ToolTip = cmd.Tip;
                         // menu sous le bouton : il garde le clavier
-                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau" or "Images" or "Formes" or "Position" or "Habillage";
+                        bool menu = tab == "TabDesign" || label is "Marges" or "Orientation" or "Taille" or "Colonnes" or "Sauts" or "Numéros de ligne" or "Tableau" or "Images" or "Formes" or "Position" or "Habillage" or "Langue";
                         button.Click += (_, _) => { _clickedButton = button; cmd.Run(); if (!menu) _pagesView?.Focus(); };
                         _liveButtons.Add(button);
                     }

@@ -166,6 +166,31 @@ public sealed class PageRenderer
     /// <summary>Édition des en-têtes et pieds : en-têtes à l'encre normale, corps grisé.</summary>
     public bool HeaderMode { get; set; }
 
+    /// <summary>
+    /// Fautes d'orthographe d'un paragraphe (index affichés, longueur) à souligner d'un trait ondulé rouge ; null = aucune
+    /// vérification (impression, PDF, vérification désactivée).
+    /// </summary>
+    public Func<ParagraphContent, IReadOnlyList<(int Start, int Length)>>? Misspellings { get; set; }
+
+    static readonly Pen SpellPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x1B, 0x24))), 0.75) { LineJoin = PenLineJoin.Round });
+
+    /// <summary>Trait ondulé de x1 à x2 (points), comme Word sous une faute.</summary>
+    static void DrawSquiggle(DrawingContext dc, double x1, double x2, double y)
+    {
+        if (x2 - x1 < 1) return;
+        var g = new StreamGeometry();
+        using (var ctx = g.Open())
+        {
+            const double Step = 1.5, Amp = 0.9;
+            ctx.BeginFigure(new Point(x1, y), false, false);
+            bool up = true;
+            for (double x = x1 + Step; x < x2 + Step / 2; x += Step, up = !up)
+                ctx.LineTo(new Point(Math.Min(x, x2), up ? y - Amp / 2 : y + Amp / 2), true, true);
+        }
+        g.Freeze();
+        dc.DrawGeometry(null, SpellPen, g);
+    }
+
     /// <summary>Impression, PDF : en-têtes et pieds dans leurs vraies couleurs (à l'écran, ils sont estompés).</summary>
     public bool ForOutput { get; set; }
 
@@ -488,6 +513,17 @@ public sealed class PageRenderer
                 if (rf.DoubleStrike) dc.DrawLine(new Pen(brush, Math.Max(0.5, size0 / 18)), new Point(x, sy - size0 * 0.1), new Point(x + width, sy - size0 * 0.1));
             }
             shift += spaces * extra;
+        }
+        // fautes d'orthographe : sous les caractères de la ligne, sans les espaces qui la terminent
+        if (Misspellings?.Invoke(c) is { Count: > 0 } errors)
+        {
+            double y = baseline + Math.Clamp((line.Height - line.Baseline) * 0.45, 1.6, 3.5);
+            foreach (var (st, len) in errors)
+            {
+                int a = Math.Max(st, line.Start), b = Math.Min(st + len, Math.Min(line.End, lastInk + 1));
+                if (b <= a) continue;
+                DrawSquiggle(dc, placed.X + CaretGeometry.X(pl, placed.Line, a), placed.X + CaretGeometry.X(pl, placed.Line, b), y);
+            }
         }
     }
 

@@ -274,6 +274,29 @@ Les documents Word s'affichent avec leurs objets flottants à leur place et le t
 les dessins anciens (VML) des documents enregistrés par Word 2007 et avant, et les images EMF et WMF.</p>
 {warn("Pas encore : les graphiques et les SmartArt s'affichent comme un cadre (ils sont conservés intacts à l'enregistrement), les effets 3D et les ombres ne sont pas dessinés, le texte d'un objet ancré dans une cellule de tableau n'est pas habillé.")}
 """),
+        ("orthographe", "Orthographe", f"""
+<p>OpenWrite souligne d'un <strong>trait ondulé rouge</strong> les mots absents du dictionnaire, pendant la frappe. Il
+utilise le correcteur de Windows : aucun dictionnaire à installer, et les mots que vous ajoutez sont partagés avec les
+autres applications de Windows. Chaque passage est vérifié dans <strong>sa langue</strong> (celle que Word a
+enregistrée dans le document : un paragraphe en néerlandais dans une lettre en français est vérifié en néerlandais).
+Comme dans Word, les mots en majuscules, les mots qui contiennent des chiffres et les adresses Internet ne sont pas
+signalés. Les traits ondulés ne sont ni imprimés ni exportés en PDF.</p>
+<p><strong>Clic droit sur un mot souligné</strong> : les suggestions (un clic remplace le mot, sa mise en forme est
+gardée), <strong>Ignorer tout</strong> (le mot n'est plus signalé jusqu'à la fermeture d'OpenWrite) et
+<strong>Ajouter au dictionnaire</strong>.</p>
+<p>{k('F7')} ou <strong>Révision ▸ Orthographe</strong> vérifie tout le document à partir du point d'insertion :
+chaque faute est sélectionnée dans le texte, avec ses suggestions ; <strong>Remplacer</strong>,
+<strong>Remplacer tout</strong> (toutes les occurrences du mot), <strong>Ignorer</strong>, <strong>Ignorer
+tout</strong>, <strong>Ajouter au dictionnaire</strong>. Arrivée à la fin, la vérification reprend au début du
+document jusqu'au point de départ.</p>
+<p><strong>Révision ▸ Langue ▸ Définir la langue de vérification…</strong> (ou un clic sur la langue dans la barre
+d'état) choisit la langue du texte sélectionné ; une coche ✓ indique que Windows en a le dictionnaire. « Ne pas
+vérifier l'orthographe » convient aux noms propres, aux codes ou aux citations. Pour ajouter une langue :
+Paramètres de Windows ▸ Heure et langue ▸ Langue. <strong>Révision ▸ Langue ▸ Vérifier l'orthographe pendant la
+frappe</strong> masque ou affiche les traits ondulés ({k('F7')} vérifie toujours). Un document dans lequel Word a
+choisi de masquer les fautes reste ainsi.</p>
+{warn("Pas encore : la grammaire, les synonymes et la correction automatique pendant la frappe.")}
+"""),
         ("rechercher", "Rechercher et remplacer", f"""
 <p>{k('Ctrl', 'F')} cherche un texte dans le document à partir du point d'insertion, {k('Ctrl', 'H')} le remplace.
 Options : respecter la casse et les accents, mot entier. Le texte remplacé garde sa mise en forme ;
@@ -324,7 +347,7 @@ notes, commentaires, révisions, champs et contrôles de contenu, mode de compat
             ("0.7", "Tableaux : insérer, sélectionner des cellules, fusionner, fractionner, styles de tableau, trier, formules, largeurs automatiques"),
             ("1.0", "Images, formes et zones de texte : objets flottants et habillage du texte comme Word, insérer, déplacer, redimensionner, faire pivoter, rogner"),
             ("1.0.2", "Impression (aperçu, recto verso manuel, livret) et export PDF avec polices incorporées et liens"),
-            ("1.1", "Orthographe, commentaires, suivi des modifications"),
+            ("1.1", "Orthographe (soulignement pendant la frappe, F7, langue de chaque passage), commentaires, suivi des modifications"),
             ("1.2", "Notes, table des matières, renvois, index"),
             ("1.3", "Champs, blocs de construction, contrôles de contenu"),
             ("1.4", "Publipostage"),
@@ -347,7 +370,7 @@ fichiers Word, sans remplacer Word comme programme par défaut.</p>
     ("raccourcis.html", "Raccourcis clavier", "Tous les raccourcis d'OpenWrite.", "⌨️", [
         ("general", "Général", table([
             ("Ouvrir", k("Ctrl", "O")), ("Enregistrer", k("Ctrl", "S")),
-            ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")), ("Imprimer", k("Ctrl", "P")),
+            ("Enregistrer sous", k("Ctrl", "Maj", "S") + " ou " + k("F12")), ("Imprimer", k("Ctrl", "P")), ("Orthographe", k("F7")),
             ("Annuler", k("Ctrl", "Z")), ("Rétablir", k("Ctrl", "Y")),
             ("Zoom", k("Ctrl") + " + molette"), ("Aide", k("F1")), ("Quitter", k("Alt", "F4")),
         ])),

@@ -521,6 +521,7 @@ public static partial class SelfTest
 
         InterfaceChecks(w);
         OutputChecks(w, outDir);
+        SpellingChecks(w);
 
         Idle();
         var content = (FrameworkElement)w.Content;
@@ -700,11 +701,26 @@ public static partial class SelfTest
                 w.Close();
                 return 0;
             }
-            case "symbole" or "police" or "paragraphe":
+            case "orthographe":
+            {
+                // F7 sur le document donné : la boîte montre la première faute
+                Pump();
+                w.ShowSpelling();
+                Pump();
+                Idle();
+                if (w.SpellingWindowForTest is not { } sw) { w.Close(); return 1; }
+                var c = (FrameworkElement)sw.Content;
+                Save(c, (int)c.ActualWidth, (int)c.ActualHeight, png);
+                sw.Close();
+                w.Close();
+                return 0;
+            }
+            case "symbole" or "police" or "paragraphe" or "langue":
             {
                 Window dlg = scene switch
                 {
                     "symbole" => new SymbolWindow(_ => { }),
+                    "langue" => new LanguageWindow(MainWindow.LanguageChoices(), "fr-BE", false),
                     "police" => new FontWindow(new Core.Styles.RunFormat { FontAscii = "Calibri", Size = 11, Bold = true, Effective = new System.Xml.Linq.XElement("rPr") }),
                     _ => new ParagraphWindow(new Core.Styles.ParagraphFormat { Alignment = "both", IndentFirstLine = 709, SpacingAfter = 160, Line = 276, KeepNext = true, Effective = new System.Xml.Linq.XElement("pPr") }),
                 };

@@ -36,6 +36,7 @@ public static class HelpService
     public const string Objects = "documents.html#objets";
     public const string Print = "documents.html#imprimer";
     public const string Pdf = "documents.html#pdf";
+    public const string Spelling = "documents.html#orthographe";
 
     public static IReadOnlyList<string> AllTopics => typeof(HelpService).GetFields(BindingFlags.Public | BindingFlags.Static)
         .Where(f => f.IsLiteral && f.FieldType == typeof(string)).Select(f => (string)f.GetRawConstantValue()!).ToList();

@@ -62,6 +62,8 @@ public sealed record RunFormat
     /// <summary>Échelle horizontale des caractères (w:w), en pour cent.</summary>
     public int Scale { get; init; } = 100;
     public string? Language { get; init; }
+    /// <summary>Ne pas vérifier l'orthographe ni la grammaire (w:noProof).</summary>
+    public bool NoProof { get; init; }
     public required XElement Effective { get; init; }
 }
 
@@ -326,6 +328,7 @@ public sealed class StyleResolver
             CharacterSpacing = Int(rPr.Element(W + "spacing"), "val") ?? 0,
             Scale = Int(rPr.Element(W + "w"), "val") is { } sc and > 0 and <= 600 ? sc : 100,
             Language = rPr.Element(W + "lang")?.Attribute(W + "val")?.Value,
+            NoProof = Flag(rPr, "noProof"),
             Effective = rPr,
         };
     }

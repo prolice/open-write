@@ -60,6 +60,13 @@ public sealed class ParagraphContent
     /// <summary>Le paragraphe entier est masqué (marque et texte) : il n'occupe aucune place.</summary>
     public bool Hidden { get; init; }
     /// <summary>
+    /// Révision de chaque caractère affiché (null : aucune) : 0 aucune, 1 inséré, 2 supprimé, 3 mise en forme modifiée
+    /// (barre de modification dans la marge, orthographe non vérifiée sur le texte supprimé).
+    /// </summary>
+    public byte[]? Revisions { get; init; }
+    /// <summary>Marque de paragraphe insérée ou supprimée, ou mise en forme du paragraphe modifiée.</summary>
+    public bool MarkRevised { get; init; }
+    /// <summary>
     /// Position dans le modèle (décalage de <c>DocPos</c>, voir ParagraphAtoms) du début et de la fin de chaque
     /// caractère affiché. Un caractère qui représente un champ entier (case à cocher, numéro de page calculé) couvre
     /// le champ du caractère de début au caractère de fin ; un appel de note couvre sa marque.
@@ -204,6 +211,31 @@ public sealed class ParagraphLayouter
 
     // ------------------------------------------------------------------ texte affiché
 
+    /// <summary>Affichage des révisions (Révision ▸ Affichage pour la révision de Word).</summary>
+    public RevisionView View { get; set; } = RevisionView.Simple;
+
+    /// <summary>Couleurs des auteurs de révisions, dans l'ordre où ils apparaissent (comme Word « par auteur »).</summary>
+    static readonly string[] AuthorPalette = { "B5082E", "2E74B5", "538135", "BF8F00", "7030A0", "C55A11", "1F7A7A", "A5276B" };
+    readonly Dictionary<string, string> _authorColors = new(StringComparer.Ordinal);
+
+    public string AuthorColor(string? author)
+    {
+        author ??= "";
+        if (!_authorColors.TryGetValue(author, out var c)) _authorColors[author] = c = AuthorPalette[_authorColors.Count % AuthorPalette.Length];
+        return c;
+    }
+
+    /// <summary>Fond du texte commenté (marques simples et toutes les marques).</summary>
+    public const string CommentShade = "#FBE9B7";
+
+    RunFormat Decorate(RunFormat rf, byte rev, string? author, bool commented)
+    {
+        if (View == RevisionView.All && rev is 1 or 2)
+            rf = rev == 1 ? rf with { Underline = "single", Color = AuthorColor(author) } : rf with { Strike = true, Color = AuthorColor(author) };
+        if (commented && View is RevisionView.All or RevisionView.Simple && rf.Highlight is null) rf = rf with { Highlight = CommentShade };
+        return rf;
+    }
+
     public ParagraphContent Content(Paragraph p, CellStyle tableStyle)
     {
         var sb = new System.Text.StringBuilder();
@@ -224,6 +256,11 @@ public sealed class ParagraphLayouter
         var modelEnd = new List<int>();
         int mo = 0, cStart = 0;
         bool perChar = false;
+        // révisions : de chaque caractère affiché ; commentaires ouverts dans le paragraphe
+        var revOf = new List<byte>();
+        byte curRev = 0;
+        bool anyRev = false;
+        var openComments = new HashSet<string>();
 
         void Add(string text, TextStyle st)
         {
@@ -235,7 +272,8 @@ public sealed class ParagraphLayouter
             }
             if (perChar) cStart += text.Length;
             sb.Append(text);
-            for (int k = 0; k < text.Length; k++) styleOf.Add(i);
+            for (int k = 0; k < text.Length; k++) { styleOf.Add(i); revOf.Add(curRev); }
+            if (curRev != 0) anyRev = true;
             anyVisible = true;
         }
 
@@ -254,7 +292,7 @@ public sealed class ParagraphLayouter
             }
         }
 
-        void Walk(IEnumerable<Inline> inlines)
+        void Walk(IEnumerable<Inline> inlines, byte rev, string? author)
         {
             foreach (var inline in inlines)
             {
@@ -262,10 +300,15 @@ public sealed class ParagraphLayouter
                 {
                     case Run r:
                         var rf = _styles.Run(p, r, tableStyle);
-                        var st = Style(rf);
+                        byte runRev = rev != 0 ? rev : r.Props.Get("rPrChange") is not null ? (byte)3 : (byte)0;
+                        // texte supprimé : visible (barré) avec toutes les marques, tel quel en vue Original
+                        bool showDeleted = View is RevisionView.All or RevisionView.Original;
+                        bool insertedHidden = View == RevisionView.Original && rev == 1;
+                        var st = Style(Decorate(rf, rev, author, openComments.Count > 0));
                         foreach (var c in r.Content)
                         {
-                            bool hidden = fields.Any(f => f.InCode || f.Replaced) || rf.Hidden;
+                            curRev = c is TextContent { Deleted: true } ? (byte)2 : runRev;
+                            bool hidden = fields.Any(f => f.InCode || f.Replaced) || rf.Hidden || insertedHidden || (rev == 2 && !showDeleted);
                             cStart = mo;
                             mo += ParagraphAtoms.LengthOf(c);
                             perChar = c is TextContent;
@@ -305,7 +348,7 @@ public sealed class ParagraphLayouter
                                         foreach (var k in done.Covering) { modelStart[k] = done.Begin; modelEnd[k] = mo; }
                                     }
                                     break;
-                                case TextContent { Deleted: false } t when !hidden:
+                                case TextContent t when !hidden && (!t.Deleted || showDeleted):
                                     if (rf.SmallCaps && !rf.Caps) AddSmallCaps(t.Value, rf, st);
                                     else Add(rf.Caps ? t.Value.ToUpper(CultureInfo.CurrentCulture) : t.Value, st);
                                     break;
@@ -335,10 +378,18 @@ public sealed class ParagraphLayouter
                         }
                         break;
                     case InlineContainer box:
-                        Walk(box.Children);
+                        var name = box.Name.LocalName;
+                        byte boxRev = name is "ins" or "moveTo" ? (byte)1 : name is "del" or "moveFrom" ? (byte)2 : rev;
+                        var boxAuthor = boxRev != rev ? box.Attributes.FirstOrDefault(a => a.Name.LocalName == "author")?.Value : author;
+                        // supprimé masqué (marques simples, aucune marque) : le contenu n'est pas affiché mais occupe le modèle
+                        Walk(box.Children, boxRev, boxAuthor);
                         break;
                     case InlineContentControl sdt:
-                        Walk(sdt.Content);
+                        Walk(sdt.Content, rev, author);
+                        break;
+                    case OpaqueInline o when o.Xml.Name.LocalName is "commentRangeStart" or "commentRangeEnd":
+                        var cid = o.Xml.Attributes().FirstOrDefault(a => a.Name.LocalName == "id")?.Value ?? "";
+                        if (o.Xml.Name.LocalName == "commentRangeStart") openComments.Add(cid); else openComments.Remove(cid);
                         break;
                     default:
                         mo += ParagraphAtoms.LengthOf(inline);
@@ -347,13 +398,15 @@ public sealed class ParagraphLayouter
             }
         }
 
-        Walk(p.Inlines);
+        Walk(p.Inlines, 0, null);
         var mark = Style(_styles.ParagraphMark(p, tableStyle));
         return new ParagraphContent
         {
             Text = sb.ToString(), StyleOf = styleOf.ToArray(), Styles = styles, Objects = objects, Mark = mark, Footnotes = notes,
             ObjectXml = objectXml, CheckBoxes = boxes, Drawings = drawings, Anchors = anchors,
             Hidden = !anyVisible && mark.Format.Hidden,
+            Revisions = anyRev ? revOf.ToArray() : null,
+            MarkRevised = p.Props.Get("pPrChange") is not null || p.Props.Get("rPr")?.Elements().Any(e => e.Name.LocalName is "ins" or "del" or "rPrChange") == true,
             ModelStart = modelStart.ToArray(), ModelEnd = modelEnd.ToArray(),
         };
     }
@@ -770,4 +823,17 @@ static class LineBoxExtensions
         l.Pieces.AddRange(pieces);
         return l;
     }
+}
+
+/// <summary>Affichage des révisions, comme Révision ▸ Suivi de Word.</summary>
+public enum RevisionView
+{
+    /// <summary>Marques simples : texte final, barre rouge dans la marge (affichage par défaut de Word).</summary>
+    Simple,
+    /// <summary>Toutes les marques : insertions soulignées, suppressions barrées, en couleur par auteur.</summary>
+    All,
+    /// <summary>Aucune marque : le texte final.</summary>
+    Final,
+    /// <summary>Original : le texte d'avant les modifications.</summary>
+    Original,
 }

@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using OpenWrite.Core.Model;
+using OpenWrite.Core.Review;
 
 namespace OpenWrite.Core.Editing;
 
@@ -17,6 +18,14 @@ public static class TextOps
     /// paragraphe vide, celle de la marque de paragraphe. Jamais dans une suppression suivie. Renvoie la position après le texte.
     /// </summary>
     public static DocPos Insert(Story root, DocPos pos, string text)
+    {
+        var end = InsertCore(root, pos, text);
+        // suivi des modifications : le texte tapé passe dans un w:ins
+        if (TrackContext.Current is { } t && text.Length > 0) t.MarkInserted(pos.Paragraph(root), pos.Offset, end.Offset);
+        return end;
+    }
+
+    static DocPos InsertCore(Story root, DocPos pos, string text)
     {
         if (text.Length == 0) return pos;
         if (text.Any(c => c is '\t' or '\r' or '\n' or '\v')) throw new ArgumentException("Tabulations et retours : opérations dédiées.", nameof(text));
@@ -59,6 +68,13 @@ public static class TextOps
     /// mise en forme que <see cref="Insert"/> ; un texte coupé en deux reste dans le même segment. Renvoie la position après.
     /// </summary>
     public static DocPos InsertSpecial(Story root, DocPos pos, SpecialChar kind)
+    {
+        var end = InsertSpecialCore(root, pos, kind);
+        if (TrackContext.Current is { } t) t.MarkInserted(pos.Paragraph(root), pos.Offset, end.Offset);
+        return end;
+    }
+
+    static DocPos InsertSpecialCore(Story root, DocPos pos, SpecialChar kind)
     {
         var p = pos.Paragraph(root);
         var ns = p.Props.Ns;
@@ -130,6 +146,8 @@ public static class TextOps
     public static DocPos ReplaceText(Story root, DocPos from, DocPos to, string text)
     {
         if (to < from) (from, to) = (to, from);
+        // suivi des modifications : l'ancien texte est barré, le nouveau inséré
+        if (TrackContext.Current is not null) return Insert(root, Delete(root, from, to), text);
         bool firstIsText = from.Path.SequenceEqual(to.Path)
             && ParagraphAtoms.Of(from.Paragraph(root)).Any(a => a.Content is TextContent && !a.InDeletion && a.Start <= from.Offset && from.Offset < a.End);
         if (!firstIsText || to.Offset == from.Offset || text.Length == 0)
@@ -171,6 +189,12 @@ public static class TextOps
     public static DocPos Delete(Story root, DocPos from, DocPos to)
     {
         if (to < from) (from, to) = (to, from);
+        // suivi des modifications : texte barré, marques de paragraphe supprimées (voir TrackContext.DeleteRange)
+        if (TrackContext.Current is { } track)
+        {
+            track.DeleteRange(root, from, to);
+            return from;
+        }
         if (!from.ContainerPath.SequenceEqual(to.ContainerPath))
             throw new NotSupportedException("Suppression entre des conteneurs différents (cellules, contrôles) : pas encore prise en charge.");
         var container = DocPos.ResolveContainer(root, from.ContainerPath);
@@ -210,6 +234,8 @@ public static class TextOps
     public static DocPos DeleteAcross(Story root, DocPos from, DocPos to)
     {
         if (to < from) (from, to) = (to, from);
+        if (TrackContext.Current is not null && !from.ContainerPath.SequenceEqual(to.ContainerPath))
+            throw new NotSupportedException("Suppression d'un tableau avec le suivi des modifications : pas encore prise en charge.");
         if (from.ContainerPath.SequenceEqual(to.ContainerPath)) return Delete(root, from, to);
         if (AcrossTopLevel(from, to) is not var (s, so, e, eo))
             throw new NotSupportedException("Sélection entre deux cellules d'un tableau : pas encore prise en charge.");
@@ -325,6 +351,8 @@ public static class TextOps
             }
         }
         container.Blocks.Insert(pos.BlockIndex + 1, p2);
+        // suivi des modifications : la marque qui termine le premier paragraphe est nouvelle
+        TrackContext.Current?.MarkParagraphInserted(p);
         return new DocPos(pos.ContainerPath.Append(pos.BlockIndex + 1).ToArray(), 0);
     }
 

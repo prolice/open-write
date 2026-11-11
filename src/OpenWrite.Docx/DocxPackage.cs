@@ -235,6 +235,21 @@ public sealed class DocxPackage
 
     readonly Dictionary<string, XmlPart> _xmlParts = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Parties des commentaires de Word 2013 et suivants (réponses, résolu ; identifiants durables).</summary>
+    public static readonly XNamespace W15 = "http://schemas.microsoft.com/office/word/2012/wordml";
+    public static readonly XNamespace W16Cid = "http://schemas.microsoft.com/office/word/2016/wordml/cid";
+    public static readonly XNamespace W16Cex = "http://schemas.microsoft.com/office/word/2018/wordml/cex";
+
+    static readonly Dictionary<string, (string RelType, XName Root, string ContentType)> CommentXmlKinds = new()
+    {
+        ["commentsExtended"] = ("http://schemas.microsoft.com/office/2011/relationships/commentsExtended", W15 + "commentsEx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"),
+        ["commentsIds"] = ("http://schemas.microsoft.com/office/2016/09/relationships/commentsIds", W16Cid + "commentsIds",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml"),
+        ["commentsExtensible"] = ("http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible", W16Cex + "commentsExtensible",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml"),
+    };
+
     static readonly Dictionary<string, (string Root, string ContentType)> XmlKinds = new()
     {
         ["styles"] = ("styles", "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"),
@@ -253,6 +268,7 @@ public sealed class DocxPackage
     /// </summary>
     public XmlPart? XmlPartOf(string kind, bool create = false)
     {
+        if (Main is not null && CommentXmlKinds.TryGetValue(kind, out var ck)) return CommentXmlPart(kind, ck, create);
         if (Main is null || !XmlKinds.TryGetValue(kind, out var k)) return null;
         var name = Targets(Main.PartName, t => t.EndsWith("/" + kind, StringComparison.Ordinal)).FirstOrDefault().Name;
         if (name is not null && _xmlParts.TryGetValue(name, out var known)) return known;
@@ -278,6 +294,62 @@ public sealed class DocxPackage
         var created = new XmlPart { Name = newName, Doc = doc, Dirty = true };
         _xmlParts[newName] = created;
         return created;
+    }
+
+    /// <summary>
+    /// commentsExtended.xml (réponses, commentaire résolu), commentsIds.xml, commentsExtensible.xml : chargée une fois ;
+    /// <paramref name="create"/> : créée (entrée, relation, type de contenu) — seulement commentsExtended.
+    /// </summary>
+    XmlPart? CommentXmlPart(string kind, (string RelType, XName Root, string ContentType) k, bool create)
+    {
+        var name = Targets(Main!.PartName, t => t == k.RelType).FirstOrDefault().Name;
+        if (name is not null && _xmlParts.TryGetValue(name, out var known)) return known;
+        if (name is not null && Find(name) is { } e)
+        {
+            try
+            {
+                var part = new XmlPart { Name = name, Doc = ParseXml(e.Data) };
+                _xmlParts[name] = part;
+                return part;
+            }
+            catch (XmlException) { return null; }
+        }
+        if (!create || kind != "commentsExtended") return null;
+        var dir = Main.PartName.Contains('/') ? Main.PartName[..Main.PartName.LastIndexOf('/')] : "";
+        var file = kind + ".xml";
+        var newName = (dir.Length > 0 ? dir + "/" : "") + file;
+        XNamespace mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+        var doc = new XDocument(new XDeclaration("1.0", "UTF-8", "yes"),
+            new XElement(k.Root, new XAttribute(XNamespace.Xmlns + "mc", mc.NamespaceName), new XAttribute(XNamespace.Xmlns + "w15", W15.NamespaceName),
+                new XAttribute(mc + "Ignorable", "w15")));
+        Entries.Add(new Entry(newName, Array.Empty<byte>(), DateTimeOffset.Now));
+        AddRelationship(Main.PartName, k.RelType, file, external: false);
+        AddContentTypeOverride("/" + newName, k.ContentType);
+        _mainRels = null;
+        var created = new XmlPart { Name = newName, Doc = doc, Dirty = true };
+        _xmlParts[newName] = created;
+        return created;
+    }
+
+    /// <summary>Partie des commentaires (word/comments.xml), créée vide si le document n'en a pas.</summary>
+    public StoryPart CommentsPart()
+    {
+        if (Stories.Values.FirstOrDefault(s => s.Kind == "comments") is { } existing) return existing;
+        if (Main is null) throw new InvalidOperationException("pas de document principal");
+        var dir = Main.PartName.Contains('/') ? Main.PartName[..Main.PartName.LastIndexOf('/')] : "";
+        var name = (dir.Length > 0 ? dir + "/" : "") + "comments.xml";
+        var w = Main.W;
+        XNamespace mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+        var doc = new XDocument(new XDeclaration("1.0", "UTF-8", "yes"),
+            new XElement(w + "comments", new XAttribute(XNamespace.Xmlns + "mc", mc.NamespaceName), new XAttribute(XNamespace.Xmlns + "w", w.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "w14", OpenWrite.Core.Model.FlowEdits.W14.NamespaceName), new XAttribute(mc + "Ignorable", "w14")));
+        Entries.Add(new Entry(name, Serialize(doc), DateTimeOffset.Now));
+        AddRelationship(Main.PartName, "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", "comments.xml", external: false);
+        AddContentTypeOverride("/" + name, "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml");
+        _mainRels = null;
+        var part = Load(name, "comments") ?? throw new InvalidOperationException("partie créée illisible");
+        part.Dirty = true;
+        return part;
     }
 
     /// <summary>

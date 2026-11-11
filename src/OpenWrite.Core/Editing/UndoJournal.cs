@@ -33,6 +33,8 @@ public sealed class UndoJournal
         public List<(XElement Root, XElement Before, XElement After)> Xml { get; init; } = new();
         /// <summary>Autres suites de blocs modifiées (en-têtes d'un filigrane…) : copies avant / après de tous leurs blocs.</summary>
         public List<(Story Root, List<Block> Before, List<Block> After)> Stories { get; init; } = new();
+        /// <summary>Listes d'objets suivies (commentaires d'une partie) : contenu avant / après (mêmes objets).</summary>
+        public List<(System.Collections.IList List, object?[] Before, object?[] After)> Lists { get; init; } = new();
     }
 
     readonly List<Entry> _undo = new();
@@ -47,6 +49,15 @@ public sealed class UndoJournal
 
     /// <summary>Une racine a été modifiée (opération, annulation ou rétablissement) : sa partie est à régénérer.</summary>
     public event Action<Story>? Changed;
+
+    /// <summary>Une liste suivie (commentaires de comments.xml) a changé : sa partie est à régénérer.</summary>
+    public event Action<System.Collections.IList>? ListChanged;
+
+    static void SetList(System.Collections.IList list, object?[] items)
+    {
+        list.Clear();
+        foreach (var x in items) list.Add(x);
+    }
 
     /// <summary>Une partie XML suivie (styles, numérotation) a changé : à régénérer, résolveur de styles à refaire.</summary>
     public event Action<XElement>? XmlChanged;
@@ -104,8 +115,10 @@ public sealed class UndoJournal
             Replace(container, tx.Index, Math.Max(0, newCount), tx.Before.Select(b => b.Clone()));
             foreach (var (root, before) in tx.Xml) Restore(root, before);
             foreach (var (story, before) in tx.Stories) Replace(story, 0, story.Blocks.Count, before.Select(b => b.Clone()));
+            foreach (var (list, before) in tx.Lists) SetList(list, before);
             return;
         }
+        var lists = tx.Lists.Select(x => (x.List, x.Before, x.List.Cast<object?>().ToArray())).ToList();
         var stories = tx.Stories.Select(x => (x.Root, x.Before, x.Root.Blocks.Select(b => b.Clone()).ToList())).ToList();
         var xml = tx.Xml.Select(x => (x.Root, x.Before, new XElement(x.Root))).ToList();
         LastXml = xml.Select(x => x.Root).ToList();
@@ -114,7 +127,7 @@ public sealed class UndoJournal
         if (_savedAt is not null && _redo.Contains(_savedAt)) _savedLost = true;      // l'état enregistré n'est plus atteignable
         _redo.Clear();
         var last = _undo.Count > 0 ? _undo[^1] : null;
-        if (tx.MergeKey is not null && xml.Count == 0 && stories.Count == 0 && last is not null && last.Xml.Count == 0 && last.Stories.Count == 0 && last.MergeKey == tx.MergeKey && last != _savedAt && last.Root == tx.Root
+        if (tx.MergeKey is not null && xml.Count == 0 && stories.Count == 0 && lists.Count == 0 && last is not null && last.Xml.Count == 0 && last.Stories.Count == 0 && last.MergeKey == tx.MergeKey && last != _savedAt && last.Root == tx.Root
             && last.Container.SequenceEqual(tx.Container) && last.Index == tx.Index && last.After.Count == tx.Before.Count
             && Equals(last.CaretAfter, tx.CaretBefore))
         {
@@ -129,6 +142,7 @@ public sealed class UndoJournal
             {
                 Label = tx.Label, Root = tx.Root, Container = tx.Container, Index = tx.Index, Before = tx.Before, After = after,
                 CaretBefore = tx.CaretBefore, CaretAfter = caretAfter, MergeKey = tx.MergeKey, Time = DateTime.UtcNow, Xml = xml, Stories = stories,
+                Lists = lists,
             });
             if (_undo.Count > MaxEntries)
             {
@@ -139,6 +153,7 @@ public sealed class UndoJournal
         Changed?.Invoke(tx.Root);
         foreach (var x in stories) Changed?.Invoke(x.Root);
         foreach (var x in xml) XmlChanged?.Invoke(x.Root);
+        foreach (var x in lists) ListChanged?.Invoke(x.List);
     }
 
     /// <summary>Remet une racine XML dans l'état d'une copie (même objet racine : les références restent valables).</summary>
@@ -160,11 +175,13 @@ public sealed class UndoJournal
         LastChange = (e.Root, e.Container, e.Index, e.Before.Count);
         foreach (var (root, before, _) in e.Xml) Restore(root, before);
         foreach (var (story, before, _) in e.Stories) Replace(story, 0, story.Blocks.Count, before.Select(b => b.Clone()));
+        foreach (var (list, before, _) in e.Lists) SetList(list, before);
         LastXml = e.Xml.Select(x => x.Root).ToList();
         _redo.Add(e);
         Changed?.Invoke(e.Root);
         foreach (var x in e.Stories) Changed?.Invoke(x.Root);
         foreach (var x in e.Xml) XmlChanged?.Invoke(x.Root);
+        foreach (var x in e.Lists) ListChanged?.Invoke(x.List);
         return e.CaretBefore;
     }
 
@@ -178,11 +195,13 @@ public sealed class UndoJournal
         LastChange = (e.Root, e.Container, e.Index, e.After.Count);
         foreach (var (root, _, after) in e.Xml) Restore(root, after);
         foreach (var (story, _, after) in e.Stories) Replace(story, 0, story.Blocks.Count, after.Select(b => b.Clone()));
+        foreach (var (list, _, after) in e.Lists) SetList(list, after);
         LastXml = e.Xml.Select(x => x.Root).ToList();
         _undo.Add(e);
         Changed?.Invoke(e.Root);
         foreach (var x in e.Stories) Changed?.Invoke(x.Root);
         foreach (var x in e.Xml) XmlChanged?.Invoke(x.Root);
+        foreach (var x in e.Lists) ListChanged?.Invoke(x.List);
         return e.CaretAfter;
     }
 
@@ -255,6 +274,17 @@ public sealed class EditTransaction : IDisposable
     internal string? MergeKey { get; }
     internal List<(XElement Root, XElement Before)> Xml { get; } = new();
     internal List<(Story Root, List<Block> Before)> Stories { get; } = new();
+    internal List<(System.Collections.IList List, object?[] Before)> Lists { get; } = new();
+
+    /// <summary>
+    /// Suit une liste d'objets (les commentaires de comments.xml) : son contenu est noté maintenant et remis à
+    /// l'annulation (les objets eux-mêmes ne sont pas copiés : suivre aussi leurs blocs avec <see cref="TrackStory"/>).
+    /// </summary>
+    public void TrackList(System.Collections.IList list)
+    {
+        if (Lists.Any(x => ReferenceEquals(x.List, list))) return;
+        Lists.Add((list, list.Cast<object?>().ToArray()));
+    }
 
     /// <summary>Suit une autre suite de blocs (un en-tête…) dans cette transaction : tous ses blocs sont copiés maintenant.</summary>
     public void TrackStory(Story root)

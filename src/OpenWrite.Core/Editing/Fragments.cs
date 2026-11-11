@@ -80,6 +80,17 @@ public static class Fragments
     /// </summary>
     public static DocPos Insert(Story root, DocPos pos, Fragment fragment, Func<string> newParaId)
     {
+        // suivi des modifications : le collage se fait normalement, puis tout ce qu'il a ajouté est marqué inséré
+        var track = Review.TrackContext.Current;
+        if (track is null) return InsertCore(root, pos, fragment, newParaId);
+        DocPos end;
+        using (Review.TrackContext.Use(null)) end = InsertCore(root, pos, fragment, newParaId);
+        track.MarkInsertedRange(root, pos, end);
+        return end;
+    }
+
+    static DocPos InsertCore(Story root, DocPos pos, Fragment fragment, Func<string> newParaId)
+    {
         var blocks = fragment.Blocks.Select(b => b.Clone()).ToList();
         if (blocks.Count == 0) return pos;
         var tmp = new Story();

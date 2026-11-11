@@ -30,7 +30,7 @@ public static class FormatOps
             {
                 // tableau ou contrôle de contenu traversé : tout son texte
                 foreach (var inner in new Story { Blocks = { block } }.Paragraphs())
-                    foreach (var r in RunsIn(inner.Inlines)) { apply(inner, r); count++; }
+                    foreach (var r in RunsIn(inner.Inlines).ToList()) { Tracked(inner, r, apply); count++; }
                 continue;
             }
             int a = b == from.BlockIndex ? from.Offset : 0;
@@ -42,11 +42,20 @@ public static class FormatOps
             {
                 if (atom.Run is not { } run || atom.Length == 0 || atom.Start < a || atom.End > e) continue;
                 if (atom.Content != run.Content.FirstOrDefault(c => ParagraphAtoms.LengthOf(c) > 0)) continue;   // une fois par segment
-                apply(p, run);
+                Tracked(p, run, apply);
                 count++;
             }
         }
         return count;
+    }
+
+    /// <summary>Suivi des modifications : l'ancienne mise en forme du segment est gardée (w:rPrChange), sauf dans son propre ajout.</summary>
+    static void Tracked(Paragraph p, Run run, Action<Paragraph, Run> apply)
+    {
+        if (Review.TrackContext.Current is not { } t || t.InMyInsertion(p, run)) { apply(p, run); return; }
+        var before = run.Props.Element is { } e ? new XElement(e) : null;
+        apply(p, run);
+        t.RecordRunFormat(run, before);
     }
 
     /// <summary>Applique <paramref name="apply"/> aux propriétés de chaque paragraphe de la plage (tableaux traversés compris).</summary>
@@ -58,7 +67,12 @@ public static class FormatOps
             throw new NotSupportedException("Plage entre des conteneurs différents (cellules, contrôles) : pas encore prise en charge.");
         var container = DocPos.ResolveContainer(root, from.ContainerPath);
         for (int b = from.BlockIndex; b <= to.BlockIndex; b++)
-            foreach (var p in new Story { Blocks = { container.Blocks[b] } }.Paragraphs()) apply(p);
+            foreach (var p in new Story { Blocks = { container.Blocks[b] } }.Paragraphs())
+            {
+                var before = Review.TrackContext.Current is not null && p.Props.Element is { } e ? new XElement(e) : null;
+                apply(p);
+                Review.TrackContext.Current?.RecordParagraphFormat(p, before);
+            }
     }
 
     /// <summary>Exécute une mise en forme dans une transaction du journal (blocs de la plage), en gardant la sélection.</summary>
@@ -68,7 +82,20 @@ public static class FormatOps
         var original = to;
         (from, to) = Normalize(from, to);
         TextOps.Edit(journal, root, label, from.ContainerPath, from.BlockIndex, to.BlockIndex - from.BlockIndex + 1, original,
-            () => { op(); return 0; }, _ => original);
+            () =>
+            {
+                // suivi des modifications : propriétés de paragraphe changées par l'opération (alignement…) → w:pPrChange
+                var track = Review.TrackContext.Current;
+                var container = DocPos.ResolveContainer(root, from.ContainerPath);
+                var before = new List<(Paragraph P, XElement? Props)>();
+                if (track is not null)
+                    for (int b = from.BlockIndex; b <= to.BlockIndex && b < container.Blocks.Count; b++)
+                        foreach (var p in new Story { Blocks = { container.Blocks[b] } }.Paragraphs())
+                            before.Add((p, p.Props.Element is { } e ? new XElement(e) : null));
+                op();
+                foreach (var (p, props) in before) track!.RecordParagraphFormat(p, props);
+                return 0;
+            }, _ => original);
     }
 
     /// <summary>

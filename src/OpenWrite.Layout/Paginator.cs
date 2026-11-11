@@ -179,6 +179,12 @@ public sealed class Page
 /// <summary>Mise en page d'un document : pages, caches des paragraphes, reprise incrémentale.</summary>
 public sealed partial class DocumentLayout
 {
+    /// <summary>Affichage des révisions (à fixer avant <c>LayoutAll</c> : un changement demande une mise en page complète).</summary>
+    public RevisionView View { get => _lines.View; set => _lines.View = value; }
+
+    /// <summary>Couleur d'un auteur de révisions (la même que celle du texte révisé).</summary>
+    public string AuthorColor(string? author) => _lines.AuthorColor(author);
+
     readonly ParagraphLayouter _lines;
     readonly Story _body;
     readonly ConditionalWeakTable<Paragraph, ParagraphLayout> _cache = new();

@@ -90,6 +90,8 @@ public static class StyleOps
         ["Intense Emphasis"] = new("character", "Accentuationintense", "Policepardfaut", null, 21, "", "<w:i/><w:iCs/><w:color w:val=\"4472C4\" w:themeColor=\"accent1\"/>"),
         ["Hyperlink"] = new("character", "Lienhypertexte", "Policepardfaut", null, 99, "", "<w:color w:val=\"0563C1\" w:themeColor=\"hyperlink\"/><w:u w:val=\"single\"/>"),
         ["Default Paragraph Font"] = new("character", "Policepardfaut", null, null, 1, "", ""),
+        ["annotation text"] = new("paragraph", "Commentaire", "Normal", null, 99, "<w:spacing w:line=\"240\" w:lineRule=\"auto\"/>", "<w:sz w:val=\"20\"/><w:szCs w:val=\"20\"/>"),
+        ["annotation reference"] = new("character", "Marquedecommentaire", "Policepardfaut", null, 99, "", "<w:sz w:val=\"16\"/><w:szCs w:val=\"16\"/>"),
         ["header"] = new("paragraph", "En-tte", "Normal", null, 99, "<w:tabs><w:tab w:val=\"center\" w:pos=\"4536\"/><w:tab w:val=\"right\" w:pos=\"9072\"/></w:tabs><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>", ""),
         ["footer"] = new("paragraph", "Pieddepage", "Normal", null, 99, "<w:tabs><w:tab w:val=\"center\" w:pos=\"4536\"/><w:tab w:val=\"right\" w:pos=\"9072\"/></w:tabs><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>", ""),
     };
@@ -118,7 +120,7 @@ public static class StyleOps
         var xml = $"<w:style {ns} w:type=\"{def.Type}\"{(builtInName == "Default Paragraph Font" ? " w:default=\"1\"" : "")} w:styleId=\"{id}\">" +
                   $"<w:name w:val=\"{builtInName}\"/>" + (basedOn is not null ? $"<w:basedOn w:val=\"{basedOn}\"/>" : "") +
                   (next is not null ? $"<w:next w:val=\"{next}\"/>" : "") + $"<w:uiPriority w:val=\"{def.Priority}\"/>" +
-                  (builtInName == "Default Paragraph Font" ? "<w:semiHidden/><w:unhideWhenUsed/>" : "<w:qFormat/>") +
+                  (builtInName == "Default Paragraph Font" || builtInName.StartsWith("annotation ", StringComparison.Ordinal) ? "<w:semiHidden/><w:unhideWhenUsed/>" : "<w:qFormat/>") +
                   (def.PPr.Length > 0 ? $"<w:pPr>{def.PPr}</w:pPr>" : "") + (def.RPr.Length > 0 ? $"<w:rPr>{def.RPr}</w:rPr>" : "") + "</w:style>";
         var style = XElement.Parse(xml);
         StripNamespaceDeclarations(style, w);

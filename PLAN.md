@@ -903,3 +903,9 @@ gardé dans les réglages de l'utilisateur). Corpus : aucun document à révisio
 
 **Pas encore** : bulles dans la marge, suivi des lignes et colonnes de tableau, des styles et des listes, déplacements
 créés (ceux de Word sont lus, acceptés et refusés), volet Vérifications, comparer / combiner, protection, grammaire.
+
+### 10.30 Version 1.1.0 (2026-11-11)
+
+Publiée par la pipeline (tag `v1.1.0`) : orthographe (§10.28), commentaires et suivi des modifications (§10.29), choix des
+pages corrigé (§10.27). Restent du lot 8 : comparer / combiner, protection, rechercher / remplacer avancé, grammaire
+(facultative). « Prochaines versions » de l'accueil : 1.2 à 1.4.
